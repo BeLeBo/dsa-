@@ -57,7 +57,8 @@ Spalten und Regeln dazukommen (bestehende Daten bleiben erhalten).
 ### 4. Schlüssel eintragen
 
 1. Im Dashboard oben auf **Connect** klicken (oder **Project Settings** → **API Keys** / **Data API**).
-2. Die **Project URL** (z. B. `https://abcdefgh.supabase.co`) und den öffentlichen **anon**- bzw.
+2. Die **Project URL** (z. B. `https://abcdefgh.supabase.co` – nur bis `.supabase.co`, ohne `/rest/v1/`;
+   die App schneidet so einen Zusatz aber auch selbst ab) und den öffentlichen **anon**- bzw.
    **publishable**-Key kopieren.
 3. In [`js/config.js`](js/config.js) eintragen:
 

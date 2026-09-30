@@ -5,7 +5,7 @@
 import { test, assertEqual, assertTrue } from './harness.js';
 import { mergeJson } from '../js/merge.js';
 import { normalizeRoomCode, validateJoin, validateCreate, inviteLink } from '../js/room.js';
-import { toServerError, ServerError } from '../js/supabase.js';
+import { toServerError, ServerError, projectUrl } from '../js/supabase.js';
 import { createCharacterSync, readCachedCharacter } from '../js/sync.js';
 import { createHeroStore, REMOTE } from '../js/store.js';
 import { createHero, createWeapon } from '../js/sheet.js';
@@ -189,6 +189,15 @@ test(ERRORS, 'Fehlendes Schema, fehlende Rechte, eigene Meldungen', () => {
     'Du kannst nur die Figur deines eigenen Helden bewegen.',
     'eigene Berechtigungsmeldung bleibt',
   );
+});
+
+test(ERRORS, 'Projektadresse: Pfad und Schrägstriche am Ende werden entfernt', () => {
+  const base = 'https://abcdefghijklm.supabase.co';
+  assertEqual(projectUrl(base), base);
+  assertEqual(projectUrl(`${base}/`), base, 'Schrägstrich');
+  assertEqual(projectUrl(`${base}/rest/v1/`), base, 'API-Endpunkt aus dem Dashboard');
+  assertEqual(projectUrl(` ${base}/rest/v1 `), base, 'Leerzeichen, ohne Schrägstrich');
+  assertEqual(projectUrl(`${base}/auth/v1/signup`), base, 'andere Dienste');
 });
 
 test(ERRORS, 'Bildspeicher (Karte): verständliche Meldungen', () => {

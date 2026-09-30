@@ -22,6 +22,17 @@ export class ServerError extends Error {
   }
 }
 
+/**
+ * Projektadresse ohne Pfad. Im Dashboard steht oft der API-Endpunkt
+ * („…supabase.co/rest/v1/“) – supabase-js braucht aber nur „…supabase.co“.
+ */
+export function projectUrl(url) {
+  return String(url ?? '')
+    .trim()
+    .replace(/\/(rest|auth|storage|realtime)\/v1(\/.*)?$/, '')
+    .replace(/\/+$/, '');
+}
+
 export function isServerConfigured() {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 }
@@ -132,7 +143,7 @@ export function getClient() {
   }
   clientPromise ??= loadSupabaseScript()
     .then(({ createClient }) =>
-      createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      createClient(projectUrl(SUPABASE_URL), SUPABASE_ANON_KEY.trim(), {
         auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: 'dsa5.anmeldung' },
       }),
     )

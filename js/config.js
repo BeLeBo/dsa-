@@ -8,5 +8,5 @@
  *
  * Solange beide Werte leer sind, läuft die App nur im Modus „Ohne Raum spielen“.
  */
-export const SUPABASE_URL = 'https://krqskhgqwdovgmwwgjso.supabase.co/rest/v1/'; // z. B. 'https://abcdefghijklm.supabase.co'
+export const SUPABASE_URL = 'https://krqskhgqwdovgmwwgjso.supabase.co'; // z. B. 'https://abcdefghijklm.supabase.co'
 export const SUPABASE_ANON_KEY = 'sb_publishable_bI_MOm4AeriZgfiG1ibY-Q_qZPBxPZC'; // beginnt meist mit 'eyJ…' bzw. 'sb_publishable_…'
