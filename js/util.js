@@ -53,6 +53,26 @@ export function setPath(object, path, value) {
 }
 
 /** Uhrzeit „14:05“ aus einem ISO-Zeitstempel. */
+/**
+ * Zeitstempel vom Server → Millisekunden (NaN, wenn unlesbar). Versteht ISO („…T…+00:00“) und
+ * die Schreibweise von Postgres („… …+00“) – beide immer als UTC-Angabe, nie als Ortszeit.
+ */
+export function timestampMs(value) {
+  if (value === null || value === undefined || value === '') return NaN;
+  const text = String(value)
+    .trim()
+    .replace(' ', 'T')
+    .replace(/([+-]\d\d)$/, '$1:00');
+  return Date.parse(text);
+}
+
+/** Ist a sicher älter als b? (Unlesbare Zeitstempel zählen nie als älter.) */
+export function isOlderTimestamp(a, b) {
+  const first = timestampMs(a);
+  const second = timestampMs(b);
+  return Number.isFinite(first) && Number.isFinite(second) && first < second;
+}
+
 export function formatTime(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';

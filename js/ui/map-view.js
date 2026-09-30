@@ -18,6 +18,7 @@ import {
   gridSizeFromCells,
   cellsAcross,
   tokensForTurn,
+  tokenLifeBar,
   GRID_COLORS,
   MIN_GRID_SIZE,
   MAX_GRID_SIZE,
@@ -174,6 +175,9 @@ export function createMapView(
   const stage = createMapStage({
     canMove,
     isMine: (token) => !isMaster() && canMove(token),
+    // Helden genau, Gegner für Spieler nur ungefähr (in welchem Viertel sie stecken).
+    lifeOf: (token) =>
+      tokenLifeBar(token, token.character_id ? heroFor(token.character_id) : null, { master: isMaster() }),
     selectable: isMaster,
     onMove: (moves) => controller.actions.moveTokens(moves).catch((error) => showError(error, 'Figur nicht bewegt')),
     onSelect: () => renderPanels(),
@@ -421,8 +425,12 @@ export function createMapView(
     updateHighlight();
     renderToolbar(controller.viewMap());
     renderPanels();
+    stage.refresh(); // Lebensbalken der Helden
   });
-  subscribeHero(() => renderPanels());
+  subscribeHero(() => {
+    renderPanels();
+    stage.refresh();
+  });
   // Nicht direkt im Beobachter die Höhe ändern (sonst meldet der Browser eine Endlosschleife).
   new ResizeObserver(() => requestAnimationFrame(layout)).observe(panel);
   window.addEventListener('resize', layout);

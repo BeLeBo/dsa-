@@ -21,6 +21,7 @@ alles live für alle synchronisiert.
 | 6     | Karte mit Figuren (hochladen, Raster, Drag & Drop, live)               | ✅ fertig |
 | 7     | Optolith-Import, Mehrfachauswahl und Werte-Panel auf der Karte         | ✅ fertig |
 | 8     | Ohne Meister-PIN, LeP für Gegner, Proben und Werte auf der Karte       | ✅ fertig |
+| 9     | Lebensbalken: Helden genau, Gegner in Vierteln                         | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -262,6 +263,14 @@ auf dem Server gespeichert und für den Meister sichtbar.
     Initiative. Es öffnet sich derselbe Probendialog wie im Heldenbogen; der Wurf landet im Protokoll.
   - Ohne Suchbegriff: die zuletzt gewürfelten Proben sowie Eigenschaften, Ausweichen, Initiative und
     Waffen zum direkten Antippen.
+- **Lebensbalken** unter den Figuren:
+  - **Helden:** genauer Balken für alle – so sieht die Gruppe, wie es um jeden steht.
+  - **Gegner und NSC** (wenn der Meister LeP eingetragen hat): Balken aus vier Vierteln. Spieler sehen
+    nur, in welchem Viertel der Gegner steckt (voll gefüllte Abschnitte), nicht die genauen LeP; der
+    Meister sieht den Balken genau. Die Viertel passen zu den Schmerzstufen (¾, ½, ¼).
+  - Grün über der Hälfte, gelb bis zu einem Viertel, rot darunter; ohne LeP wird die Figur grau.
+  - Weit herausgezoomt stehen Balken (wie Namen) nur bei der eigenen Figur, der Figur am Zug und der
+    ausgewählten – herangezoomt bei allen.
 - Karte mit einem Finger verschieben, mit zwei Fingern (oder Mausrad, Knöpfe + und −) zoomen,
   ◎ zeigt die ganze Karte, ⛶ schaltet auf Vollbild. Mit der Maus verschiebt man die Karte mit der
   rechten (oder mittleren) Taste bzw. mit gedrückter Leertaste – beim Meister zieht die linke Taste ja
@@ -309,7 +318,9 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
 - Würfe werden auf dem eigenen Gerät mit `crypto.getRandomValues` gewürfelt. Verdeckte Würfe sieht
   der Spieler in der App nicht; wer sich im Browser in die Datenübertragung einliest, könnte sie
   finden – für eine Runde unter Freunden ist das so gewollt einfach gehalten. Dasselbe gilt für die
-  LeP von Gegnern: Die App zeigt sie Spielern nicht, übertragen werden sie mit der Figur trotzdem.
+  LeP von Gegnern: Die App zeigt sie Spielern nur in Vierteln, übertragen werden sie mit der Figur
+  genau. Für die Lebensbalken spiegelt die Datenbank die LeP jedes Helden auf seine Figuren (sonst
+  dürfen Spieler fremde Heldenbögen nicht lesen – daran ändert sich nichts).
 - **Offline-Speicher (Service Worker, `sw.js`):** Mit Verbindung kommen Seite und App-Dateien immer
   frisch vom Server (am Browser-Cache vorbei), ohne Verbindung – oder wenn das Netz länger als
   4 Sekunden braucht – aus dem Speicher. Anfragen an Supabase (Helden, Würfe, Anmeldung) werden nie

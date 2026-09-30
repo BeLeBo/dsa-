@@ -29,6 +29,8 @@ import {
   moveGroup,
   parseLife,
   lifeAfterMaxChange,
+  lifeBar,
+  tokenLifeBar,
   MIN_GRID_SIZE,
   MAX_GRID_SIZE,
   MAX_ZOOM,
@@ -231,6 +233,52 @@ test('Karte: LeP von Gegnern', 'Neues Maximum: unverletzt → volle LeP, verletz
   assertEqual(lifeAfterMaxChange({ le_current: 12, le_max: 30 }, 35), { le_max: 35, le_current: 12 });
   assertEqual(lifeAfterMaxChange({ le_current: 12, le_max: 30 }, null), { le_max: null, le_current: null });
 });
+
+test('Karte: Lebensbalken', 'Genau: Anteil, Farbe nach Zustand, am Boden bei 0 oder weniger', () => {
+  assertEqual(lifeBar(30, 30), { cells: [1], level: 'gut', label: 'LeP 30 von 30' });
+  assertEqual(lifeBar(12, 30).cells, [0.4]);
+  assertEqual(lifeBar(12, 30).level, 'verletzt');
+  assertEqual(lifeBar(7, 30).level, 'kritisch');
+  assertEqual(lifeBar(0, 30), { cells: [0], level: 'am-boden', label: 'LeP 0 von 30' });
+  assertEqual(lifeBar(-4, 30).cells, [0], 'nie unter 0');
+  assertEqual(lifeBar(40, 30).cells, [1], 'nie über voll');
+  assertEqual(lifeBar('17', '31').label, 'LeP 17 von 31', 'Texte aus dem Heldenbogen');
+  assertEqual(lifeBar(null, 30), null, 'ohne LeP kein Balken');
+  assertEqual(lifeBar(10, 0), null);
+  assertEqual(lifeBar(10, null), null);
+});
+
+test('Karte: Lebensbalken', 'Ungefähr in Vierteln: man sieht nur den Abschnitt', () => {
+  const rough = (current, max) => lifeBar(current, max, { segments: 4, exact: false });
+  assertEqual(rough(30, 30).cells, [1, 1, 1, 1]);
+  assertEqual(rough(23, 30).cells, [1, 1, 1, 1], 'kaum verletzt: noch im obersten Viertel');
+  assertEqual(rough(22, 30).cells, [1, 1, 1, 0]);
+  assertEqual(rough(15, 30).cells, [1, 1, 0, 0], 'genau die Hälfte');
+  assertEqual(rough(12, 35).cells, [1, 1, 0, 0]);
+  assertEqual(rough(1, 35).cells, [1, 0, 0, 0], 'fast tot: ein Viertel bleibt sichtbar');
+  assertEqual(rough(0, 35).cells, [0, 0, 0, 0]);
+  assertEqual(rough(12, 35).label, 'Lebensenergie etwa 2 von 4 Vierteln', 'keine genauen Zahlen');
+  assertEqual(rough(22, 30).level, 'gut');
+  assertEqual(rough(15, 30).level, 'verletzt');
+  assertEqual(rough(5, 30).level, 'kritisch');
+  const exact = lifeBar(12, 35, { segments: 4, exact: true });
+  assertEqual(exact.cells, [1, 0.37, 0, 0], 'Meister: genau, mit Vierteln');
+});
+
+test(
+  'Karte: Lebensbalken',
+  'Figuren: Helden aus dem Bogen oder von der Figur, Gegner nur für den Meister genau',
+  () => {
+    const hero = { base: { le: { current: 20, max: 30 } } };
+    const heroToken = { character_id: 'c1', le_current: 5, le_max: 30 };
+    assertEqual(tokenLifeBar(heroToken, hero).cells, [0.67], 'Heldenbogen bekannt: der zählt');
+    assertEqual(tokenLifeBar(heroToken, null).cells, [0.17], 'fremder Held: LeP von der Figur');
+    const ork = { character_id: null, le_current: 12, le_max: 35 };
+    assertEqual(tokenLifeBar(ork, null).cells, [1, 1, 0, 0], 'Spieler: ungefähr');
+    assertEqual(tokenLifeBar(ork, null, { master: true }).cells, [1, 0.37, 0, 0], 'Meister: genau');
+    assertEqual(tokenLifeBar({ character_id: null, le_current: null, le_max: null }, null), null, 'ohne LeP');
+  },
+);
 
 test('Karte: Bilder', 'Kartenname aus Dateiname, Verkleinern ohne Vergrößern', () => {
   assertEqual(mapNameFromFile('dunkle_hoehle-2.jpg'), 'dunkle hoehle 2');

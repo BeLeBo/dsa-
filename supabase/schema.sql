@@ -437,6 +437,79 @@ create trigger tokens_bump_on_hide
   for each row when (old.hidden is distinct from new.hidden)
   execute function private.bump_map_revision();
 
+-- Lebensbalken der Helden: Die LeP eines Helden werden auf seine Figuren gespiegelt. So sehen alle
+-- im Raum die Balken der Gruppe, ohne fremde Heldenbögen lesen zu dürfen. Unlesbare Werte werden
+-- zu „leer“ – ein Fehler hier darf das Speichern des Helden nie verhindern.
+create or replace function private.hero_life(p_data jsonb, p_key text, p_min integer)
+returns integer
+language sql
+immutable
+set search_path = ''
+as $$
+  select case
+    when (p_data -> 'base' -> 'le' ->> p_key) ~ '^\s*-?\d{1,9}(\.\d+)?\s*$'
+      then least(greatest(round(btrim(p_data -> 'base' -> 'le' ->> p_key)::numeric), p_min), 9999)::integer
+  end;
+$$;
+
+create or replace function private.mirror_hero_life()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_current integer := private.hero_life(new.data, 'current', -999);
+  v_max integer := private.hero_life(new.data, 'max', 0);
+begin
+  update public.tokens t
+  set le_current = v_current, le_max = v_max
+  where t.character_id = new.id
+    and (t.le_current is distinct from v_current or t.le_max is distinct from v_max);
+  return null;
+end;
+$$;
+
+drop trigger if exists characters_mirror_life on public.characters;
+create trigger characters_mirror_life
+  after update of data on public.characters
+  for each row execute function private.mirror_hero_life();
+
+-- Neue oder umgehängte Heldenfigur: LeP gleich aus dem Heldenbogen übernehmen.
+create or replace function private.token_hero_life()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_data jsonb;
+begin
+  if new.character_id is not null then
+    select c.data into v_data from public.characters c where c.id = new.character_id;
+    new.le_current := private.hero_life(v_data, 'current', -999);
+    new.le_max := private.hero_life(v_data, 'max', 0);
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tokens_hero_life on public.tokens;
+create trigger tokens_hero_life
+  before insert or update of character_id on public.tokens
+  for each row execute function private.token_hero_life();
+
+-- Figuren, die vor dieser Funktion aufgestellt wurden, einmal nachtragen.
+update public.tokens t
+set le_current = private.hero_life(c.data, 'current', -999),
+    le_max = private.hero_life(c.data, 'max', 0)
+from public.characters c
+where c.id = t.character_id
+  and (
+    t.le_current is distinct from private.hero_life(c.data, 'current', -999)
+    or t.le_max is distinct from private.hero_life(c.data, 'max', 0)
+  );
+
 -- Figur bewegen: Meister jede, Spieler nur die Figur des eigenen Helden (wenn sichtbar).
 -- Die Position wird auf die Karte begrenzt.
 create or replace function public.move_token(p_token_id uuid, p_x double precision, p_y double precision)

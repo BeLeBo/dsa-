@@ -42,7 +42,7 @@ import {
   readCachedCharacter,
 } from './sync.js';
 import { normalizeHero, heroName } from './sheet.js';
-import { isPlainObject } from './util.js';
+import { isPlainObject, isOlderTimestamp } from './util.js';
 import { toInt, clampConditionLevel } from './rules.js';
 import { readLocalHero } from './mode-local.js';
 
@@ -87,6 +87,11 @@ export function startRoomMode(initialSession, { onLeave }) {
    * Tipps nicht kurz auf einen Zwischenstand zurück.
    */
   const pendingHeroChanges = new Map();
+
+  /** Ist die Zeile älter als die schon angezeigte (verspätete Live-Meldung)? */
+  function isOlderRow(row, shown) {
+    return isOlderTimestamp(row?.updated_at, shown?.updated_at);
+  }
   function withPendingChanges(row) {
     const pending = row ? pendingHeroChanges.get(row.id) : null;
     if (!pending?.length || !isPlainObject(row.data)) return row;
@@ -291,7 +296,11 @@ export function startRoomMode(initialSession, { onLeave }) {
   async function handleCharacterRow(incoming) {
     const row = await completeRow(incoming).catch(() => null);
     if (!row) return;
-    room.update({ characters: upsertById(room.get().characters, withPendingChanges(row)) });
+    const shown = room.get().characters.find((character) => character.id === row.id);
+    // Eine verspätete Live-Meldung darf einen neueren Stand nicht überschreiben.
+    if (!isOlderRow(row, shown)) {
+      room.update({ characters: upsertById(room.get().characters, withPendingChanges(row)) });
+    }
     if (sync?.id === row.id) {
       sync.applyRemote(row.data);
     } else if (!isMaster() && !sync && row.owner_id === session.userId) {
@@ -464,9 +473,10 @@ export function startRoomMode(initialSession, { onLeave }) {
         if (!row) return done();
         const hero = normalizeHero(row.data);
         mutate(hero);
-        await saveCharacterData(characterId, hero);
+        const saved = await saveCharacterData(characterId, hero);
         done();
-        room.update({ characters: upsertById(room.get().characters, withPendingChanges({ ...row, data: hero })) });
+        const fresh = { ...row, data: hero, updated_at: saved?.updated_at ?? row.updated_at };
+        room.update({ characters: upsertById(room.get().characters, withPendingChanges(fresh)) });
       })
       .catch(async (error) => {
         done();
@@ -477,10 +487,16 @@ export function startRoomMode(initialSession, { onLeave }) {
   }
 
   const heroActions = {
-    adjustPool: (characterId, key, delta) =>
+    // Aus „−1“ wird gleich der Zielwert (angezeigter Stand − 1): So lässt sich die Änderung
+    // gefahrlos über jeden Serverstand legen, auch über einen, der sie schon enthält.
+    adjustPool: (characterId, key, delta) => {
+      const shown = heroFor(characterId);
+      if (!shown) return;
+      const target = toInt(shown.base[key].current) + delta;
       changeHero(characterId, (hero) => {
-        hero.base[key].current = toInt(hero.base[key].current) + delta;
-      }),
+        hero.base[key].current = target;
+      });
+    },
     setPool: (characterId, key, value) =>
       changeHero(characterId, (hero) => {
         hero.base[key].current = toInt(value);

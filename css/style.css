@@ -2126,6 +2126,52 @@ body.map-fullscreen-open {
   pointer-events: none;
 }
 
+/* Lebensbalken am unteren Rand der Figur: Helden durchgehend, Gegner in Vierteln */
+.map-token-life {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  display: flex;
+  gap: 1px;
+  width: max(30px, 90%);
+  height: 8px;
+  padding: 1px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.72);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.map-token-life-cell {
+  flex: 1;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.22);
+}
+
+.map-token-life-fill {
+  display: block;
+  height: 100%;
+  background: #43a047;
+}
+
+.map-token-life[data-level='verletzt'] .map-token-life-fill {
+  background: #f2b01e;
+}
+
+.map-token-life[data-level='kritisch'] .map-token-life-fill {
+  background: #e53935;
+}
+
+.map-token.has-life .map-token-name {
+  margin-top: 7px;
+}
+
+/* Keine LeP mehr: Figur ausgegraut */
+.map-token.is-down .map-token-face {
+  filter: grayscale(1) brightness(0.75);
+}
+
 .map-token.is-dragging {
   z-index: 2;
   cursor: grabbing;
@@ -2168,8 +2214,9 @@ body.map-fullscreen-open {
     0 0 0 6px var(--focus);
 }
 
-/* Weit herausgezoomt: Namen nur bei eigener, ausgewählter, gezogener Figur und der am Zug */
-.map-tokens.is-compact .map-token-name {
+/* Weit herausgezoomt: Namen und Lebensbalken nur bei eigener, ausgewählter Figur und der am Zug */
+.map-tokens.is-compact .map-token-name,
+.map-tokens.is-compact .map-token-life {
   display: none;
 }
 
@@ -2179,6 +2226,13 @@ body.map-fullscreen-open {
 .map-tokens.is-compact:not(.has-group) .map-token.is-selected .map-token-name,
 .map-tokens.is-compact .map-token:focus-visible .map-token-name {
   display: block;
+}
+
+.map-tokens.is-compact .map-token.is-mine .map-token-life,
+.map-tokens.is-compact .map-token.is-turn .map-token-life,
+.map-tokens.is-compact:not(.has-group) .map-token.is-selected .map-token-life,
+.map-tokens.is-compact .map-token:focus-visible .map-token-life {
+  display: flex;
 }
 
 .map-marquee {

@@ -276,6 +276,46 @@ export function lifeAfterMaxChange(token, leMax) {
   return { le_max: leMax, le_current: unhurt ? leMax : token.le_current };
 }
 
+/** Abschnitte der ungefähren Lebensanzeige von Gegnern – Viertel, wie die Schmerzstufen (¾, ½, ¼). */
+export const LIFE_SEGMENTS = 4;
+
+const lifeNumber = (value) => (value === null || value === undefined || value === '' ? NaN : Number(value));
+
+/**
+ * Lebensbalken: genau oder – für Gegner aus Sicht der Spieler – nur in Abschnitten: Man sieht,
+ * in welchem Abschnitt die Figur steckt (volle Abschnitte), aber nicht die genauen LeP.
+ * @returns {{ cells: number[], level: 'gut'|'verletzt'|'kritisch'|'am-boden', label: string } | null}
+ *          cells = Füllung je Abschnitt (0 … 1); null, wenn keine LeP bekannt sind
+ */
+export function lifeBar(currentValue, maxValue, { segments = 1, exact = true } = {}) {
+  const current = Math.round(lifeNumber(currentValue));
+  const max = Math.round(lifeNumber(maxValue));
+  if (!Number.isFinite(current) || !Number.isFinite(max) || max <= 0) return null;
+  const fraction = clamp(current / max, 0, 1);
+  const filled = current <= 0 ? 0 : Math.max(1, Math.ceil(fraction * segments - 1e-9));
+  const shown = exact ? fraction : filled / segments;
+  const cells = Array.from({ length: segments }, (_, index) => round2(clamp(shown * segments - index, 0, 1)));
+  let level = 'kritisch';
+  if (current <= 0) level = 'am-boden';
+  else if (shown > 0.5) level = 'gut';
+  else if (shown > 0.25) level = 'verletzt';
+  const label = exact ? `LeP ${current} von ${max}` : `Lebensenergie etwa ${filled} von ${segments} Vierteln`;
+  return { cells, level, label };
+}
+
+/**
+ * Lebensbalken einer Figur. Helden: genau – aus dem Heldenbogen, wenn das Gerät ihn kennt,
+ * sonst aus der Figur (die Datenbank spiegelt die LeP der Helden auf ihre Figuren).
+ * Gegner/NSC: in Abschnitten, genau nur für den Meister.
+ */
+export function tokenLifeBar(token, hero, { master = false } = {}) {
+  if (token.character_id) {
+    const pool = hero?.base?.le;
+    return pool ? lifeBar(pool.current, pool.max) : lifeBar(token.le_current, token.le_max);
+  }
+  return lifeBar(token.le_current, token.le_max, { segments: LIFE_SEGMENTS, exact: master });
+}
+
 /**
  * Figuren, die zum Eintrag „am Zug“ im Kampf gehören: Helden über die Helden-ID,
  * Gegner über den Namen (z. B. „Ork 2“ im Kampf und auf der Karte).

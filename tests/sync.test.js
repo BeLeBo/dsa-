@@ -9,7 +9,7 @@ import { toServerError, ServerError, projectUrl } from '../js/supabase.js';
 import { createCharacterSync, readCachedCharacter } from '../js/sync.js';
 import { createHeroStore, REMOTE } from '../js/store.js';
 import { createHero, createWeapon } from '../js/sheet.js';
-import { clone } from '../js/util.js';
+import { clone, timestampMs, isOlderTimestamp } from '../js/util.js';
 
 // ---------------------------------------------------------------------------
 // Drei-Wege-Merge
@@ -395,4 +395,15 @@ test(SYNC, 'Live-Meldung ohne Heldendaten wird ignoriert (kein leerer Held)', as
   await wait(60);
   assertEqual(context.saved.length, 0);
   await cleanup(context);
+});
+
+test('Hilfsfunktionen (util.js)', 'Zeitstempel vom Server: ISO und Postgres-Schreibweise, immer UTC', () => {
+  const iso = timestampMs('2026-09-30T20:19:04.470123+00:00');
+  assertEqual(iso, Date.UTC(2026, 8, 30, 20, 19, 4, 470));
+  assertEqual(timestampMs('2026-09-30 20:19:04.470123+00'), iso, 'Postgres-Schreibweise');
+  assertEqual(timestampMs('2026-09-30 22:19:04.470+02'), iso, 'andere Zeitzone');
+  assertTrue(Number.isNaN(timestampMs(null)) && Number.isNaN(timestampMs('kaputt')), 'unlesbar');
+  assertTrue(isOlderTimestamp('2026-09-30T20:19:04+00:00', '2026-09-30 20:19:05+00'), 'älter');
+  assertTrue(!isOlderTimestamp('2026-09-30T20:19:05+00:00', '2026-09-30T20:19:04+00:00'), 'neuer');
+  assertTrue(!isOlderTimestamp(undefined, '2026-09-30T20:19:04+00:00'), 'ohne Zeitstempel nie älter');
 });

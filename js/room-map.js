@@ -10,6 +10,7 @@ import * as serverApi from './map-api.js';
 import { prepareMapImage, prepareTokenImage } from './image.js';
 import { createObservable } from './store.js';
 import { readJson, writeJson } from './storage.js';
+import { isOlderTimestamp } from './util.js';
 import { normalizeHero, heroName } from './sheet.js';
 import {
   defaultGrid,
@@ -160,6 +161,8 @@ export function createMapController({
     const row = withPendingLife(incoming);
     const tokens = state.get().tokens;
     const previous = tokens.find((token) => token.id === row.id);
+    // Eine verspätete Live-Meldung darf einen neueren Stand nicht überschreiben.
+    if (isOlderTimestamp(row.updated_at, previous?.updated_at)) return;
     const moved = !previous || previous.x !== row.x || previous.y !== row.y;
     state.update({
       // Bewegte Figur nach oben; sonst (z. B. neue LeP) bleibt die Reihenfolge.

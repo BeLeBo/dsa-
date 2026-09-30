@@ -95,6 +95,7 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
  * @param {object} options
  * @param {(token: object) => boolean} options.canMove  darf dieses Gerät die Figur ziehen?
  * @param {(token: object) => boolean} options.isMine   eigene Figur (Spieler) – anfangs im Blick
+ * @param {(token: object) => object|null} options.lifeOf  Lebensbalken (siehe tokenLifeBar in map.js)
  * @param {() => boolean} options.selectable            Auswahl erlaubt (Meister)?
  * @param {(moves: {id, x, y}[]) => void} options.onMove  Figuren abgelegt (eingerastet)
  * @param {(ids: string[]) => void} options.onSelect      Auswahl hat sich geändert
@@ -106,6 +107,7 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
 export function createMapStage({
   canMove,
   isMine,
+  lifeOf = () => null,
   selectable = () => false,
   onMove,
   onSelect = () => {},
@@ -310,6 +312,28 @@ export function createMapStage({
     entry.element.style.transform = `translate(${center.x - diameter / 2}px, ${center.y - diameter / 2}px)`;
   }
 
+  /** Lebensbalken unter der Figur: ein durchgehender Balken oder mehrere Abschnitte. */
+  function renderLife(entry, life) {
+    entry.element.classList.toggle('has-life', Boolean(life));
+    entry.element.classList.toggle('is-down', life?.level === 'am-boden');
+    entry.life.hidden = !life;
+    const key = life ? JSON.stringify(life) : '';
+    if (!life || key === entry.lifeKey) return;
+    entry.lifeKey = key;
+    entry.life.dataset.level = life.level;
+    entry.life.setAttribute('aria-label', life.label);
+    if (entry.life.children.length !== life.cells.length) {
+      entry.life.replaceChildren(
+        ...life.cells.map(() =>
+          h('span', { class: 'map-token-life-cell' }, h('span', { class: 'map-token-life-fill' })),
+        ),
+      );
+    }
+    life.cells.forEach((fill, index) => {
+      entry.life.children[index].firstChild.style.width = `${Math.round(fill * 100)}%`;
+    });
+  }
+
   const isDragged = (id) => gesture?.kind === 'token' && gesture.moved && gesture.group.includes(id);
 
   function updateToken(entry, token) {
@@ -325,20 +349,23 @@ export function createMapStage({
     else entry.element.removeAttribute('aria-pressed');
     entry.name.textContent = token.name;
     entry.element.setAttribute('aria-label', `${token.name}${token.hidden ? ' (verborgen)' : ''}`);
+    renderLife(entry, lifeOf(token));
     renderFace(entry, token);
     placeToken(entry);
   }
 
   function createTokenView(token) {
     const face = h('span', { class: 'map-token-face' });
+    const life = h('span', { class: 'map-token-life', role: 'img', hidden: true });
     const name = h('span', { class: 'map-token-name' });
     const tokenElement = h(
       'div',
       { class: 'map-token', role: 'button', tabindex: '0', dataset: { tokenId: token.id } },
       face,
+      life,
       name,
     );
-    return { element: tokenElement, face, name, token, position: { x: token.x, y: token.y } };
+    return { element: tokenElement, face, life, lifeKey: '', name, token, position: { x: token.x, y: token.y } };
   }
 
   function renderTokens() {
@@ -713,6 +740,10 @@ export function createMapStage({
       renderTokens();
       setSelection([...selected]); // verschwundene Figuren fallen aus der Auswahl
       if (!userMoved && !hadMine && tokens.some(isMine)) showStart(); // eigene Figur ist dazugekommen
+    },
+    /** Anzeige aller Figuren auffrischen (z. B. neue LeP im Heldenbogen). */
+    refresh() {
+      for (const entry of tokenViews.values()) updateToken(entry, entry.token);
     },
     /** Figuren, die gerade am Zug sind, hervorheben. */
     setHighlight(ids) {
