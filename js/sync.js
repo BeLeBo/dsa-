@@ -205,30 +205,32 @@ export function createCharacterSync({
 // ---------------------------------------------------------------------------
 
 /**
- * Abonniert Änderungen an Helden und Mitgliedern eines Raums.
- * Die Zugriffsregeln gelten auch hier: Spieler erhalten nur ihren eigenen Helden.
+ * Abonniert Änderungen im Raum: Helden, Mitglieder, neue Würfe und den Kampf.
+ * Die Zugriffsregeln gelten auch hier: Spieler erhalten nur ihren eigenen Helden
+ * und nur die Würfe, die sie sehen dürfen.
  * @returns {Promise<() => void>} Funktion zum Beenden des Abos
  */
-export async function subscribeToRoom(
-  roomId,
-  { onCharacter, onCharacterDeleted, onMembersChanged, onReconnect, onLive },
-) {
+export async function subscribeToRoom(roomId, handlers) {
+  const { onCharacter, onCharacterDeleted, onMembersChanged, onRoll, onRoom, onReconnect, onLive } = handlers;
   const client = await getClient();
+  const inRoom = `room_id=eq.${roomId}`;
   let connectedBefore = false;
   const channel = client
     .channel(`raum-${roomId}`)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'characters', filter: `room_id=eq.${roomId}` },
-      (payload) => {
-        if (payload.eventType === 'DELETE') onCharacterDeleted(payload.old?.id);
-        else onCharacter(payload.new);
-      },
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'characters', filter: inRoom }, (payload) => {
+      if (payload.eventType === 'DELETE') onCharacterDeleted(payload.old?.id);
+      else onCharacter(payload.new);
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: inRoom }, () =>
+      onMembersChanged(),
+    )
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'rolls', filter: inRoom }, (payload) =>
+      onRoll(payload.new),
     )
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` },
-      () => onMembersChanged(),
+      { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+      (payload) => onRoom(payload.new),
     )
     .subscribe((status) => {
       if (status === 'SUBSCRIBED') {

@@ -5,6 +5,7 @@
 import { h } from './dom.js';
 import { describeOutcome, describeModifier, formatModifier, formatNumber } from '../format.js';
 import { formatTime } from '../util.js';
+import { VISIBILITY, VISIBILITY_LABELS } from '../log.js';
 
 function outcomeBanner(result) {
   const { text, tone } = describeOutcome(result);
@@ -173,12 +174,22 @@ function diceSummary(result) {
   }
 }
 
+/** Kleine Markierungen: Sichtbarkeit (wenn nicht öffentlich) und „wird übertragen“. */
+function logBadges(record) {
+  const badges = [];
+  if (record.visibility && record.visibility !== VISIBILITY.PUBLIC) {
+    badges.push(h('span', { class: `log-badge badge-${record.visibility}` }, VISIBILITY_LABELS[record.visibility]));
+  }
+  if (record.pending) badges.push(h('span', { class: 'log-badge badge-pending' }, 'wird übertragen …'));
+  return badges;
+}
+
 /** Protokolleintrag: Kopfzeile mit Name, Uhrzeit, Probe und Ergebnis; aufklappbar. */
 export function renderLogEntry(record) {
   const { text, tone } = describeOutcome(record.result);
   return h(
     'details',
-    { class: 'log-entry' },
+    { class: 'log-entry', dataset: { id: record.id } },
     h(
       'summary',
       {},
@@ -186,6 +197,7 @@ export function renderLogEntry(record) {
         'div',
         { class: 'log-head' },
         h('span', { class: 'log-actor' }, record.actor),
+        logBadges(record),
         h('time', { datetime: record.time }, formatTime(record.time)),
       ),
       h(

@@ -93,6 +93,21 @@ function createHeader(store, { title, subtitle, menu }) {
 
 function createTabBar(tabs, panels) {
   const buttons = new Map();
+  const badges = new Map();
+  const unseen = new Map();
+
+  /** Zähler am Tab (z. B. neue Würfe im Protokoll); 0 blendet ihn aus. */
+  function setBadge(id, count) {
+    unseen.set(id, count);
+    const badge = badges.get(id);
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.hidden = count <= 0;
+  }
+
+  /** Meldet etwas Neues in einem Tab, das gerade nicht offen ist. */
+  function notify(id) {
+    if (panels.get(id).hidden) setBadge(id, (unseen.get(id) ?? 0) + 1);
+  }
 
   function select(id) {
     const target = tabs.some((tab) => tab.id === id) ? id : tabs[0].id;
@@ -101,6 +116,7 @@ function createTabBar(tabs, panels) {
       panels.get(tab.id).hidden = !active;
       buttons.get(tab.id).setAttribute('aria-selected', String(active));
     }
+    setBadge(target, 0);
     writeJson(TAB_KEY, target);
     window.scrollTo(0, 0);
   }
@@ -109,18 +125,21 @@ function createTabBar(tabs, panels) {
     'nav',
     { class: 'tab-bar', role: 'tablist', 'aria-label': 'Bereiche' },
     tabs.map((tab) => {
+      const badge = h('span', { class: 'tab-badge', hidden: true, 'aria-label': 'neu' });
       const button = h(
         'button',
         { type: 'button', role: 'tab', 'aria-controls': `tab-${tab.id}`, onclick: () => select(tab.id) },
         icon(tab.icon),
         h('span', {}, tab.name),
+        badge,
       );
       buttons.set(tab.id, button);
+      badges.set(tab.id, badge);
       return button;
     }),
   );
   select(readJson(TAB_KEY, tabs[0].id));
-  return { element, select };
+  return { element, select, notify };
 }
 
 /**
@@ -132,10 +151,21 @@ function createTabBar(tabs, panels) {
  * @param {() => string} options.title    Titel, wenn kein Held geöffnet ist
  * @param {() => string|null} options.subtitle  z. B. Raum und Rolle
  * @param {() => string} options.actorName     Name für freie Würfe
+ * @param {object} [options.rollOptions]        { visibility, canSeeSecret() } – siehe Probendialog
  * @param {() => Node} options.renderEmptyHero Inhalt des Held-Tabs ohne Held
  * @param {() => object} options.menu     Menüeinträge (siehe menu.js)
  */
-export function createShell({ store, log, tabs, title, subtitle = () => null, actorName, renderEmptyHero, menu }) {
+export function createShell({
+  store,
+  log,
+  tabs,
+  title,
+  subtitle = () => null,
+  actorName,
+  renderEmptyHero,
+  menu,
+  rollOptions = {},
+}) {
   const header = createHeader(store, { title, subtitle, menu });
   const panels = new Map(
     tabs.map((tab) => [tab.id, h('section', { id: `tab-${tab.id}`, class: 'tab-panel', role: 'tabpanel' })]),
@@ -143,7 +173,7 @@ export function createShell({ store, log, tabs, title, subtitle = () => null, ac
 
   const openCheck = (spec) => {
     try {
-      openCheckDialog({ store, log }, spec);
+      openCheckDialog({ store, log, rollOptions }, spec);
     } catch (error) {
       showError(error, 'Probe nicht möglich');
     }
@@ -152,10 +182,14 @@ export function createShell({ store, log, tabs, title, subtitle = () => null, ac
   const sheetRoot = h('div', { class: 'sheet' });
   panels.get(TABS.hero.id).append(sheetRoot);
   const sheet = createSheetView(sheetRoot, store, { openCheck, renderEmpty: renderEmptyHero });
-  createDiceView(panels.get(TABS.dice.id), { store, log, openCheck, actorName });
+  createDiceView(panels.get(TABS.dice.id), { store, log, openCheck, actorName, rollOptions });
   createLogView(panels.get(TABS.log.id), log);
 
   const tabBar = createTabBar(tabs, panels);
+  // Neue Würfe anderer zählen, solange das Protokoll nicht offen ist.
+  log.subscribe((entries, change) => {
+    if (change?.remote) tabBar.notify(TABS.log.id);
+  });
   setChildren(
     document.getElementById('app'),
     header.element,

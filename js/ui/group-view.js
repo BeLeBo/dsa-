@@ -1,9 +1,10 @@
 /**
- * group-view.js – Tab „Gruppe“: Raumcode und Einladung, Mitglieder, Helden.
- * Der Meister sieht alle Helden live, kann sie öffnen, zuweisen und löschen.
+ * group-view.js – Tab „Gruppe“: Kampf (Initiative), Raumcode und Einladung, Helden, Mitglieder.
+ * Der Meister sieht alle Helden live, passt LE direkt an, öffnet, übergibt und löscht Helden.
  */
 import { h, setChildren } from './dom.js';
 import { confirmDialog } from './dialog.js';
+import { renderCombatCard } from './combat-view.js';
 import { ROLE_NAMES, ROLES } from '../room.js';
 import { heroName, normalizeHero, describeConditions } from '../sheet.js';
 
@@ -15,13 +16,43 @@ function vital(label, pool) {
   return h('span', { class: 'vital' }, h('small', {}, label), `${pool.current}/${pool.max}`);
 }
 
-function heroSummary(hero) {
+/** LE mit −/+ für den Meister (z. B. Schaden direkt aus der Übersicht abziehen). */
+function lifeControl(character, hero, adjustPool) {
+  return h(
+    'span',
+    { class: 'vital vital-edit' },
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'mini-step',
+        'aria-label': `${heroName(hero)}: LE −1`,
+        onclick: () => adjustPool(character.id, 'le', -1),
+      },
+      '−',
+    ),
+    h('small', {}, 'LE'),
+    `${hero.base.le.current}/${hero.base.le.max}`,
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'mini-step',
+        'aria-label': `${heroName(hero)}: LE +1`,
+        onclick: () => adjustPool(character.id, 'le', 1),
+      },
+      '+',
+    ),
+  );
+}
+
+function heroSummary(character, hero, adjustPool) {
   const conditions = describeConditions(hero);
   return [
     h(
       'div',
       { class: 'vitals' },
-      vital('LE', hero.base.le),
+      adjustPool ? lifeControl(character, hero, adjustPool) : vital('LE', hero.base.le),
       hero.base.asp.max > 0 ? vital('AsP', hero.base.asp) : null,
       hero.base.kap.max > 0 ? vital('KaP', hero.base.kap) : null,
       vital('SchiP', hero.base.schip),
@@ -33,12 +64,23 @@ function heroSummary(hero) {
 /**
  * @param {HTMLElement} root
  * @param {object} options
- * @param {object} options.room      Observable { session, members, characters, live }
- * @param {() => string|null} options.currentCharacterId
- * @param {object} options.actions   { open(id), assign(characterId, userId), remove(id), leave(), share() }
+ * @param {object} options.room      Observable { session, members, characters, live, combat }
+ * @param {() => string|null} options.currentCharacterId  gerade geöffneter Held
+ * @param {object} options.actions   { open(id), assign(characterId, userId), remove(id), leave(), share(),
+ *                                     adjustPool(characterId, key, delta) }
  *        leave() fragt selbst nach; Zuweisen und Löschen werden hier bestätigt.
+ * @param {object} options.combatActions  siehe combat-view.js
  */
-export function createGroupView(root, { room, currentCharacterId, actions }) {
+export function createGroupView(root, { room, currentCharacterId, actions, combatActions }) {
+  const ui = { editingCombat: false };
+  const combatViewActions = {
+    ...combatActions,
+    toggleEditing: () => {
+      ui.editingCombat = !ui.editingCombat;
+      render();
+    },
+  };
+
   function memberName(members, userId) {
     return members.find((member) => member.user_id === userId)?.display_name ?? 'niemand';
   }
@@ -86,7 +128,7 @@ export function createGroupView(root, { room, currentCharacterId, actions }) {
         h('strong', {}, heroName(hero)),
         h('span', { class: 'row-sub' }, `Spieler: ${memberName(members, character.owner_id)}`),
       ),
-      heroSummary(hero),
+      heroSummary(character, hero, isMaster ? actions.adjustPool : null),
       isMaster
         ? h(
             'div',
@@ -116,12 +158,21 @@ export function createGroupView(root, { room, currentCharacterId, actions }) {
   }
 
   function render() {
-    const { session, members, characters, live } = room.get();
+    const { session, members, characters, live, combat } = room.get();
     const isMaster = session.role === ROLES.MASTER;
     const heroOwners = new Map(characters.map((character) => [character.owner_id, character]));
+    const myCharacterId = heroOwners.get(session.userId)?.id ?? null;
 
     setChildren(
       root,
+      renderCombatCard({
+        combat,
+        isMaster,
+        characters,
+        myCharacterId,
+        editing: ui.editingCombat,
+        actions: combatViewActions,
+      }),
       h(
         'section',
         { class: 'card' },
@@ -192,10 +243,11 @@ export function createGroupView(root, { room, currentCharacterId, actions }) {
     );
   }
 
-  // Nicht neu zeichnen, während eine Auswahlliste offen ist (würde sie schließen) – danach nachholen.
+  // Nicht neu zeichnen, während eine Auswahlliste offen ist oder getippt wird – danach nachholen.
   let pending = false;
   function renderWhenIdle() {
-    if (document.activeElement?.tagName === 'SELECT' && root.contains(document.activeElement)) pending = true;
+    const active = document.activeElement;
+    if (['SELECT', 'INPUT'].includes(active?.tagName) && root.contains(active)) pending = true;
     else render();
   }
   root.addEventListener('focusout', () => {

@@ -5,8 +5,10 @@
 -- komplett einfügen → „Run“. Das Skript darf mehrfach ausgeführt werden.
 --
 -- Rollen:
---   Meister  – sieht und bearbeitet alle Helden des Raums, sieht alle Würfe.
---   Spieler  – sieht und bearbeitet nur den eigenen Helden.
+--   Meister  – sieht und bearbeitet alle Helden des Raums, sieht alle Würfe,
+--              führt den Kampf (Initiative) und kann das Protokoll leeren.
+--   Spieler  – sieht und bearbeitet nur den eigenen Helden, sieht öffentliche Würfe
+--              und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister).
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- =============================================================================
 
@@ -28,6 +30,12 @@ create table if not exists public.rooms (
   created_by uuid default auth.uid() references auth.users (id) on delete set null,
   created_at timestamptz not null default now()
 );
+
+-- Laufender Kampf (Initiative-Reihenfolge, wer ist dran) – nur der Meister ändert ihn.
+alter table public.rooms add column if not exists combat jsonb
+  check (combat is null or (jsonb_typeof(combat) = 'object' and pg_column_size(combat) < 200000));
+-- Zeitpunkt, zu dem der Meister das Protokoll zuletzt geleert hat (für alle Geräte).
+alter table public.rooms add column if not exists log_cleared_at timestamptz;
 
 create table if not exists private.room_pins (
   room_id uuid primary key references public.rooms (id) on delete cascade,
@@ -321,6 +329,23 @@ begin
 end;
 $$;
 
+-- Meister leert das gemeinsame Würfelprotokoll; alle Geräte erfahren es über rooms.log_cleared_at.
+create or replace function public.clear_log(p_room_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform private.require_user();
+  if not public.is_room_master(p_room_id) then
+    raise exception 'Nur der Meister kann das Protokoll leeren.' using errcode = '42501';
+  end if;
+  delete from public.rolls r where r.room_id = p_room_id;
+  update public.rooms set log_cleared_at = now() where id = p_room_id;
+end;
+$$;
+
 -- -----------------------------------------------------------------------------
 -- Row Level Security
 -- -----------------------------------------------------------------------------
@@ -335,6 +360,13 @@ drop policy if exists "Mitglieder sehen ihren Raum" on public.rooms;
 create policy "Mitglieder sehen ihren Raum" on public.rooms
   for select to authenticated
   using (public.is_room_member(id));
+
+-- Der Meister führt den Kampf (Spalte combat, siehe Rechte unten).
+drop policy if exists "Meister führt den Kampf" on public.rooms;
+create policy "Meister führt den Kampf" on public.rooms
+  for update to authenticated
+  using (public.is_room_master(id))
+  with check (public.is_room_master(id));
 
 -- Mitglieder: sehen sich gegenseitig; jeder kann den Raum verlassen.
 drop policy if exists "Mitglieder sehen die Mitglieder ihres Raums" on public.room_members;
@@ -407,12 +439,13 @@ create policy "Meister kann das Protokoll leeren" on public.rolls
 revoke all on public.rooms, public.room_members, public.characters, public.rolls from anon, authenticated;
 
 grant select on public.rooms to authenticated;
+grant update (combat) on public.rooms to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
 grant update (data) on public.characters to authenticated;
 grant select, delete on public.rolls to authenticated;
-grant insert (room_id, character_id, actor, visibility, data) on public.rolls to authenticated;
+grant insert (id, room_id, character_id, actor, visibility, data) on public.rolls to authenticated;
 
 revoke all on function public.is_room_member(uuid) from public, anon;
 revoke all on function public.is_room_master(uuid) from public, anon;
@@ -420,6 +453,7 @@ revoke all on function public.create_room(text, text, text) from public, anon;
 revoke all on function public.join_room(text, text) from public, anon;
 revoke all on function public.claim_master(text, text, text) from public, anon;
 revoke all on function public.assign_character(uuid, uuid) from public, anon;
+revoke all on function public.clear_log(uuid) from public, anon;
 
 grant execute on function public.is_room_member(uuid) to authenticated;
 grant execute on function public.is_room_master(uuid) to authenticated;
@@ -427,9 +461,10 @@ grant execute on function public.create_room(text, text, text) to authenticated;
 grant execute on function public.join_room(text, text) to authenticated;
 grant execute on function public.claim_master(text, text, text) to authenticated;
 grant execute on function public.assign_character(uuid, uuid) to authenticated;
+grant execute on function public.clear_log(uuid) to authenticated;
 
 -- -----------------------------------------------------------------------------
--- Realtime: Änderungen an Helden, Mitgliedern und Würfen live verteilen.
+-- Realtime: Änderungen an Helden, Mitgliedern, Würfen und am Kampf live verteilen.
 -- Die Zugriffsregeln oben gelten auch für Realtime.
 -- -----------------------------------------------------------------------------
 
@@ -440,7 +475,7 @@ begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     return;
   end if;
-  foreach v_table in array array['characters', 'room_members', 'rolls'] loop
+  foreach v_table in array array['rooms', 'characters', 'room_members', 'rolls'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', v_table);
     exception when duplicate_object then

@@ -9,29 +9,47 @@ import { actionButton, derived } from './sheet/parts.js';
 import { rollFree } from '../checks.js';
 import { techniqueInfo } from '../sheet.js';
 import { ATTRIBUTES } from '../rules.js';
+import { VISIBILITY } from '../log.js';
+import { visibilityControl, lastVisibility } from './visibility-control.js';
 
 const QUICK_EXPRESSIONS = ['1W20', '3W20', '1W6', '2W6', '3W6', '1W3'];
 
 /**
  * @param {HTMLElement} root
- * @param {object} deps { store, log, openCheck, actorName() → Name für freie Würfe }
+ * @param {object} deps { store, log, openCheck, actorName() → Name für freie Würfe, rollOptions }
+ *        rollOptions wie im Probendialog: { visibility, canSeeSecret() }
  */
-export function createDiceView(root, { store, log, openCheck, actorName }) {
-  const state = { expression: '', lastRecord: null, error: null };
+export function createDiceView(root, { store, log, openCheck, actorName, rollOptions = {} }) {
+  const { visibility: chooseVisibility = false, canSeeSecret = () => true } = rollOptions;
+  const state = {
+    expression: '',
+    lastRecord: null,
+    error: null,
+    visibility: chooseVisibility ? lastVisibility() : VISIBILITY.PUBLIC,
+  };
   const resultArea = h('div', { class: 'free-result', 'aria-live': 'polite' });
   const quickArea = h('div', { class: 'quick-checks' });
 
+  function renderLastRecord() {
+    const record = state.lastRecord;
+    if (!record || state.error) return null;
+    if (record.visibility === VISIBILITY.SECRET && !canSeeSecret()) {
+      return h(
+        'p',
+        { class: 'roll-note' },
+        `Verdeckt gewürfelt (${record.label}) – das Ergebnis sieht nur der Meister.`,
+      );
+    }
+    return renderRollDetails(record);
+  }
+
   function showResult() {
-    setChildren(
-      resultArea,
-      state.error ? h('p', { class: 'error-text' }, state.error) : null,
-      state.lastRecord && !state.error ? renderRollDetails(state.lastRecord) : null,
-    );
+    setChildren(resultArea, state.error ? h('p', { class: 'error-text' }, state.error) : null, renderLastRecord());
   }
 
   function rollExpressionText(text) {
     try {
-      const record = rollFree(actorName(), text);
+      const record = { ...rollFree(actorName(), text), visibility: state.visibility };
       log.add(record);
       state.lastRecord = record;
       state.error = null;
@@ -141,9 +159,14 @@ export function createDiceView(root, { store, log, openCheck, actorName }) {
   }
 
   const quickCard = h('section', { class: 'card' }, h('h2', {}, 'Schnellzugriff'), quickArea);
+  const visibility = chooseVisibility
+    ? visibilityControl(state.visibility, (value) => {
+        state.visibility = value;
+      })
+    : null;
   setChildren(
     root,
-    h('section', { class: 'card' }, h('h2', {}, 'Freier Wurf'), form, quickDice, resultArea),
+    h('section', { class: 'card' }, h('h2', {}, 'Freier Wurf'), form, quickDice, visibility, resultArea),
     quickCard,
   );
   root.addEventListener('click', (event) => handleRollClick(event, root, openCheck));

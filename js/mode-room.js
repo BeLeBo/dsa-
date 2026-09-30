@@ -1,7 +1,8 @@
 /**
- * mode-room.js – Spielen im Raum: Helden liegen auf dem Server und werden live geteilt.
+ * mode-room.js – Spielen im Raum: Helden, Würfelprotokoll und Kampf liegen auf dem Server
+ * und werden live geteilt.
  *
- * Ablauf: anonym anmelden → Mitgliedschaft und Helden laden → eigenen Helden
+ * Ablauf: anonym anmelden → Mitgliedschaft, Helden und Protokoll laden → eigenen Helden
  * (Spieler) bzw. zuletzt geöffneten Helden (Meister) öffnen → Live-Abo starten.
  * Ohne Verbindung wird der zuletzt gespeicherte Stand vom Gerät gezeigt.
  */
@@ -12,7 +13,10 @@ import { showToast, showError } from './ui/toast.js';
 import { confirmDialog } from './ui/dialog.js';
 import { downloadHero, pickHeroFile } from './ui/hero-file.js';
 import { createHeroStore, createObservable } from './store.js';
-import { createLocalLog, LOG_KEY } from './log.js';
+import { VISIBILITY, VISIBILITY_LABELS } from './log.js';
+import { createRoomLog } from './room-log.js';
+import { createCombatController } from './room-combat.js';
+import { describeOutcome } from './format.js';
 import { ensureUser } from './supabase.js';
 import {
   ROLES,
@@ -30,11 +34,13 @@ import {
   createCharacter,
   deleteCharacter,
   fetchCharacter,
+  saveCharacterData,
   subscribeToRoom,
   readCachedCharacter,
 } from './sync.js';
 import { normalizeHero, heroName } from './sheet.js';
 import { isPlainObject } from './util.js';
+import { toInt } from './rules.js';
 import { readLocalHero } from './mode-local.js';
 
 /** Wartezeit bis zum nächsten Verbindungsversuch, wenn der Server nicht erreichbar ist. */
@@ -57,12 +63,52 @@ export function startRoomMode(initialSession, { onLeave }) {
   let connecting = false;
   let connected = false;
   let retryTimer = null;
+  let logClearedAt = null;
   const store = createHeroStore(null);
-  const log = createLocalLog(LOG_KEY);
-  const room = createObservable({ session, members: [], characters: [], live: false });
+  const room = createObservable({ session, members: [], characters: [], live: false, combat: null });
   const view = { state: 'connecting', error: '' };
 
   const isMaster = () => session.role === ROLES.MASTER;
+
+  const log = createRoomLog({
+    roomId: session.roomId,
+    context: () => ({ isMaster: isMaster(), userId: session.userId, characterId: sync?.id ?? null }),
+    onError: (error) => showError(error, 'Wurf nicht im Protokoll gespeichert'),
+  });
+
+  /** Heldendaten zu einer ID: geöffneter Held aus dem Speicher, sonst aus der Gruppenliste. */
+  function heroFor(characterId) {
+    if (sync?.id === characterId) return store.hero;
+    const row = room.get().characters.find((character) => character.id === characterId);
+    return row ? normalizeHero(row.data) : null;
+  }
+
+  const combat = createCombatController({
+    roomId: session.roomId,
+    room,
+    log,
+    isMaster,
+    heroFor,
+    myCharacterId: () => (isMaster() ? null : (sync?.id ?? null)),
+    onYourTurn: (message) => {
+      showToast(message, { duration: 8000 });
+      navigator.vibrate?.(200);
+    },
+    onError: (error) => showError(error, 'Kampf nicht gespeichert'),
+  });
+
+  // Neue Würfe: Initiative in den Kampf übernehmen; Meister erfährt verdeckte Würfe sofort.
+  log.subscribe((entries, change) => {
+    const record = change?.added;
+    if (!record) return;
+    combat.handleRecord(record);
+    if (change.remote && isMaster() && record.visibility !== VISIBILITY.PUBLIC) {
+      const { text } = describeOutcome(record.result);
+      showToast(`${record.actor} (${VISIBILITY_LABELS[record.visibility]}): ${record.label} – ${text}`, {
+        duration: 10000,
+      });
+    }
+  });
 
   const shell = createShell({
     store,
@@ -85,6 +131,7 @@ export function startRoomMode(initialSession, { onLeave }) {
       items: menuItems(),
       note: 'Änderungen werden automatisch gespeichert und live mit dem Raum geteilt.',
     }),
+    rollOptions: { visibility: true, canSeeSecret: isMaster },
   });
 
   // -------------------------------------------------------------------------
@@ -184,8 +231,18 @@ export function startRoomMode(initialSession, { onLeave }) {
     }
     const me = roster.members.find((member) => member.user_id === session.userId);
     if (me && me.role !== session.role) updateSession({ role: me.role });
-    room.update({ members: roster.members, characters: roster.characters });
+    room.update({ members: roster.members, characters: roster.characters, combat: roster.room.combat ?? null });
+    logClearedAt = roster.room.log_cleared_at;
     return roster;
+  }
+
+  /** Raum geändert (Kampf, Protokoll geleert). */
+  function handleRoomRow(row) {
+    combat.handleRoomRow(row);
+    if (Object.hasOwn(row, 'log_cleared_at') && row.log_cleared_at !== logClearedAt) {
+      logClearedAt = row.log_cleared_at;
+      log.load().catch(() => {});
+    }
   }
 
   /** Live-Meldungen enthalten große Spalten nicht immer (z. B. bei reiner Besitzer-Änderung) – dann nachladen. */
@@ -220,9 +277,12 @@ export function startRoomMode(initialSession, { onLeave }) {
         fetchMembers(session.roomId)
           .then((members) => room.update({ members }))
           .catch(() => {}),
+      onRoll: (row) => log.receive(row),
+      onRoom: handleRoomRow,
       onReconnect: () => {
         sync?.resync();
         refreshRoster().catch(() => {});
+        log.load().catch(() => {});
       },
       onLive: (live) => room.update({ live }),
     });
@@ -260,6 +320,7 @@ export function startRoomMode(initialSession, { onLeave }) {
       await openInitialCharacter(roster.characters);
       if (!sync) shell.setStatus('online');
       await startLive();
+      await log.load();
       connected = true;
     } catch (error) {
       handleConnectError(error);
@@ -313,6 +374,30 @@ export function startRoomMode(initialSession, { onLeave }) {
     if (await confirmDialog(question, { confirmLabel: 'Ersetzen', danger: true })) store.replace(imported);
   }
 
+  /**
+   * Meister: LE (o. Ä.) eines Helden direkt aus der Übersicht ändern. Mehrere schnelle Tipps
+   * werden nacheinander ausgeführt, damit keiner verloren geht.
+   */
+  let poolQueue = Promise.resolve();
+  function adjustPool(characterId, key, delta) {
+    if (sync?.id === characterId) {
+      const pool = store.hero.base[key];
+      pool.current = toInt(pool.current) + delta;
+      store.changed('value', null);
+      return;
+    }
+    poolQueue = poolQueue
+      .then(async () => {
+        const row = await fetchCharacter(characterId);
+        if (!row) return;
+        const hero = normalizeHero(row.data);
+        hero.base[key].current = toInt(hero.base[key].current) + delta;
+        await saveCharacterData(characterId, hero);
+        room.update({ characters: upsertById(room.get().characters, { ...row, data: hero }) });
+      })
+      .catch((error) => showError(error, 'Ändern fehlgeschlagen'));
+  }
+
   function menuItems() {
     const heroItems = store.hero
       ? [
@@ -330,9 +415,11 @@ export function startRoomMode(initialSession, { onLeave }) {
   createGroupView(shell.panel(TABS.group.id), {
     room,
     currentCharacterId: () => sync?.id ?? null,
+    combatActions: combat.actions,
     actions: {
       share,
       leave,
+      adjustPool,
       open: (id) =>
         run('Öffnen fehlgeschlagen', async () => {
           const row = room.get().characters.find((character) => character.id === id);
@@ -357,7 +444,10 @@ export function startRoomMode(initialSession, { onLeave }) {
   });
 
   // Beim Verlassen oder Wechseln der App sofort speichern; beim Zurückkehren abgleichen.
-  window.addEventListener('online', connect);
+  window.addEventListener('online', () => {
+    connect();
+    log.flushPending();
+  });
   window.addEventListener('pagehide', () => sync?.flush());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') sync?.flush();

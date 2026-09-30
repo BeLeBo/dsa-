@@ -1645,3 +1645,201 @@ input.num::-webkit-inner-spin-button {
   width: 100%;
   margin-bottom: 12px;
 }
+
+/* ---------- Tab-Zähler & Protokoll-Markierungen ---------- */
+
+.tab-bar button {
+  position: relative;
+}
+
+.tab-badge {
+  position: absolute;
+  top: 6px;
+  left: calc(50% + 6px);
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 20px;
+}
+
+.log-head {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.log-head time {
+  margin-left: auto;
+}
+
+.log-badge {
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.badge-master {
+  background: var(--critical-soft);
+  color: var(--critical);
+}
+
+.badge-secret {
+  background: var(--text);
+  color: var(--bg);
+}
+
+.badge-pending {
+  font-style: italic;
+}
+
+/* ---------- Sichtbarkeit eines Wurfs ---------- */
+
+.visibility {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.visibility .segmented button {
+  font-size: 0.9rem;
+}
+
+.visibility-hint {
+  margin: 0;
+}
+
+/* ---------- Kampf / Initiative ---------- */
+
+.combat-card {
+  border: 2px solid var(--accent);
+}
+
+.combat-current {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.combat-current.is-mine {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.initiative-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.initiative-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.initiative-row.is-current {
+  border-radius: var(--radius-small);
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+}
+
+.initiative-row.is-mine .initiative-name strong {
+  color: var(--accent);
+}
+
+.initiative-position {
+  width: 24px;
+  color: var(--muted);
+  font-weight: 700;
+  text-align: right;
+}
+
+.initiative-name {
+  flex: 1 1 120px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.initiative-total {
+  min-width: 40px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.initiative-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.initiative-actions .step-button {
+  width: var(--touch);
+  height: var(--touch);
+}
+
+.initiative-missing {
+  margin-top: 12px;
+}
+
+.combat-edit {
+  margin-top: 10px;
+}
+
+.npc-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.npc-form .grow {
+  flex: 1 1 140px;
+}
+
+.npc-form .narrow {
+  width: 84px;
+  flex: none;
+}
+
+.combat-end {
+  width: 100%;
+  margin-top: 14px;
+}
+
+/* LE-Anpassung in der Heldenübersicht (Meister) */
+
+.vital-edit {
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.mini-step {
+  width: var(--touch);
+  height: var(--touch);
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 1.1rem;
+  font-weight: 800;
+  cursor: pointer;
+}

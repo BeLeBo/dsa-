@@ -13,6 +13,7 @@ export const MIN_PIN_LENGTH = 4;
 export const ROOM_CODE_LENGTH = 6;
 const MAX_NAME_LENGTH = 40;
 const SESSION_KEY = 'dsa5.raum';
+const ROOM_COLUMNS = 'id, code, name, combat, log_cleared_at';
 
 // ---------------------------------------------------------------------------
 // Eingaben prüfen (rein, ohne Server)
@@ -144,11 +145,18 @@ export async function fetchMembers(roomId) {
 export async function fetchRoster(roomId) {
   const client = await getClient();
   const [room, members, characters] = await Promise.all([
-    unwrap(client.from('rooms').select('id, code, name').eq('id', roomId).maybeSingle()),
+    unwrap(client.from('rooms').select(ROOM_COLUMNS).eq('id', roomId).maybeSingle()),
     fetchMembers(roomId),
     fetchCharacters(roomId),
   ]);
   return { room, members, characters };
+}
+
+/** Meister: laufenden Kampf speichern (null = kein Kampf). */
+export async function updateCombat(roomId, combat) {
+  const client = await getClient();
+  const rows = await unwrap(client.from('rooms').update({ combat }).eq('id', roomId).select('id'));
+  if (rows.length === 0) throw new ServerError('Nur der Meister kann den Kampf führen.');
 }
 
 /** Meister: Helden einer Person im Raum zuweisen (z. B. nach Gerätewechsel). */

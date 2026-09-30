@@ -14,7 +14,7 @@ Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles
 | 1     | Dateistruktur, Regel-Logik (`rules.js`), Würfel (`dice.js`), Testseite | ✅ fertig |
 | 2     | Heldenbogen lokal (noch ohne Server)                                   | ✅ fertig |
 | 3     | Supabase: SQL, Räume, Rollen, Sync                                     | ✅ fertig |
-| 4     | Gemeinsames Würfelprotokoll, Meister-Ansicht, Initiative               | offen     |
+| 4     | Gemeinsames Würfelprotokoll, Meister-Ansicht, Initiative               | ✅ fertig |
 | 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)              | offen     |
 
 ## Einrichtung Schritt für Schritt
@@ -44,9 +44,11 @@ Die App meldet jedes Gerät anonym an – niemand braucht eine E-Mail-Adresse.
 2. Den kompletten Inhalt von [`supabase/schema.sql`](supabase/schema.sql) einfügen.
 3. **Run** klicken. Erwartet: „Success. No rows returned“.
 
-Das Skript legt die Tabellen `rooms`, `room_members`, `characters` (Held als `jsonb`) und `rolls` an,
-dazu die Zugriffsregeln (Row Level Security), die Funktionen zum Erstellen/Beitreten und die
-Realtime-Freigaben. Es darf jederzeit erneut ausgeführt werden, z. B. nach einem Update der App.
+Das Skript legt die Tabellen `rooms` (inkl. laufendem Kampf), `room_members`, `characters`
+(Held als `jsonb`) und `rolls` (Würfelprotokoll) an, dazu die Zugriffsregeln (Row Level Security),
+die Funktionen zum Erstellen/Beitreten und die Realtime-Freigaben. Es darf jederzeit erneut
+ausgeführt werden – **nach jedem Update der App bitte einmal erneut ausführen**, damit neue
+Spalten und Regeln dazukommen (bestehende Daten bleiben erhalten).
 
 ### 4. Schlüssel eintragen
 
@@ -106,9 +108,23 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
   Alternativ: Held exportieren und auf dem neuen Gerät aus der Datei laden.
 - **Meister-PIN:** wird nur als Hash gespeichert. Nach 10 falschen Eingaben innerhalb von 15 Minuten
   ist der Raum für PIN-Versuche kurz gesperrt. Längere PINs sind sicherer.
+- **Würfelprotokoll:** Jeder Wurf landet mit Heldennamen und Uhrzeit im gemeinsamen Protokoll.
+  Pro Wurf wählbar: **Öffentlich** (alle sehen ihn), **Nur Meister** (du und der Meister) oder
+  **Verdeckt** (nur der Meister – du selbst siehst das Ergebnis nicht, z. B. für Sinnesschärfe).
+  Der Meister bekommt verdeckte und Nur-Meister-Würfe zusätzlich als Meldung. Neue Würfe anderer
+  zeigt eine Zahl am Protokoll-Tab. Nur der Meister kann das Protokoll für alle leeren.
+- **Kampf & Initiative:** Der Meister startet unter **Gruppe** einen Kampf. Spieler würfeln ihre
+  Initiative im Heldenbogen (Basiswerte → Initiative) oder im Tab **Würfeln** – sie erscheint
+  automatisch in der Reihenfolge. Der Meister kann für Helden würfeln, Gegner hinzufügen
+  (z. B. „Ork“, INI-Basis 10, Anzahl 3), mit **Weiter ▶** durchklicken (nach dem Letzten beginnt
+  die nächste Kampfrunde) und unter „Werte anpassen“ Initiative ändern oder Einträge entfernen.
+  Alle sehen die Reihenfolge live; wer dran ist, bekommt **„Du bist am Zug!“**.
+- **Meister-Übersicht:** Unter **Gruppe** stehen alle Helden mit LE, AsP, KaP, SchiP und
+  Zuständen – live. LE lässt sich dort direkt mit −/+ ändern (z. B. Schaden abziehen).
 - **Offline:** Jede Änderung wird zuerst auf dem Gerät gespeichert. Oben steht dann
   „offline – wird später übertragen“. Sobald wieder eine Verbindung besteht, wird mit dem Serverstand
-  zusammengeführt und gespeichert. (Die App selbst offline starten können wird mit Phase 5 möglich.)
+  zusammengeführt und gespeichert. Würfe ohne Verbindung stehen mit „wird übertragen …“ im
+  Protokoll und werden nachgereicht. (Die App selbst offline starten können wird mit Phase 5 möglich.)
 
 ## Bedienung
 
@@ -125,9 +141,9 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 - **Stift-Symbol:** öffnet die Bearbeitung eines Eintrags (Probeneigenschaften, Spezialisierung, Waffendaten …).
 - **Leere Felder bei AW, INI und Kampfwerten** bedeuten „automatisch berechnen“; ein eingetragener Wert hat Vorrang.
 - **Würfeln:** freie Ausdrücke wie `2W6+3`, `1W20`, `3W20` sowie Schnellzugriff auf Eigenschaften und Waffen.
-- **Protokoll:** alle Würfe mit Heldennamen und Uhrzeit, zum Aufklappen mit allen Einzelwürfeln
-  (bis Phase 4 nur auf dem eigenen Gerät).
-- **Gruppe** (nur im Raum): Raumcode, Einladung, Mitglieder, Helden; **Raum verlassen**.
+- **Protokoll:** alle Würfe mit Heldennamen und Uhrzeit, zum Aufklappen mit allen Einzelwürfeln.
+  Im Raum gemeinsam für alle (je nach Sichtbarkeit), ohne Raum nur auf diesem Gerät.
+- **Gruppe** (nur im Raum): Kampf & Initiative, Raumcode, Einladung, Helden, Mitglieder; **Raum verlassen**.
 - **Menü (⋮):** Export/Import, Einladung teilen, Raum verlassen bzw. „Mit einer Gruppe spielen“,
   Hell-/Dunkel-/Automatik-Modus.
 
@@ -145,8 +161,8 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 ## Tests
 
 Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite prüft
-Regeln, Würfel, Heldenmodell, Proben, Zusammenführen gleichzeitiger Änderungen und den Abgleich
-(mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests
+Regeln, Würfel, Heldenmodell, Proben, Zusammenführen gleichzeitiger Änderungen, den Abgleich,
+das gemeinsame Protokoll und die Kampfreihenfolge (mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests
 erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle stehen ganz oben.
 
 ## Technisches
@@ -154,6 +170,9 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
 - **supabase-js** wird in fester Version vom CDN jsDelivr geladen, mit Integritätsprüfung (SRI).
   Wer die Version ändert, muss in `js/supabase.js` auch den Hash anpassen:
   `curl -s <URL> | openssl dgst -sha384 -binary | openssl base64 -A`
+- Würfe werden auf dem eigenen Gerät mit `crypto.getRandomValues` gewürfelt. Verdeckte Würfe sieht
+  der Spieler in der App nicht; wer sich im Browser in die Datenübertragung einliest, könnte sie
+  finden – für eine Runde unter Freunden ist das so gewollt einfach gehalten.
 - Nutzereingaben werden nie als HTML eingefügt (`js/ui/dom.js`), damit niemand über Heldennamen
   o. Ä. Code in fremde Browser schleusen kann.
 
@@ -167,6 +186,9 @@ supabase/schema.sql      Tabellen, Zugriffsregeln (RLS), Funktionen, Realtime
 js/config.js             Supabase-URL und öffentlicher anon-Key
 js/app.js                Start: Startseite, Raum oder „Ohne Raum“
 js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, Gruppe
+js/room-log.js           Gemeinsames Würfelprotokoll (Server, Warteschlange für offline)
+js/room-combat.js        Kampf im Raum: speichern, Initiative-Würfe übernehmen, „am Zug“
+js/combat.js             Kampfreihenfolge als reine Funktionen (Initiative, Runden)
 js/mode-local.js         Modus „Ohne Raum“: Held nur auf diesem Gerät
 js/supabase.js           Server: supabase-js laden, anonym anmelden, Fehlermeldungen
 js/room.js               Räume erstellen/beitreten/verlassen, Sitzung, Eingaben prüfen
@@ -180,12 +202,14 @@ js/checks.js             Proben ausführen (Held + Würfel + Regeln → Protokol
 js/format.js             Texte für Ergebnisse und Modifikatoren
 js/store.js              Hält den Helden und meldet Änderungen an die Ansichten
 js/saver.js              Speichern mit Verzögerung (Debounce) und Statusanzeige
-js/log.js                Würfelprotokoll dieses Geräts
+js/log.js                Sichtbarkeit von Würfen, Würfelprotokoll dieses Geräts
 js/storage.js            Sicherer Zugriff auf localStorage
 js/util.js               Allgemeine Hilfsfunktionen
 js/ui/shell.js           Rahmen: Kopfzeile, Tabs, Ansichten
 js/ui/home-view.js       Startseite (Raum beitreten/erstellen, ohne Raum)
-js/ui/group-view.js      Tab „Gruppe“
+js/ui/group-view.js      Tab „Gruppe“ (Meister-Übersicht)
+js/ui/combat-view.js     Kampfkarte: Initiative-Reihenfolge, wer ist am Zug
+js/ui/visibility-control.js  Auswahl „Öffentlich / Nur Meister / Verdeckt“
 js/ui/hero-choice.js     Held anlegen/übernehmen, Verbindungszustände
 js/ui/hero-file.js       Held als JSON sichern und laden
 js/ui/dom.js             Sicheres Erzeugen von Elementen (nie innerHTML mit Nutzerdaten)
@@ -204,8 +228,7 @@ tests/rules.test.html    Testseite – prüft alles automatisch
 tests/*.test.js          Testfälle
 ```
 
-Noch geplant: gemeinsames Protokoll mit Sichtbarkeit und Meister-Ansicht mit Initiative (Phase 4),
-`manifest.webmanifest` und `sw.js` (Phase 5).
+Noch geplant: `manifest.webmanifest` und `sw.js` (Phase 5).
 
 ## Regelentscheidungen
 

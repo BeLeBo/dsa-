@@ -34,6 +34,8 @@ import {
   isCheckRecord,
 } from '../checks.js';
 import { formatModifier } from '../format.js';
+import { VISIBILITY } from '../log.js';
+import { visibilityControl, lastVisibility } from './visibility-control.js';
 
 const VALUE_LABELS = { at: 'Attacke', pa: 'Parade', fk: 'Fernkampf' };
 
@@ -124,12 +126,15 @@ function resolveCheck(hero, spec) {
 
 /**
  * Öffnet den Probendialog.
- * @param {object} deps { store, log }
+ * @param {object} deps { store, log, rollOptions }
+ *        rollOptions: { visibility: Sichtbarkeit wählbar (im Raum), canSeeSecret(): sieht verdeckte Ergebnisse }
  * @param {object} spec Probenbeschreibung, z. B. { kind: 'talent', id: 'klettern' }
  */
-export function openCheckDialog({ store, log }, spec) {
+export function openCheckDialog({ store, log, rollOptions = {} }, spec) {
+  const { visibility: chooseVisibility = false, canSeeSecret = () => true } = rollOptions;
   const initial = resolveCheck(store.hero, spec);
   const state = {
+    visibility: chooseVisibility ? lastVisibility() : VISIBILITY.PUBLIC,
     modifier: 0,
     includeConditions: true,
     useSpecialization: false,
@@ -143,6 +148,9 @@ export function openCheckDialog({ store, log }, spec) {
     error: null,
   };
   const dialog = openDialog({ title: initial.label, className: 'check-dialog' });
+
+  /** Verdeckter Wurf eines Spielers: Das Ergebnis sieht nur der Meister. */
+  const resultHidden = () => state.visibility === VISIBILITY.SECRET && !canSeeSecret();
 
   // -------------------------------------------------------------------------
   // Einstellungen vor dem Wurf
@@ -222,6 +230,13 @@ export function openCheckDialog({ store, log }, spec) {
 
   function costControl(hero, check) {
     const resourceName = RESOURCE_NAMES[check.cost.resource];
+    if (resultHidden()) {
+      return h(
+        'p',
+        { class: 'section-hint' },
+        `Verdeckter Wurf: ${resourceName} bitte nach Ansage des Meisters von Hand abziehen.`,
+      );
+    }
     const available = hero.base[check.cost.resource].current;
     return h(
       'div',
@@ -275,6 +290,12 @@ export function openCheckDialog({ store, log }, spec) {
       check.cost ? costControl(hero, check) : null,
       check.kind === 'damage' ? toggle('Kritischer Treffer: Schaden verdoppeln', 'double') : null,
       totalModifierLine(hero, check),
+      chooseVisibility
+        ? visibilityControl(state.visibility, (value) => {
+            state.visibility = value;
+            renderSetup();
+          })
+        : null,
       state.error ? h('p', { class: 'error-text' }, state.error) : null,
     );
     setChildren(
@@ -320,12 +341,14 @@ export function openCheckDialog({ store, log }, spec) {
     const hero = store.hero;
     try {
       const check = resolveCheck(hero, spec);
-      const record = performRoll(hero, check);
+      const record = { ...performRoll(hero, check), visibility: state.visibility };
       log.add(record);
       state.record = record;
       state.error = null;
-      settleCost(hero, check, record);
-      store.changed('value', null);
+      if (!resultHidden()) {
+        settleCost(hero, check, record);
+        store.changed('value', null);
+      }
       renderResult();
     } catch (error) {
       state.error = error.message;
@@ -464,11 +487,19 @@ export function openCheckDialog({ store, log }, spec) {
         class: 'btn btn-primary',
         onclick: () => {
           dialog.close();
-          openCheckDialog({ store, log }, { kind: 'damage', id: check.weapon.id, double: critical });
+          openCheckDialog({ store, log, rollOptions }, { kind: 'damage', id: check.weapon.id, double: critical });
         },
       },
       critical ? 'Schaden würfeln (kritisch: ×2)' : 'Schaden würfeln',
     );
+  }
+
+  function renderHiddenResult() {
+    return [
+      h('p', { class: 'dialog-subtitle' }, initial.subtitle),
+      h('div', { class: 'outcome tone-neutral' }, 'Verdeckt gewürfelt'),
+      h('p', { class: 'roll-note' }, 'Der Wurf ist beim Meister. Das Ergebnis sieht nur der Meister.'),
+    ];
   }
 
   function renderResult() {
@@ -484,14 +515,15 @@ export function openCheckDialog({ store, log }, spec) {
       : null;
     let extra = null;
     try {
-      extra = [paymentInfo(), fateControls(), damageButton()];
+      extra = resultHidden() ? null : [paymentInfo(), fateControls(), damageButton()];
     } catch (error) {
       state.error = error.message;
     }
     setChildren(
       dialog.body,
-      h('p', { class: 'dialog-subtitle' }, initial.subtitle),
-      renderRollDetails(state.record, selection),
+      resultHidden()
+        ? renderHiddenResult()
+        : [h('p', { class: 'dialog-subtitle' }, initial.subtitle), renderRollDetails(state.record, selection)],
       extra,
       state.error ? h('p', { class: 'error-text' }, state.error) : null,
     );
