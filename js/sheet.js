@@ -391,6 +391,21 @@ export function describeConditions(hero) {
     .join(', ');
 }
 
+/** Listen mit Einträgen, die im Bogen als eigene Zeilen erscheinen. */
+const ENTRY_LISTS = ['weapons', 'spells', 'cantrips', ...TEXT_LISTS.map(({ key }) => key), 'inventory'];
+
+/**
+ * Kennung des Aufbaus: welche Einträge es gibt und welche Waffen Nah- bzw. Fernkampf sind.
+ * Ändert sie sich (z. B. durch eine Änderung des Meisters), werden die Listen neu aufgebaut.
+ */
+export function structureSignature(hero) {
+  if (!hero) return '';
+  return JSON.stringify([
+    ...ENTRY_LISTS.map((key) => hero[key].map((entry) => entry.id)),
+    hero.weapons.map((weapon) => weapon.technique),
+  ]);
+}
+
 // ---------------------------------------------------------------------------
 // Änderungen am Helden
 // ---------------------------------------------------------------------------

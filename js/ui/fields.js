@@ -45,11 +45,17 @@ function writeControl(element, value) {
   }
 }
 
-/** Überträgt alle Werte des Helden in die Felder – außer in das Feld, in dem gerade getippt wird. */
+/**
+ * Überträgt alle Werte des Helden in die Felder. Das Feld, in dem gerade getippt wird,
+ * bleibt unangetastet, solange es schon den richtigen Wert zeigt – so springt nie der Cursor,
+ * aber eine Änderung von außen (z. B. vom Meister) erscheint trotzdem.
+ */
 export function refreshValues(root, hero) {
   for (const element of root.querySelectorAll('[data-path]')) {
-    if (element === document.activeElement) continue;
-    writeControl(element, getPath(hero, element.dataset.path));
+    const value = getPath(hero, element.dataset.path);
+    const isEditing = element === document.activeElement && element.dataset.type !== 'roman';
+    if (isEditing && Object.is(readControl(element), value ?? null)) continue;
+    writeControl(element, value);
   }
 }
 

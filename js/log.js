@@ -5,6 +5,9 @@ import { readJson, writeJson } from './storage.js';
 
 export const MAX_LOG_ENTRIES = 200;
 
+/** Speicherschlüssel des Protokolls auf diesem Gerät. */
+export const LOG_KEY = 'dsa5.protokoll';
+
 export function createLocalLog(storageKey) {
   const stored = readJson(storageKey, []);
   let entries = Array.isArray(stored) ? stored : [];

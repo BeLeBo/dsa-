@@ -163,6 +163,7 @@ button {
 input[type='text'],
 input[type='number'],
 input[type='search'],
+input[type='password'],
 select,
 textarea {
   width: 100%;
@@ -1468,4 +1469,179 @@ input.num::-webkit-inner-spin-button {
   * {
     transition: none !important;
   }
+}
+
+/* ---------- Startseite ---------- */
+
+.home {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: max(24px, env(safe-area-inset-top)) var(--gutter) 32px;
+}
+
+.home-header {
+  margin-bottom: 16px;
+}
+
+.home-header h1 {
+  margin: 0 0 4px;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+.home-header p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.home-card h2 {
+  margin-bottom: 4px;
+}
+
+.home-card .stack {
+  margin: 12px 0;
+}
+
+.home-card .btn-large {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.home-card .error-text {
+  margin-top: 8px;
+}
+
+.home-message {
+  padding: 12px 14px;
+  border-radius: var(--radius-small);
+  background: var(--critical-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---------- Kopfzeile im Raum ---------- */
+
+.app-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Held anlegen / Verbindungszustände ---------- */
+
+.choice-card p {
+  margin-top: 0;
+}
+
+.choice-card .error-text {
+  margin-top: 10px;
+}
+
+/* ---------- Gruppe ---------- */
+
+.room-code {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.room-code-value {
+  font-size: 2rem;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+.live-status {
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.live-status::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.live-status.is-live::before {
+  background: var(--success);
+}
+
+.hero-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hero-card:last-child {
+  border-bottom: 0;
+}
+
+.hero-card.is-open {
+  margin: 0 -8px;
+  padding: 12px 8px;
+  border-radius: var(--radius-small);
+  background: var(--accent-soft);
+}
+
+.hero-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.hero-card-head strong {
+  font-size: 1.1rem;
+}
+
+.hero-card .vitals {
+  margin-top: 0;
+}
+
+.hero-card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hero-card-actions .field {
+  grid-column: 1 / -1;
+  order: 3;
+}
+
+.member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.member-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.member-list li:last-child {
+  border-bottom: 0;
+}
+
+.leave-button {
+  width: 100%;
+  margin-bottom: 12px;
 }

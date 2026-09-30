@@ -1,64 +1,13 @@
 /**
- * menu.js – Menü: Held exportieren/importieren, neuen Helden anlegen, Darstellung wählen.
+ * menu.js – Menü (⋮): Einträge des jeweiligen Modus plus Darstellung (Hell/Dunkel).
  */
-import { h } from './dom.js';
-import { openDialog, confirmDialog } from './dialog.js';
-import { showToast, showError } from './toast.js';
+import { h, setChildren } from './dom.js';
+import { openDialog } from './dialog.js';
+import { showError } from './toast.js';
 import { THEMES, currentTheme, setTheme } from './theme.js';
-import { createHero, exportHero, importHero, heroName } from '../sheet.js';
-import { downloadText, safeFilename } from '../util.js';
 
-function readFileText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Die Datei konnte nicht gelesen werden.'));
-    reader.readAsText(file);
-  });
-}
-
-/** Menü öffnen. deps: { store } */
-export function openMenu({ store }) {
-  const dialog = openDialog({ title: 'Menü', className: 'dialog-small' });
-
-  function exportCurrent() {
-    const hero = store.hero;
-    downloadText(`${safeFilename(hero.general.name)}.json`, exportHero(hero));
-    showToast('Held als JSON-Datei gespeichert.');
-  }
-
-  async function importFile(file) {
-    if (!file) return;
-    try {
-      const imported = importHero(await readFileText(file));
-      const question = `„${heroName(store.hero)}“ auf diesem Gerät durch „${heroName(imported)}“ ersetzen?`;
-      if (!(await confirmDialog(question, { confirmLabel: 'Ersetzen', danger: true }))) return;
-      store.replace(imported);
-      showToast(`„${heroName(imported)}“ wurde importiert.`);
-    } catch (error) {
-      showError(error, 'Import fehlgeschlagen');
-    }
-  }
-
-  async function createNew() {
-    dialog.close();
-    const question = `Neuen, leeren Helden anlegen? „${heroName(store.hero)}“ wird dabei überschrieben – vorher am besten exportieren.`;
-    if (await confirmDialog(question, { confirmLabel: 'Neu anlegen', danger: true })) {
-      store.replace(createHero());
-    }
-  }
-
-  const fileInput = h('input', {
-    type: 'file',
-    accept: 'application/json,.json',
-    hidden: true,
-    onchange: (event) => {
-      dialog.close();
-      importFile(event.target.files[0]);
-    },
-  });
-
-  const themeButtons = h(
+function themeSelector() {
+  return h(
     'div',
     { class: 'segmented', role: 'group', 'aria-label': 'Darstellung' },
     THEMES.map(({ id, name }) =>
@@ -81,27 +30,41 @@ export function openMenu({ store }) {
       ),
     ),
   );
+}
 
-  dialog.body.append(
+/**
+ * Öffnet das Menü.
+ * @param {object} options
+ * @param {{ label: string, onClick: Function, danger?: boolean }[]} options.items
+ * @param {string} [options.note]  Hinweis unter den Einträgen
+ */
+export function openMenu({ items, note = '' }) {
+  const dialog = openDialog({ title: 'Menü', className: 'dialog-small' });
+  const buttons = items.map(({ label, onClick, danger = false }) =>
     h(
-      'div',
-      { class: 'menu-list' },
-      h(
-        'button',
-        { type: 'button', class: 'btn menu-item', onclick: exportCurrent },
-        'Held exportieren (JSON-Sicherung)',
-      ),
-      h('button', { type: 'button', class: 'btn menu-item', onclick: () => fileInput.click() }, 'Held importieren …'),
-      h(
-        'button',
-        { type: 'button', class: 'btn menu-item btn-danger-outline', onclick: createNew },
-        'Neuen Helden anlegen',
-      ),
-      fileInput,
+      'button',
+      {
+        type: 'button',
+        class: `btn menu-item ${danger ? 'btn-danger-outline' : ''}`.trim(),
+        onclick: async () => {
+          dialog.close();
+          try {
+            await onClick();
+          } catch (error) {
+            showError(error, label);
+          }
+        },
+      },
+      label,
     ),
+  );
+
+  setChildren(
+    dialog.body,
+    h('div', { class: 'menu-list' }, buttons),
     h('h3', {}, 'Darstellung'),
-    themeButtons,
-    h('p', { class: 'section-hint' }, 'Der Held wird auf diesem Gerät gespeichert. Sichere ihn regelmäßig per Export.'),
+    themeSelector(),
+    note ? h('p', { class: 'section-hint' }, note) : null,
     h(
       'p',
       { class: 'section-hint' },

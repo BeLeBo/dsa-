@@ -1,0 +1,368 @@
+/**
+ * mode-room.js – Spielen im Raum: Helden liegen auf dem Server und werden live geteilt.
+ *
+ * Ablauf: anonym anmelden → Mitgliedschaft und Helden laden → eigenen Helden
+ * (Spieler) bzw. zuletzt geöffneten Helden (Meister) öffnen → Live-Abo starten.
+ * Ohne Verbindung wird der zuletzt gespeicherte Stand vom Gerät gezeigt.
+ */
+import { createShell, TABS } from './ui/shell.js';
+import { createGroupView } from './ui/group-view.js';
+import { renderHeroChoice } from './ui/hero-choice.js';
+import { showToast, showError } from './ui/toast.js';
+import { confirmDialog } from './ui/dialog.js';
+import { downloadHero, pickHeroFile } from './ui/hero-file.js';
+import { createHeroStore, createObservable } from './store.js';
+import { createLocalLog, LOG_KEY } from './log.js';
+import { ensureUser } from './supabase.js';
+import {
+  ROLES,
+  ROLE_NAMES,
+  saveRoomSession,
+  clearRoomSession,
+  fetchRoster,
+  fetchMembers,
+  leaveRoom,
+  assignCharacter,
+  inviteLink,
+} from './room.js';
+import {
+  createCharacterSync,
+  createCharacter,
+  deleteCharacter,
+  fetchCharacter,
+  subscribeToRoom,
+  readCachedCharacter,
+} from './sync.js';
+import { normalizeHero, heroName } from './sheet.js';
+import { isPlainObject } from './util.js';
+import { readLocalHero } from './mode-local.js';
+
+/** Wartezeit bis zum nächsten Verbindungsversuch, wenn der Server nicht erreichbar ist. */
+const RECONNECT_DELAY_MS = 30000;
+
+function upsertById(list, row) {
+  const index = list.findIndex((entry) => entry.id === row.id);
+  return index === -1 ? [...list, row] : list.map((entry, position) => (position === index ? row : entry));
+}
+
+/**
+ * Startet den Raum-Modus.
+ * @param {object} initialSession  gespeicherte Sitzung (siehe room.js)
+ * @param {object} options { onLeave(message) – zurück zur Startseite }
+ */
+export function startRoomMode(initialSession, { onLeave }) {
+  let session = { ...initialSession };
+  let sync = null;
+  let stopLive = null;
+  let connecting = false;
+  let connected = false;
+  let retryTimer = null;
+  const store = createHeroStore(null);
+  const log = createLocalLog(LOG_KEY);
+  const room = createObservable({ session, members: [], characters: [], live: false });
+  const view = { state: 'connecting', error: '' };
+
+  const isMaster = () => session.role === ROLES.MASTER;
+
+  const shell = createShell({
+    store,
+    log,
+    tabs: [TABS.hero, TABS.dice, TABS.log, TABS.group],
+    title: () => session.name || `Raum ${session.code}`,
+    subtitle: () => `${session.name ? `${session.name} · ` : ''}${session.code} · ${ROLE_NAMES[session.role]}`,
+    actorName: () => (store.hero ? heroName(store.hero) : session.displayName),
+    renderEmptyHero: () =>
+      renderHeroChoice({
+        state: view.state,
+        isMaster: isMaster(),
+        localHero: readLocalHero(),
+        errorMessage: view.error,
+        onCreate: createOwnCharacter,
+        onRetry: connect,
+        onShowGroup: () => shell.selectTab(TABS.group.id),
+      }),
+    menu: () => ({
+      items: menuItems(),
+      note: 'Änderungen werden automatisch gespeichert und live mit dem Raum geteilt.',
+    }),
+  });
+
+  // -------------------------------------------------------------------------
+  // Zustand
+  // -------------------------------------------------------------------------
+
+  function updateSession(changes) {
+    session = { ...session, ...changes };
+    saveRoomSession(session);
+    room.update({ session });
+    shell.refreshHeader();
+  }
+
+  function setViewState(state, error = '') {
+    view.state = state;
+    view.error = error;
+    if (!store.hero) shell.renderSheet();
+  }
+
+  function leaveLocally(message) {
+    stopLive?.();
+    clearRoomSession();
+    onLeave(message);
+  }
+
+  async function run(label, action) {
+    try {
+      await action();
+    } catch (error) {
+      showError(error, label);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Helden öffnen und schließen
+  // -------------------------------------------------------------------------
+
+  function onSyncStatus(status, error) {
+    shell.setStatus(status);
+    if (status === 'error' && error) showError(error, 'Speichern fehlgeschlagen');
+  }
+
+  async function openCharacter(row) {
+    if (sync?.id === row.id) {
+      sync.applyRemote(row.data);
+      return;
+    }
+    if (sync) await sync.dispose();
+    sync = createCharacterSync({ id: row.id, store, serverData: row.data, onStatus: onSyncStatus });
+    updateSession({ characterId: row.id });
+  }
+
+  async function closeCharacter(message = '') {
+    if (sync) await sync.dispose({ save: false });
+    sync = null;
+    store.replace(null);
+    updateSession({ characterId: null });
+    shell.setStatus('online');
+    if (message) showToast(message);
+  }
+
+  async function createOwnCharacter(heroData) {
+    const row = await createCharacter(session.roomId, normalizeHero(heroData));
+    room.update({ characters: upsertById(room.get().characters, row) });
+    await openCharacter(row);
+    showToast(`„${heroName(store.hero)}“ ist jetzt im Raum.`);
+  }
+
+  async function openInitialCharacter(characters) {
+    const preferred = isMaster()
+      ? characters.find((character) => character.id === session.characterId)
+      : characters.find((character) => character.owner_id === session.userId);
+    if (preferred) await openCharacter(preferred);
+    else if (sync) await closeCharacter('Dieser Held ist nicht mehr verfügbar.');
+  }
+
+  /** Ohne Verbindung: zuletzt gespeicherten Stand vom Gerät zeigen. */
+  function openFromCache() {
+    const id = session.characterId;
+    const cached = id ? readCachedCharacter(id) : null;
+    if (!cached) return false;
+    sync ??= createCharacterSync({ id, store, serverData: cached.synced, onStatus: onSyncStatus });
+    showToast('Offline – du siehst den zuletzt gespeicherten Stand. Änderungen werden später übertragen.');
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Verbindung und Live-Änderungen
+  // -------------------------------------------------------------------------
+
+  /** Lädt Mitglieder und Helden neu; null, wenn man nicht (mehr) Mitglied ist. */
+  async function refreshRoster() {
+    const roster = await fetchRoster(session.roomId);
+    if (!roster.room) {
+      leaveLocally('Du bist nicht (mehr) Mitglied dieses Raums. Bitte tritt erneut bei.');
+      return null;
+    }
+    const me = roster.members.find((member) => member.user_id === session.userId);
+    if (me && me.role !== session.role) updateSession({ role: me.role });
+    room.update({ members: roster.members, characters: roster.characters });
+    return roster;
+  }
+
+  /** Live-Meldungen enthalten große Spalten nicht immer (z. B. bei reiner Besitzer-Änderung) – dann nachladen. */
+  async function completeRow(row) {
+    return isPlainObject(row?.data) ? row : fetchCharacter(row.id);
+  }
+
+  async function handleCharacterRow(incoming) {
+    const row = await completeRow(incoming).catch(() => null);
+    if (!row) return;
+    room.update({ characters: upsertById(room.get().characters, row) });
+    if (sync?.id === row.id) {
+      sync.applyRemote(row.data);
+    } else if (!isMaster() && !sync && row.owner_id === session.userId) {
+      await openCharacter(row);
+      showToast('Dir wurde ein Held zugewiesen.');
+    }
+  }
+
+  function handleCharacterDeleted(id) {
+    if (!id) return;
+    room.update({ characters: room.get().characters.filter((character) => character.id !== id) });
+    if (sync?.id === id) closeCharacter('Dieser Held wurde gelöscht.');
+  }
+
+  async function startLive() {
+    stopLive?.();
+    stopLive = await subscribeToRoom(session.roomId, {
+      onCharacter: handleCharacterRow,
+      onCharacterDeleted: handleCharacterDeleted,
+      onMembersChanged: () =>
+        fetchMembers(session.roomId)
+          .then((members) => room.update({ members }))
+          .catch(() => {}),
+      onReconnect: () => {
+        sync?.resync();
+        refreshRoster().catch(() => {});
+      },
+      onLive: (live) => room.update({ live }),
+    });
+  }
+
+  function handleConnectError(error) {
+    if (error.offline) {
+      shell.setStatus('offline');
+      if (!sync && !openFromCache()) setViewState('offline');
+      retryTimer = setTimeout(connect, RECONNECT_DELAY_MS); // auch wenn nur der Server nicht erreichbar ist
+      return;
+    }
+    shell.setStatus('error');
+    setViewState('error', error.message);
+    if (store.hero) showError(error, 'Verbindung fehlgeschlagen');
+  }
+
+  async function connect() {
+    if (connecting || connected) return;
+    connecting = true;
+    clearTimeout(retryTimer);
+    setViewState('connecting');
+    shell.setStatus('connecting');
+    try {
+      const userId = await ensureUser();
+      if (session.userId && session.userId !== userId) {
+        leaveLocally('Die Anmeldung auf diesem Gerät ist abgelaufen. Bitte tritt dem Raum erneut bei.');
+        return;
+      }
+      updateSession({ userId });
+      const roster = await refreshRoster();
+      if (!roster) return;
+      updateSession({ name: roster.room.name });
+      setViewState('ready');
+      await openInitialCharacter(roster.characters);
+      if (!sync) shell.setStatus('online');
+      await startLive();
+      connected = true;
+    } catch (error) {
+      handleConnectError(error);
+    } finally {
+      connecting = false;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Aktionen (Gruppe & Menü)
+  // -------------------------------------------------------------------------
+
+  async function share() {
+    const url = inviteLink(session.code);
+    const text = `Komm in meinen DSA5-Raum! Code: ${session.code}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'DSA5 am Spieltisch', text, url });
+        return;
+      } catch (error) {
+        if (error.name === 'AbortError') return;
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      showToast('Einladungslink kopiert.');
+    } catch {
+      showToast(`Einladungslink: ${url}`, { duration: 20000 });
+    }
+  }
+
+  async function leave() {
+    const question = 'Raum auf diesem Gerät verlassen? Dein Held bleibt im Raum gespeichert.';
+    if (!(await confirmDialog(question, { confirmLabel: 'Verlassen', danger: true }))) return;
+    try {
+      await sync?.flush();
+      await leaveRoom(session);
+    } catch (error) {
+      if (!error.offline) {
+        showError(error, 'Verlassen fehlgeschlagen');
+        return;
+      }
+    }
+    leaveLocally('');
+  }
+
+  async function replaceFromFile() {
+    const imported = await pickHeroFile();
+    if (!imported) return;
+    const question = `„${heroName(store.hero)}“ durch „${heroName(imported)}“ aus der Datei ersetzen?`;
+    if (await confirmDialog(question, { confirmLabel: 'Ersetzen', danger: true })) store.replace(imported);
+  }
+
+  function menuItems() {
+    const heroItems = store.hero
+      ? [
+          { label: 'Held exportieren (JSON-Sicherung)', onClick: () => downloadHero(store.hero) },
+          { label: 'Held aus Datei ersetzen …', onClick: replaceFromFile },
+        ]
+      : [];
+    return [
+      ...heroItems,
+      { label: 'Einladung teilen', onClick: share },
+      { label: 'Raum verlassen', danger: true, onClick: leave },
+    ];
+  }
+
+  createGroupView(shell.panel(TABS.group.id), {
+    room,
+    currentCharacterId: () => sync?.id ?? null,
+    actions: {
+      share,
+      leave,
+      open: (id) =>
+        run('Öffnen fehlgeschlagen', async () => {
+          const row = room.get().characters.find((character) => character.id === id);
+          if (!row) return;
+          await openCharacter(row);
+          shell.selectTab(TABS.hero.id);
+        }),
+      assign: (characterId, userId) =>
+        run('Übergeben fehlgeschlagen', async () => {
+          await assignCharacter(characterId, userId);
+          await refreshRoster();
+          showToast('Held übergeben.');
+        }),
+      remove: (id) =>
+        run('Löschen fehlgeschlagen', async () => {
+          if (sync?.id === id) await closeCharacter();
+          await deleteCharacter(id);
+          room.update({ characters: room.get().characters.filter((character) => character.id !== id) });
+          showToast('Held gelöscht.');
+        }),
+    },
+  });
+
+  // Beim Verlassen oder Wechseln der App sofort speichern; beim Zurückkehren abgleichen.
+  window.addEventListener('online', connect);
+  window.addEventListener('pagehide', () => sync?.flush());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') sync?.flush();
+    else sync?.resync();
+  });
+
+  connect();
+}

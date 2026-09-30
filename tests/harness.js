@@ -52,16 +52,18 @@ export function assertThrows(fn, ErrorClass = Error, label = 'Fehler erwartet') 
   throw new AssertionError(`${label}: es wurde kein Fehler geworfen`);
 }
 
-/** Führt alle registrierten Tests aus und liefert die Ergebnisse. */
-export function runTests() {
-  return registeredTests.map(({ group, name, fn }) => {
+/** Führt alle registrierten Tests nacheinander aus (auch asynchrone) und liefert die Ergebnisse. */
+export async function runTests() {
+  const results = [];
+  for (const { group, name, fn } of registeredTests) {
     try {
-      fn();
-      return { group, name, ok: true };
+      await fn();
+      results.push({ group, name, ok: true });
     } catch (error) {
-      return { group, name, ok: false, error: error.message };
+      results.push({ group, name, ok: false, error: error.message });
     }
-  });
+  }
+  return results;
 }
 
 function element(tag, className, text) {

@@ -4,7 +4,8 @@
 import { runTests, renderResults } from './harness.js';
 import './rules.test.js';
 import './sheet.test.js';
+import './sync.test.js';
 
-const results = runTests();
+const results = await runTests();
 window.testResults = results;
 renderResults(results, document.getElementById('results'), document.getElementById('summary'));

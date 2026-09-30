@@ -7,16 +7,16 @@ import { handleRollClick } from './roll-actions.js';
 import { refreshDerived } from './sheet/derived.js';
 import { actionButton, derived } from './sheet/parts.js';
 import { rollFree } from '../checks.js';
-import { heroName, techniqueInfo } from '../sheet.js';
+import { techniqueInfo } from '../sheet.js';
 import { ATTRIBUTES } from '../rules.js';
 
 const QUICK_EXPRESSIONS = ['1W20', '3W20', '1W6', '2W6', '3W6', '1W3'];
 
 /**
  * @param {HTMLElement} root
- * @param {object} deps { store, log, openCheck }
+ * @param {object} deps { store, log, openCheck, actorName() → Name für freie Würfe }
  */
-export function createDiceView(root, { store, log, openCheck }) {
+export function createDiceView(root, { store, log, openCheck, actorName }) {
   const state = { expression: '', lastRecord: null, error: null };
   const resultArea = h('div', { class: 'free-result', 'aria-live': 'polite' });
   const quickArea = h('div', { class: 'quick-checks' });
@@ -31,7 +31,7 @@ export function createDiceView(root, { store, log, openCheck }) {
 
   function rollExpressionText(text) {
     try {
-      const record = rollFree(heroName(store.hero), text);
+      const record = rollFree(actorName(), text);
       log.add(record);
       state.lastRecord = record;
       state.error = null;
@@ -88,6 +88,8 @@ export function createDiceView(root, { store, log, openCheck }) {
 
   function renderQuickChecks() {
     const hero = store.hero;
+    quickCard.hidden = !hero;
+    if (!hero) return;
     const weapons = hero.weapons.map((weapon) => {
       const ranged = techniqueInfo(weapon.technique).ranged;
       const keys = ranged ? ['fk'] : ['at', 'pa'];
@@ -138,10 +140,11 @@ export function createDiceView(root, { store, log, openCheck }) {
     refreshDerived(quickArea, hero);
   }
 
+  const quickCard = h('section', { class: 'card' }, h('h2', {}, 'Schnellzugriff'), quickArea);
   setChildren(
     root,
     h('section', { class: 'card' }, h('h2', {}, 'Freier Wurf'), form, quickDice, resultArea),
-    h('section', { class: 'card' }, h('h2', {}, 'Schnellzugriff'), quickArea),
+    quickCard,
   );
   root.addEventListener('click', (event) => handleRollClick(event, root, openCheck));
 

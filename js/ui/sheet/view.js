@@ -32,9 +32,9 @@ function entryLabel(entry) {
 /**
  * @param {HTMLElement} root
  * @param {object} store  Heldenspeicher
- * @param {object} options { openCheck(spec) }
+ * @param {object} options { openCheck(spec), renderEmpty() → Inhalt, wenn kein Held geöffnet ist }
  */
-export function createSheetView(root, store, { openCheck }) {
+export function createSheetView(root, store, { openCheck, renderEmpty }) {
   const ui = { openEditors: new Set(), search: {} };
 
   function applySearches() {
@@ -42,6 +42,7 @@ export function createSheetView(root, store, { openCheck }) {
   }
 
   function refresh() {
+    if (!store.hero) return;
     refreshValues(root, store.hero);
     refreshDerived(root, store.hero);
   }
@@ -49,6 +50,10 @@ export function createSheetView(root, store, { openCheck }) {
   function render() {
     const scrollY = window.scrollY;
     const hero = store.hero;
+    if (!hero) {
+      setChildren(root, renderEmpty());
+      return;
+    }
     setChildren(
       root,
       renderGeneral(),
@@ -128,7 +133,7 @@ export function createSheetView(root, store, { openCheck }) {
   });
 
   store.subscribe((kind, source) => {
-    if (kind !== 'value') {
+    if (kind !== 'value' || !store.hero) {
       render();
     } else if (source instanceof Element && root.contains(source)) {
       // Eigene Eingabe: nur berechnete Anzeigen nachziehen, Felder bleiben unangetastet.

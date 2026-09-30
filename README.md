@@ -4,7 +4,8 @@ Web-App, mit der eine Gruppe „Das Schwarze Auge 5“ online und unterwegs am H
 Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles live für alle synchronisiert.
 
 - Vanilla HTML, CSS und JavaScript (ES-Module), **kein Build-Schritt** – läuft direkt auf GitHub Pages.
-- Backend: Supabase (Datenbank, Realtime, anonyme Anmeldung).
+- Backend: Supabase (Datenbank, Realtime, anonyme Anmeldung – keine E-Mail nötig).
+- Ohne Server nutzbar: Modus „Ohne Raum spielen“ speichert den Helden nur auf dem Gerät.
 
 ## Stand der Entwicklung
 
@@ -12,25 +13,102 @@ Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles
 | ----- | ---------------------------------------------------------------------- | --------- |
 | 1     | Dateistruktur, Regel-Logik (`rules.js`), Würfel (`dice.js`), Testseite | ✅ fertig |
 | 2     | Heldenbogen lokal (noch ohne Server)                                   | ✅ fertig |
-| 3     | Supabase: SQL, Räume, Rollen, Sync                                     | offen     |
-| 4     | Würfelprotokoll, Meister-Ansicht, Initiative                           | offen     |
-| 5     | Mobile-Feinschliff, PWA                                                | offen     |
+| 3     | Supabase: SQL, Räume, Rollen, Sync                                     | ✅ fertig |
+| 4     | Gemeinsames Würfelprotokoll, Meister-Ansicht, Initiative               | offen     |
+| 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)              | offen     |
 
-Die vollständige Einrichtungsanleitung (Supabase-Projekt anlegen, SQL ausführen, Keys eintragen,
-auf GitHub Pages veröffentlichen) kommt mit Phase 3 in diese Datei.
+## Einrichtung Schritt für Schritt
 
-## App lokal starten
+Einmalig durch eine Person (meist den Meister). Dauer: etwa 15 Minuten. Alles ist kostenlos.
 
-ES-Module laden nicht über `file://`. Deshalb die App über einen einfachen Webserver öffnen:
+### 1. Supabase-Projekt anlegen
+
+1. Auf <https://supabase.com> kostenlos registrieren und anmelden.
+2. **New project** wählen, einen Namen vergeben (z. B. `dsa5`), ein Datenbank-Passwort festlegen
+   (wird für die App nicht gebraucht, aber gut aufheben) und als Region **Central EU (Frankfurt)** wählen.
+3. Warten, bis das Projekt bereit ist (1–2 Minuten).
+
+> Kostenlose Projekte werden nach etwa einer Woche ohne Nutzung pausiert. Dann im Dashboard beim
+> Projekt auf **Restore** klicken – die Daten bleiben erhalten.
+
+### 2. Anonyme Anmeldung einschalten
+
+Die App meldet jedes Gerät anonym an – niemand braucht eine E-Mail-Adresse.
+
+1. Im Dashboard links **Authentication** → **Sign In / Providers** öffnen.
+2. **Allow anonymous sign-ins** einschalten und speichern.
+
+### 3. Datenbank anlegen (SQL ausführen)
+
+1. Links **SQL Editor** öffnen → **New query**.
+2. Den kompletten Inhalt von [`supabase/schema.sql`](supabase/schema.sql) einfügen.
+3. **Run** klicken. Erwartet: „Success. No rows returned“.
+
+Das Skript legt die Tabellen `rooms`, `room_members`, `characters` (Held als `jsonb`) und `rolls` an,
+dazu die Zugriffsregeln (Row Level Security), die Funktionen zum Erstellen/Beitreten und die
+Realtime-Freigaben. Es darf jederzeit erneut ausgeführt werden, z. B. nach einem Update der App.
+
+### 4. Schlüssel eintragen
+
+1. Im Dashboard oben auf **Connect** klicken (oder **Project Settings** → **API Keys** / **Data API**).
+2. Die **Project URL** (z. B. `https://abcdefgh.supabase.co`) und den öffentlichen **anon**- bzw.
+   **publishable**-Key kopieren.
+3. In [`js/config.js`](js/config.js) eintragen:
+
+   ```js
+   export const SUPABASE_URL = 'https://abcdefgh.supabase.co';
+   export const SUPABASE_ANON_KEY = 'eyJhbGciOi…'; // oder 'sb_publishable_…'
+   ```
+
+**Niemals** den `service_role`- bzw. `secret`-Key eintragen – der gehört nie in eine Website.
+Der anon-Key darf öffentlich sein: Was jemand damit darf, regeln die Zugriffsregeln aus Schritt 3.
+
+### 5. Lokal ausprobieren (optional)
+
+ES-Module laden nicht über `file://`. Deshalb über einen einfachen Webserver öffnen:
 
 ```bash
 # im Projektordner
 python3 -m http.server 8000
 ```
 
-Dann im Browser <http://localhost:8000/> öffnen. Bis Phase 3 wird der Held nur im Browser dieses
-Geräts gespeichert (localStorage). Über das Menü (⋮ oben rechts) lässt er sich als JSON-Datei
-exportieren und wieder importieren.
+Dann <http://localhost:8000/> öffnen.
+
+### 6. Auf GitHub Pages veröffentlichen
+
+1. Die Dateien in ein GitHub-Repository hochladen (inkl. der geänderten `js/config.js`).
+2. Im Repository **Settings** → **Pages** öffnen.
+3. Unter **Build and deployment** → **Source** „Deploy from a branch“ wählen, dann den Branch
+   (z. B. `main`) und den Ordner **/ (root)** auswählen und **Save** klicken.
+4. Nach ein bis zwei Minuten ist die App unter `https://<benutzername>.github.io/<repository>/` erreichbar.
+   Die Adresse steht auch oben auf der Pages-Seite.
+
+Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert ausliefert.
+
+### 7. Losspielen
+
+1. Der Meister öffnet die App → **Neuen Raum erstellen** → Name und **Meister-PIN** festlegen.
+2. Unter **Gruppe** → **Einladung teilen** den Link (oder den 6-stelligen Raumcode) an die Gruppe schicken.
+3. Spieler öffnen den Link → Namen eingeben → **Beitreten** → **Neuen Helden anlegen**
+   (oder einen Helden von diesem Gerät bzw. aus einer JSON-Datei übernehmen).
+
+## Räume, Rollen und Geräte
+
+- **Meister** sieht unter **Gruppe** alle Helden live (LE, AsP, KaP, SchiP, Zustände), öffnet sie per
+  **Öffnen** im Held-Tab und kann sie dort bearbeiten. Von einem weiteren Gerät tritt der Meister
+  mit Raumcode + **Ich bin Meister** + PIN bei.
+- **Spieler** sehen und bearbeiten nur ihren eigenen Helden – das erzwingt die Datenbank, nicht nur die App.
+- **Gleichzeitige Änderungen:** Zieht der Meister LE ab, während der Spieler Notizen tippt, bleibt
+  beides erhalten. Ändern beide genau dasselbe Feld, gewinnt die letzte Eingabe auf dem Gerät, das
+  später speichert.
+- **Gerät gewechselt?** Jedes Gerät hat eine eigene anonyme Anmeldung. Auf dem neuen Gerät dem Raum
+  beitreten, dann weist der Meister unter **Gruppe** → **Gehört** den Helden dem neuen Eintrag zu.
+  Alternativ: Held exportieren und auf dem neuen Gerät aus der Datei laden.
+- **Meister-PIN:** wird nur als Hash gespeichert. Nach 10 falschen Eingaben innerhalb von 15 Minuten
+  ist der Raum für PIN-Versuche kurz gesperrt. Längere PINs sind sicherer.
+- **Offline:** Jede Änderung wird zuerst auf dem Gerät gespeichert. Oben steht dann
+  „offline – wird später übertragen“. Sobald wieder eine Verbindung besteht, wird mit dem Serverstand
+  zusammengeführt und gespeichert. (Die App selbst offline starten können wird mit Phase 5 möglich.)
 
 ## Bedienung
 
@@ -47,15 +125,53 @@ exportieren und wieder importieren.
 - **Stift-Symbol:** öffnet die Bearbeitung eines Eintrags (Probeneigenschaften, Spezialisierung, Waffendaten …).
 - **Leere Felder bei AW, INI und Kampfwerten** bedeuten „automatisch berechnen“; ein eingetragener Wert hat Vorrang.
 - **Würfeln:** freie Ausdrücke wie `2W6+3`, `1W20`, `3W20` sowie Schnellzugriff auf Eigenschaften und Waffen.
-- **Protokoll:** alle Würfe mit Heldennamen und Uhrzeit, zum Aufklappen mit allen Einzelwürfeln.
-- **Menü:** Export/Import, neuer Held, Hell-/Dunkel-/Automatik-Modus.
+- **Protokoll:** alle Würfe mit Heldennamen und Uhrzeit, zum Aufklappen mit allen Einzelwürfeln
+  (bis Phase 4 nur auf dem eigenen Gerät).
+- **Gruppe** (nur im Raum): Raumcode, Einladung, Mitglieder, Helden; **Raum verlassen**.
+- **Menü (⋮):** Export/Import, Einladung teilen, Raum verlassen bzw. „Mit einer Gruppe spielen“,
+  Hell-/Dunkel-/Automatik-Modus.
+
+## Fehlerbehebung
+
+| Meldung                                                     | Lösung                                                               |
+| ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| „Server noch nicht eingerichtet“                            | `js/config.js` ausfüllen (Schritt 4).                                |
+| „Anonyme Anmeldung ist im Supabase-Projekt ausgeschaltet …“ | Schritt 2 nachholen.                                                 |
+| „Das Datenbankschema fehlt oder ist veraltet …“             | `supabase/schema.sql` im SQL Editor ausführen (Schritt 3).           |
+| „Der Supabase-Schlüssel in js/config.js ist ungültig.“      | URL und anon-Key erneut kopieren.                                    |
+| „Keine Verbindung zum Server …“                             | Internet prüfen; ist das Projekt pausiert, im Dashboard **Restore**. |
+| „Kein Raum mit diesem Code gefunden.“                       | Code prüfen (Groß-/Kleinschreibung ist egal).                        |
+
+## Tests
+
+Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite prüft
+Regeln, Würfel, Heldenmodell, Proben, Zusammenführen gleichzeitiger Änderungen und den Abgleich
+(mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests
+erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle stehen ganz oben.
+
+## Technisches
+
+- **supabase-js** wird in fester Version vom CDN jsDelivr geladen, mit Integritätsprüfung (SRI).
+  Wer die Version ändert, muss in `js/supabase.js` auch den Hash anpassen:
+  `curl -s <URL> | openssl dgst -sha384 -binary | openssl base64 -A`
+- Nutzereingaben werden nie als HTML eingefügt (`js/ui/dom.js`), damit niemand über Heldennamen
+  o. Ä. Code in fremde Browser schleusen kann.
 
 ## Dateistruktur
 
 ```
 index.html               Einstieg der App
+.nojekyll                GitHub Pages: Dateien unverändert ausliefern
 css/style.css            Gestaltung (mobile-first, Hell/Dunkel)
-js/app.js                Start: Kopfzeile, Tab-Leiste, Ansichten, Speichern
+supabase/schema.sql      Tabellen, Zugriffsregeln (RLS), Funktionen, Realtime
+js/config.js             Supabase-URL und öffentlicher anon-Key
+js/app.js                Start: Startseite, Raum oder „Ohne Raum“
+js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, Gruppe
+js/mode-local.js         Modus „Ohne Raum“: Held nur auf diesem Gerät
+js/supabase.js           Server: supabase-js laden, anonym anmelden, Fehlermeldungen
+js/room.js               Räume erstellen/beitreten/verlassen, Sitzung, Eingaben prüfen
+js/sync.js               Helden laden/speichern, Offline-Speicher, Realtime
+js/merge.js              Gleichzeitige Änderungen zusammenführen (Drei-Wege-Merge)
 js/rules.js              Reine DSA5-Regel-Logik (kein DOM, kein Zufall)
 js/dice.js               Würfeln mit crypto.getRandomValues, Würfelausdrücke wie 2W6+3
 js/data/talents.js       Stammdaten: 59 Talente, Kampftechniken, Zauberarten
@@ -67,6 +183,11 @@ js/saver.js              Speichern mit Verzögerung (Debounce) und Statusanzeige
 js/log.js                Würfelprotokoll dieses Geräts
 js/storage.js            Sicherer Zugriff auf localStorage
 js/util.js               Allgemeine Hilfsfunktionen
+js/ui/shell.js           Rahmen: Kopfzeile, Tabs, Ansichten
+js/ui/home-view.js       Startseite (Raum beitreten/erstellen, ohne Raum)
+js/ui/group-view.js      Tab „Gruppe“
+js/ui/hero-choice.js     Held anlegen/übernehmen, Verbindungszustände
+js/ui/hero-file.js       Held als JSON sichern und laden
 js/ui/dom.js             Sicheres Erzeugen von Elementen (nie innerHTML mit Nutzerdaten)
 js/ui/fields.js          An den Helden gebundene Eingabefelder
 js/ui/dialog.js          Dialoge (am Handy als Blatt von unten)
@@ -76,23 +197,15 @@ js/ui/roll-view.js       Darstellung von Würfen (Dialog und Protokoll)
 js/ui/roll-actions.js    Würfelknöpfe → Probenbeschreibung
 js/ui/dice-view.js       Tab „Würfeln“
 js/ui/log-view.js        Tab „Protokoll“
-js/ui/menu.js            Menü (Export/Import, neuer Held, Darstellung)
+js/ui/menu.js            Menü
 js/ui/theme.js           Hell-/Dunkelmodus
 js/ui/sheet/*.js         Heldenbogen: Bereiche, berechnete Anzeigen, Steuerung
 tests/rules.test.html    Testseite – prüft alles automatisch
-tests/*.test.js          Testfälle (Regeln & Würfel, Heldenmodell & Proben)
+tests/*.test.js          Testfälle
 ```
 
-Noch geplant: `js/room.js`, `js/sync.js`, `supabase/schema.sql` (Phase 3), Meister-Ansicht (Phase 4),
+Noch geplant: gemeinsames Protokoll mit Sichtbarkeit und Meister-Ansicht mit Initiative (Phase 4),
 `manifest.webmanifest` und `sw.js` (Phase 5).
-
-## Tests ausführen
-
-Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite zeigt oben
-„Alle … Tests bestanden ✓“ oder listet fehlgeschlagene Tests rot mit erwartetem und erhaltenem Wert.
-Nach der Veröffentlichung auf GitHub Pages ist dieselbe Seite unter `…/tests/rules.test.html` erreichbar.
-
-Die fünf Pflicht-Testfälle aus der Aufgabenstellung stehen als eigene Gruppe ganz oben.
 
 ## Regelentscheidungen
 
