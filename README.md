@@ -6,6 +6,7 @@ Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles
 - Vanilla HTML, CSS und JavaScript (ES-Module), **kein Build-Schritt** – läuft direkt auf GitHub Pages.
 - Backend: Supabase (Datenbank, Realtime, anonyme Anmeldung – keine E-Mail nötig).
 - Ohne Server nutzbar: Modus „Ohne Raum spielen“ speichert den Helden nur auf dem Gerät.
+- Als App auf dem Handy installierbar und offline startbar (PWA).
 
 ## Stand der Entwicklung
 
@@ -15,7 +16,7 @@ Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles
 | 2     | Heldenbogen lokal (noch ohne Server)                                   | ✅ fertig |
 | 3     | Supabase: SQL, Räume, Rollen, Sync                                     | ✅ fertig |
 | 4     | Gemeinsames Würfelprotokoll, Meister-Ansicht, Initiative               | ✅ fertig |
-| 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)              | offen     |
+| 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)              | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -76,6 +77,9 @@ python3 -m http.server 8000
 
 Dann <http://localhost:8000/> öffnen.
 
+Wer an den Dateien arbeitet: Wegen des Offline-Speichers erscheinen Änderungen erst nach zweimaligem
+Neuladen – oder in den Entwicklertools unter **Application** → **Service Workers** „Update on reload“ anhaken.
+
 ### 6. Auf GitHub Pages veröffentlichen
 
 1. Die Dateien in ein GitHub-Repository hochladen (inkl. der geänderten `js/config.js`).
@@ -93,6 +97,20 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 2. Unter **Gruppe** → **Einladung teilen** den Link (oder den 6-stelligen Raumcode) an die Gruppe schicken.
 3. Spieler öffnen den Link → Namen eingeben → **Beitreten** → **Neuen Helden anlegen**
    (oder einen Helden von diesem Gerät bzw. aus einer JSON-Datei übernehmen).
+
+### 8. Als App auf dem Handy installieren (empfohlen)
+
+Installiert startet die App ohne Adressleiste im Vollbild, hat ein eigenes Symbol und lässt sich
+auch ohne Internet öffnen.
+
+- **Android (Chrome, Edge):** App öffnen → Menü **⋮** der App →
+  **App auf dem Startbildschirm installieren**. Alternativ im Browsermenü **App installieren**
+  bzw. **Zum Startbildschirm hinzufügen** (so auch in anderen Android-Browsern).
+- **iPhone/iPad (Safari):** App in Safari öffnen → **Teilen** (Quadrat mit Pfeil) →
+  **Zum Home-Bildschirm** → **Hinzufügen**.
+- **Computer (Chrome, Edge):** Installieren-Symbol rechts in der Adressleiste.
+
+Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. lokal über `http://localhost`.
 
 ## Räume, Rollen und Geräte
 
@@ -124,7 +142,11 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 - **Offline:** Jede Änderung wird zuerst auf dem Gerät gespeichert. Oben steht dann
   „offline – wird später übertragen“. Sobald wieder eine Verbindung besteht, wird mit dem Serverstand
   zusammengeführt und gespeichert. Würfe ohne Verbindung stehen mit „wird übertragen …“ im
-  Protokoll und werden nachgereicht. (Die App selbst offline starten können wird mit Phase 5 möglich.)
+  Protokoll und werden nachgereicht.
+- **Offline starten:** Nach dem ersten Öffnen mit Internet startet die App auch ohne Verbindung –
+  im Raum mit dem zuletzt auf diesem Gerät gespeicherten Stand des Helden. Der Bogen ist dann
+  voll lesbar und bearbeitbar; alles wird abgeglichen, sobald das Handy wieder online ist.
+  Ohne Verbindung beitreten oder einen neuen Raum erstellen geht natürlich nicht.
 
 ## Bedienung
 
@@ -145,7 +167,15 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
   Im Raum gemeinsam für alle (je nach Sichtbarkeit), ohne Raum nur auf diesem Gerät.
 - **Gruppe** (nur im Raum): Kampf & Initiative, Raumcode, Einladung, Helden, Mitglieder; **Raum verlassen**.
 - **Menü (⋮):** Export/Import, Einladung teilen, Raum verlassen bzw. „Mit einer Gruppe spielen“,
-  Hell-/Dunkel-/Automatik-Modus.
+  App installieren, außerdem die Geräteeinstellungen:
+  - **Farbmodus** Hell / Dunkel / Automatisch (folgt dem Handy). Der helle Modus hat starken Kontrast
+    für draußen und helles Licht.
+  - **Schriftgröße** Normal / Groß / Sehr groß – vergrößert die ganze App, auch Knöpfe.
+  - **Bildschirm nicht ausschalten (am Spieltisch)** – das Handy bleibt an, solange die App offen ist
+    (erscheint nur in Browsern, die das unterstützen, z. B. Chrome unter Android).
+- **Bedienung am Handy:** Alle Knöpfe sind mindestens 44 px groß, die Tab-Leiste liegt unten in
+  Daumenreichweite, Eingabefelder zoomen beim Antippen nicht (iPhone). Auf großen Bildschirmen
+  steht der Heldenbogen zweispaltig.
 
 ## Fehlerbehebung
 
@@ -157,6 +187,7 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 | „Der Supabase-Schlüssel in js/config.js ist ungültig.“      | URL und anon-Key erneut kopieren.                                    |
 | „Keine Verbindung zum Server …“                             | Internet prüfen; ist das Projekt pausiert, im Dashboard **Restore**. |
 | „Kein Raum mit diesem Code gefunden.“                       | Code prüfen (Groß-/Kleinschreibung ist egal).                        |
+| Nach einem Update ist noch die alte Version zu sehen        | App schließen und erneut öffnen (siehe „Updates“ unten).             |
 
 ## Tests
 
@@ -173,6 +204,13 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
 - Würfe werden auf dem eigenen Gerät mit `crypto.getRandomValues` gewürfelt. Verdeckte Würfe sieht
   der Spieler in der App nicht; wer sich im Browser in die Datenübertragung einliest, könnte sie
   finden – für eine Runde unter Freunden ist das so gewollt einfach gehalten.
+- **Offline-Speicher (Service Worker, `sw.js`):** Seitenaufrufe kommen zuerst aus dem Netz, App-Dateien
+  sofort aus dem Speicher und werden im Hintergrund aktualisiert. Anfragen an Supabase (Helden, Würfe,
+  Anmeldung) werden nie zwischengespeichert – dafür sorgt die App selbst mit Gerätespeicher und Warteschlange.
+- **Updates:** Neue Dateien auf GitHub Pages sind spätestens beim zweiten Öffnen der App aktiv
+  (beim ersten Öffnen werden sie im Hintergrund geladen). Bei jedem Update am besten in `sw.js` die
+  Versionsnummer in `CACHE_NAME` erhöhen (z. B. `'dsa5-app-v1'` → `'dsa5-app-v2'`): Dann wird der
+  alte Speicher vollständig gelöscht und alle Geräte laden die neue Version komplett frisch.
 - Nutzereingaben werden nie als HTML eingefügt (`js/ui/dom.js`), damit niemand über Heldennamen
   o. Ä. Code in fremde Browser schleusen kann.
 
@@ -181,7 +219,10 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
 ```
 index.html               Einstieg der App
 .nojekyll                GitHub Pages: Dateien unverändert ausliefern
-css/style.css            Gestaltung (mobile-first, Hell/Dunkel)
+manifest.webmanifest     App-Beschreibung für die Installation (Name, Symbole, Farben)
+sw.js                    Service Worker: App offline starten
+icons/                   App-Symbole (SVG und PNG, auch für iPhone und Android)
+css/style.css            Gestaltung (mobile-first, Hell/Dunkel, Schriftgrößen)
 supabase/schema.sql      Tabellen, Zugriffsregeln (RLS), Funktionen, Realtime
 js/config.js             Supabase-URL und öffentlicher anon-Key
 js/app.js                Start: Startseite, Raum oder „Ohne Raum“
@@ -204,6 +245,7 @@ js/store.js              Hält den Helden und meldet Änderungen an die Ansichte
 js/saver.js              Speichern mit Verzögerung (Debounce) und Statusanzeige
 js/log.js                Sichtbarkeit von Würfen, Würfelprotokoll dieses Geräts
 js/storage.js            Sicherer Zugriff auf localStorage
+js/pwa.js                Service Worker anmelden, App installieren, Bildschirm anlassen
 js/util.js               Allgemeine Hilfsfunktionen
 js/ui/shell.js           Rahmen: Kopfzeile, Tabs, Ansichten
 js/ui/home-view.js       Startseite (Raum beitreten/erstellen, ohne Raum)
@@ -221,14 +263,13 @@ js/ui/roll-view.js       Darstellung von Würfen (Dialog und Protokoll)
 js/ui/roll-actions.js    Würfelknöpfe → Probenbeschreibung
 js/ui/dice-view.js       Tab „Würfeln“
 js/ui/log-view.js        Tab „Protokoll“
-js/ui/menu.js            Menü
-js/ui/theme.js           Hell-/Dunkelmodus
+js/ui/menu.js            Menü mit Geräteeinstellungen
+js/ui/theme.js           Hell-/Dunkelmodus und Schriftgröße
+js/ui/segmented.js       Umschalter mit mehreren Optionen (z. B. Hell/Dunkel/Automatisch)
 js/ui/sheet/*.js         Heldenbogen: Bereiche, berechnete Anzeigen, Steuerung
 tests/rules.test.html    Testseite – prüft alles automatisch
 tests/*.test.js          Testfälle
 ```
-
-Noch geplant: `manifest.webmanifest` und `sw.js` (Phase 5).
 
 ## Regelentscheidungen
 

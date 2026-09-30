@@ -89,11 +89,30 @@ html {
   text-size-adjust: 100%;
 }
 
+/* Schriftgröße (Menü → Darstellung) – alle rem-Angaben wachsen mit */
+html[data-text='gross'] {
+  font-size: 112.5%;
+}
+
+html[data-text='sehr-gross'] {
+  font-size: 125%;
+}
+
+/* Sofortige Reaktion auf Tippen, kein Doppeltipp-Zoom, kein grauer Tipp-Blitz */
+button,
+a,
+summary,
+label,
+select {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.45 var(--font);
+  font: 1rem/1.45 var(--font);
   overflow-x: hidden;
 }
 
@@ -169,7 +188,7 @@ textarea {
   width: 100%;
   min-height: var(--touch);
   padding: 8px 10px;
-  font-size: 16px; /* verhindert Zoom auf iOS */
+  font-size: max(16px, 1rem); /* ab 16 px zoomt iOS beim Tippen nicht */
   background: var(--surface);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-small);
@@ -250,8 +269,13 @@ input.num::-webkit-inner-spin-button {
   text-align: center;
 }
 
-.btn:active {
+.btn:active,
+.chip:active,
+.step-button:active,
+.attribute-roll:active,
+.mini-step:active {
   transform: translateY(1px);
+  filter: brightness(0.92);
 }
 
 .btn.active {
@@ -314,9 +338,18 @@ input.num::-webkit-inner-spin-button {
   cursor: pointer;
 }
 
-.icon-button:hover,
 .icon-button.active {
   background: var(--surface-2);
+}
+
+@media (hover: hover) {
+  .icon-button:hover {
+    background: var(--surface-2);
+  }
+
+  .row-main:hover {
+    background: var(--accent-soft);
+  }
 }
 
 .icon-button.danger {
@@ -713,14 +746,13 @@ input.num::-webkit-inner-spin-button {
 /* LE, AsP, KaP, SchiP */
 
 .pool {
-  display: flex;
+  display: grid;
+  grid-template-columns: 3.4em minmax(0, 1fr) auto 4em;
   align-items: center;
   gap: 8px;
 }
 
 .pool-label {
-  width: 52px;
-  flex: none;
   font-weight: 700;
 }
 
@@ -728,19 +760,38 @@ input.num::-webkit-inner-spin-button {
   color: var(--muted);
 }
 
-.pool-max {
-  width: 64px !important;
-  flex: none;
+.pool .stepper input {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+/* Sehr schmale Handys: Bezeichnung (LE, AsP …) über den Knöpfen, ohne Schrägstrich */
+@media (max-width: 359px) {
+  .pool {
+    grid-template-columns: minmax(0, 1fr) 3.6em;
+    gap: 2px 8px;
+  }
+
+  .pool-label {
+    grid-column: 1 / -1;
+  }
+
+  .pool-separator {
+    display: none;
+  }
 }
 
 .stepper {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 
 .stepper input {
-  width: 64px;
+  width: 4em;
+  min-width: 2.6em;
+  flex: 0 1 auto;
 }
 
 .step-button {
@@ -834,15 +885,14 @@ input.num::-webkit-inner-spin-button {
   cursor: pointer;
 }
 
-.row-main:hover,
 .row-main:active {
   background: var(--accent-soft);
 }
 
 .row-name {
   font-weight: 700;
-  overflow-wrap: break-word;
-  hyphens: auto;
+  hyphens: auto; /* Trennung nach deutschen Regeln, wo der Browser es kann … */
+  overflow-wrap: anywhere; /* … sonst im Notfall an beliebiger Stelle statt Überlauf */
 }
 
 .row-main .row-name {
@@ -1842,4 +1892,26 @@ input.num::-webkit-inner-spin-button {
   font-size: 1.1rem;
   font-weight: 800;
   cursor: pointer;
+}
+
+/* ---------- Menü ---------- */
+
+.menu-label {
+  display: block;
+  margin: 12px 0 6px;
+}
+
+/* ---------- Tablet quer & Desktop: Heldenbogen zweispaltig ---------- */
+
+@media (min-width: 1100px) {
+  .app-main {
+    max-width: 1240px;
+  }
+
+  .sheet {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+    align-items: start;
+  }
 }

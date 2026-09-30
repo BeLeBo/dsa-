@@ -13,6 +13,7 @@ import { loadRoomSession, saveRoomSession, normalizeRoomCode, createRoom, joinRo
 import { startRoomMode } from './mode-room.js';
 import { startLocalMode } from './mode-local.js';
 import { readJson, writeJson } from './storage.js';
+import { registerServiceWorker } from './pwa.js';
 
 const MODE_KEY = 'dsa5.modus';
 const NAME_KEY = 'dsa5.name';
@@ -81,3 +82,5 @@ try {
 } catch (error) {
   showError(error, 'Die App konnte nicht gestartet werden');
 }
+
+registerServiceWorker();

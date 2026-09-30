@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>DSA5 am Spieltisch</title>
+  <rect width="512" height="512" rx="112" fill="#8e1b1b"/>
+  <g fill="none" stroke="#f4e9d8" stroke-width="18" stroke-linejoin="round">
+    <polygon points="256,70 417,163 417,349 256,442 95,349 95,163"/>
+    <polygon points="256,142 360,322 152,322"/>
+    <path d="M256 70 256 142 M417 163 360 322 M95 163 152 322 M417 349 360 322 M95 349 152 322 M256 442 256 390 M152 322 256 390 360 322 M95 163 256 142 417 163"/>
+  </g>
+  <text x="256" y="292" text-anchor="middle" font-family="Georgia, 'DejaVu Serif', serif" font-weight="700" font-size="92" fill="#f4e9d8">20</text>
+</svg>
