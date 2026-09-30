@@ -6,6 +6,8 @@ import { SUPABASE_JS_URL } from './supabase.js';
 import { readJson, writeJson } from './storage.js';
 
 const KEEP_AWAKE_KEY = 'dsa5.ui.wachbleiben';
+/** Bleibt die App lange offen, wird beim Zurückkehren höchstens so oft nach einer neuen Version gesucht. */
+const UPDATE_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Service Worker
@@ -19,12 +21,37 @@ function loadedFiles() {
   );
 }
 
+/**
+ * Übernimmt eine neue App-Version (neuer Service Worker) die Seite, wird einmal neu geladen –
+ * sonst liefen bis zum nächsten Öffnen noch die alten Dateien. Beim allerersten Besuch
+ * (noch kein Service Worker) passiert nichts. Ungespeicherte Heldenänderungen liegen im
+ * Gerätespeicher und werden nach dem Neuladen übertragen.
+ */
+function reloadOnUpdate() {
+  if (!navigator.serviceWorker.controller) return;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+}
+
 /** Registriert den Service Worker und lässt alle geladenen Dateien für offline speichern. */
 export async function registerServiceWorker() {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
   try {
-    await navigator.serviceWorker.register('./sw.js');
+    reloadOnUpdate();
+    // updateViaCache „none“: auch sw.js selbst nie aus dem Browser-Cache – Updates kommen sofort an.
+    await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
     const registration = await navigator.serviceWorker.ready;
+    // Beim Öffnen prüft der Browser selbst; danach beim Zurückkehren in die App.
+    let lastUpdateCheck = Date.now();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || Date.now() - lastUpdateCheck < UPDATE_CHECK_INTERVAL_MS) return;
+      lastUpdateCheck = Date.now();
+      registration.update().catch(() => {}); // offline: beim nächsten Mal
+    });
     const sendFiles = () => registration.active?.postMessage({ type: 'cache-urls', urls: loadedFiles() });
     sendFiles();
     // supabase-js wird erst im Raum geladen – danach noch einmal melden.

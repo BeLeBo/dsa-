@@ -224,7 +224,7 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 | „Der Supabase-Schlüssel in js/config.js ist ungültig.“      | URL und anon-Key erneut kopieren.                                    |
 | „Keine Verbindung zum Server …“                             | Internet prüfen; ist das Projekt pausiert, im Dashboard **Restore**. |
 | „Kein Raum mit diesem Code gefunden.“                       | Code prüfen (Groß-/Kleinschreibung ist egal).                        |
-| Nach einem Update ist noch die alte Version zu sehen        | App schließen und erneut öffnen (siehe „Updates“ unten).             |
+| Nach einem Update ist noch die alte Version zu sehen        | Seite mit Strg+F5 (am Handy: zweimal) neu laden.                     |
 | „Die App konnte nicht geladen werden …“                     | Werbe-/Tracker-Blocker für die Seite ausschalten, dann neu laden.    |
 | „Der Speicher für Kartenbilder fehlt …“                     | `supabase/schema.sql` erneut ausführen (legt den Speicher an).       |
 | „Dieses Bild kann der Browser nicht öffnen …“               | Bild als JPG oder PNG speichern (z. B. HEIC-Fotos vom iPhone).       |
@@ -245,13 +245,14 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
 - Würfe werden auf dem eigenen Gerät mit `crypto.getRandomValues` gewürfelt. Verdeckte Würfe sieht
   der Spieler in der App nicht; wer sich im Browser in die Datenübertragung einliest, könnte sie
   finden – für eine Runde unter Freunden ist das so gewollt einfach gehalten.
-- **Offline-Speicher (Service Worker, `sw.js`):** Seitenaufrufe kommen zuerst aus dem Netz, App-Dateien
-  sofort aus dem Speicher und werden im Hintergrund aktualisiert. Anfragen an Supabase (Helden, Würfe,
-  Anmeldung) werden nie zwischengespeichert – dafür sorgt die App selbst mit Gerätespeicher und Warteschlange.
-- **Updates:** Neue Dateien auf GitHub Pages sind spätestens beim zweiten Öffnen der App aktiv
-  (beim ersten Öffnen werden sie im Hintergrund geladen). Bei jedem Update am besten in `sw.js` die
-  Versionsnummer in `CACHE_NAME` erhöhen (z. B. `'dsa5-app-v3'` → `'dsa5-app-v4'`): Dann wird der
-  alte Speicher vollständig gelöscht und alle Geräte laden die neue Version komplett frisch.
+- **Offline-Speicher (Service Worker, `sw.js`):** Mit Verbindung kommen Seite und App-Dateien immer
+  frisch vom Server (am Browser-Cache vorbei), ohne Verbindung – oder wenn das Netz länger als
+  4 Sekunden braucht – aus dem Speicher. Anfragen an Supabase (Helden, Würfe, Anmeldung) werden nie
+  zwischengespeichert – dafür sorgt die App selbst mit Gerätespeicher und Warteschlange.
+- **Updates:** Geänderte Dateien auf GitHub Pages (auch `js/config.js`) gelten beim nächsten Öffnen
+  der App. Ändert sich `sw.js`, lädt sich die geöffnete App nach wenigen Sekunden einmal selbst neu.
+  Bei größeren Updates am besten in `sw.js` die Versionsnummer in `CACHE_NAME` erhöhen
+  (z. B. `'dsa5-app-v4'` → `'dsa5-app-v5'`): Dann wird der alte Speicher vollständig gelöscht.
 - **Kartenbilder** liegen im nicht öffentlichen Supabase-Speicher `karten` unter `<Raum-ID>/…`:
   Sehen dürfen sie nur Mitglieder des Raums, hochladen und löschen nur der Meister. Nicht mehr
   benutzte Bilder löscht die App beim Entfernen von Karten und Figuren. Ob Spieler eine Karte
