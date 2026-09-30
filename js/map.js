@@ -34,8 +34,8 @@ export const MIN_GRID_SIZE = 10;
 export const MAX_GRID_SIZE = 400;
 /** Längste Seite einer Karte nach dem Verkleinern (Bildpunkte). */
 export const MAP_MAX_EDGE = 3000;
-/** Figurenbilder werden quadratisch auf diese Kantenlänge gebracht. */
-export const TOKEN_IMAGE_EDGE = 256;
+/** Figurenbilder werden quadratisch auf diese Kantenlänge gebracht (scharf auch stark vergrößert). */
+export const TOKEN_IMAGE_EDGE = 512;
 export const MAX_TOKENS_AT_ONCE = 20;
 export const MAX_TOKEN_NAME_LENGTH = 40;
 export const MAX_MAP_NAME_LENGTH = 60;
@@ -200,6 +200,50 @@ export function placeTokens(count, center, tokenSize, grid, map, occupied = []) 
   }
   while (positions.length < count) positions.push(clampToMap(center, map)); // alles belegt: übereinander
   return positions;
+}
+
+// ---------------------------------------------------------------------------
+// Auswahl und Gruppen bewegen
+// ---------------------------------------------------------------------------
+
+/** Rechteck aus zwei beliebigen Ecken: { left, top, right, bottom }. */
+export function normalizeRect(a, b) {
+  return { left: Math.min(a.x, b.x), top: Math.min(a.y, b.y), right: Math.max(a.x, b.x), bottom: Math.max(a.y, b.y) };
+}
+
+/**
+ * Figuren, die ein Auswahlrechteck (Kartenpunkte) berühren – Figuren sind Kreise.
+ * @returns {string[]} IDs
+ */
+export function tokensInRect(tokens, rect, grid) {
+  return tokens
+    .filter((token) => {
+      const radius = tokenDiameter(token.size, grid) / 2;
+      const nearestX = Math.min(Math.max(token.x, rect.left), rect.right);
+      const nearestY = Math.min(Math.max(token.y, rect.top), rect.bottom);
+      return Math.hypot(token.x - nearestX, token.y - nearestY) <= radius;
+    })
+    .map((token) => token.id);
+}
+
+/**
+ * Mehrere Figuren gemeinsam bewegen: Die gezogene Figur rastet am Ziel ein, alle anderen
+ * wandern um denselben Weg mit (und rasten ebenfalls ein) – die Formation bleibt erhalten.
+ * @param {object[]} group  die bewegten Figuren (mit ursprünglicher Position)
+ * @param {string} leaderId  die gezogene Figur
+ * @param {{x, y}} target    wohin die gezogene Figur abgelegt wurde
+ * @returns {{ id: string, x: number, y: number }[]}
+ */
+export function moveGroup(group, leaderId, target, grid, map) {
+  const leader = group.find((token) => token.id === leaderId) ?? group[0];
+  const snapped = clampToMap(snapToGrid(clampToMap(target, map), leader.size, grid), map);
+  const dx = snapped.x - leader.x;
+  const dy = snapped.y - leader.y;
+  return group.map((token) => {
+    if (token === leader) return { id: token.id, ...snapped };
+    const point = clampToMap(snapToGrid(clampToMap({ x: token.x + dx, y: token.y + dy }, map), token.size, grid), map);
+    return { id: token.id, ...point };
+  });
 }
 
 /**

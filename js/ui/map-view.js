@@ -8,6 +8,8 @@ import { showToast, showError } from './toast.js';
 import { segmentedControl } from './segmented.js';
 import { createMapStage } from './map-stage.js';
 import { openMapsDialog, openTokenDialog } from './map-dialogs.js';
+import { createMapInspector } from './map-inspector.js';
+import { confirmDialog } from './dialog.js';
 import { imageUrl } from '../map-api.js';
 import { currentEntry } from '../combat.js';
 import {
@@ -146,20 +148,48 @@ function createGridPanel(controller, onToggle) {
  * @param {object} options.room         Raum-Zustand (Helden, Kampf)
  * @param {() => boolean} options.isMaster
  * @param {() => string|null} options.myCharacterId  eigener Held (Spieler)
+ * @param {(characterId: string) => object|null} options.heroFor  Heldendaten (Meister: alle)
+ * @param {object} options.heroActions  { adjustPool, setPool, setCondition, open } – siehe mode-room.js
+ * @param {(listener: Function) => Function} options.subscribeHero  Änderungen am geöffneten Helden
  */
-export function createMapView(panel, { controller, room, isMaster, myCharacterId }) {
+export function createMapView(
+  panel,
+  { controller, room, isMaster, myCharacterId, heroFor, heroActions, subscribeHero },
+) {
   const canMove = (token) => isMaster() || (Boolean(token.character_id) && token.character_id === myCharacterId());
+  const editToken = (token) =>
+    openTokenDialog({ controller, token, characters: room.get().characters, center: stage.visibleCenter });
+
+  async function removeTokens(ids) {
+    const question =
+      ids.length === 1 ? 'Diese Figur von der Karte nehmen?' : `${ids.length} Figuren von der Karte nehmen?`;
+    if (!(await confirmDialog(question, { confirmLabel: 'Entfernen', danger: true }))) return;
+    await run('Figuren nicht entfernt', () => controller.actions.removeTokens(ids));
+  }
+
   const stage = createMapStage({
     canMove,
     isMine: (token) => !isMaster() && canMove(token),
-    onMove: (tokenId, point) =>
-      controller.actions.moveToken(tokenId, point).catch((error) => showError(error, 'Figur nicht bewegt')),
-    onTap: (token) => {
-      if (isMaster())
-        openTokenDialog({ controller, token, characters: room.get().characters, center: stage.visibleCenter });
-    },
+    selectable: isMaster,
+    onMove: (moves) => controller.actions.moveTokens(moves).catch((error) => showError(error, 'Figur nicht bewegt')),
+    onSelect: () => inspector.render(),
+    onActivate: editToken,
+    onDeleteSelection: removeTokens,
     loadImage: imageUrl,
   });
+  const inspector = createMapInspector({
+    selectedTokens: () => {
+      const ids = new Set(isMaster() ? stage.selection() : []);
+      return controller.state.get().tokens.filter((token) => ids.has(token.id));
+    },
+    heroFor,
+    heroActions,
+    onEdit: editToken,
+    onHide: (ids, hidden) => run('Nicht gespeichert', () => controller.actions.setTokensHidden(ids, hidden)),
+    onRemove: removeTokens,
+    onClose: () => stage.setSelection([]),
+  });
+  stage.element.append(inspector.element);
   const toolbar = h('div', { class: 'map-toolbar' });
   const notice = h('div', { class: 'map-notice' });
   const message = h('div', { class: 'map-message' });
@@ -251,7 +281,7 @@ export function createMapView(panel, { controller, room, isMaster, myCharacterId
           ? h(
               'p',
               { class: 'section-hint' },
-              `„${map.name || 'Karte'}“ – alle sehen diese Karte. Tippe eine Figur an, um sie zu bearbeiten.`,
+              `„${map.name || 'Karte'}“ – alle sehen diese Karte. Figur antippen: Werte ändern, bearbeiten. Mehrere markieren: Rahmen ziehen (Maus) oder Knopf „Auswählen“ – dann gemeinsam ziehen.`,
             )
           : h(
               'div',
@@ -359,6 +389,7 @@ export function createMapView(panel, { controller, room, isMaster, myCharacterId
       updateHighlight();
       gridPanel.refresh();
     }
+    inspector.render();
     layout();
   }
 
@@ -366,7 +397,9 @@ export function createMapView(panel, { controller, room, isMaster, myCharacterId
   room.subscribe(() => {
     updateHighlight();
     renderToolbar(controller.viewMap());
+    inspector.render();
   });
+  subscribeHero(() => inspector.render());
   // Nicht direkt im Beobachter die Höhe ändern (sonst meldet der Browser eine Endlosschleife).
   new ResizeObserver(() => requestAnimationFrame(layout)).observe(panel);
   window.addEventListener('resize', layout);

@@ -19,6 +19,7 @@ alles live für alle synchronisiert.
 | 4     | Gemeinsames Würfelprotokoll, Meister-Ansicht, Initiative               | ✅ fertig |
 | 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)              | ✅ fertig |
 | 6     | Karte mit Figuren (hochladen, Raster, Drag & Drop, live)               | ✅ fertig |
+| 7     | Optolith-Import, Mehrfachauswahl und Werte-Panel auf der Karte         | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -227,12 +228,35 @@ auf dem Server gespeichert und für den Meister sichtbar.
    sieht nur der Meister (z. B. für einen Hinterhalt). Gehört die Figur zu einem Helden, darf dessen
    Spieler sie bewegen.
 5. **Helden:** stellt alle Helden des Raums auf, die noch fehlen (mit ihrem Bild von einer früheren Karte).
-6. Eine Figur antippen öffnet die Bearbeitung (Name, Held, Größe, Farbe, Bild, verborgen, entfernen).
+6. **Figur antippen** wählt sie aus; unter der Karte erscheint ein Panel:
+   - **Held:** LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder direkt eintippen, Zustände
+     (Schmerz, Belastung …) hoch- und runtersetzen. Die Änderung landet sofort im Heldenbogen des
+     Spielers; trägt er gleichzeitig etwas anderes ein, bleibt beides erhalten. AsP und KaP stehen
+     nur da, wenn der Held welche hat.
+   - **Heldenbogen** öffnet den ganzen Bogen, **Figur bearbeiten** Name, Held, Größe, Farbe, Bild und
+     Entfernen, **Verbergen/Zeigen** blendet die Figur für die Spieler aus und ein.
+   - × oder ein Tipp auf eine freie Stelle der Karte hebt die Auswahl auf.
+7. **Mehrere Figuren markieren** – wie am Desktop:
+   - Maus: auf freier Fläche mit der linken Taste einen **Rahmen aufziehen**; **Strg** oder **Umschalt**
+     - Klick nimmt einzelne Figuren dazu oder heraus.
+   - Handy/Tablet: Knopf **Auswählen** (gestricheltes Quadrat rechts), dann mit dem Finger einen Rahmen
+     ziehen; nochmal tippen schaltet zurück aufs Verschieben.
+   - Eine markierte Figur ziehen bewegt **alle gemeinsam**, die Aufstellung bleibt erhalten (jede rastet
+     ins Raster ein). Das Panel listet die Figuren mit den LeP der Helden und kann alle zusammen
+     verbergen, zeigen oder entfernen.
+   - Tastatur: Pfeiltasten bewegen alle markierten um ein Feld, **Entf** entfernt sie (mit Rückfrage),
+     **Esc** hebt die Auswahl auf, **Enter** auf einer Figur öffnet „Figur bearbeiten“.
 
 **Alle**
 
 - Karte mit einem Finger verschieben, mit zwei Fingern (oder Mausrad, Knöpfe + und −) zoomen,
-  ◎ zeigt die ganze Karte, ⛶ schaltet auf Vollbild.
+  ◎ zeigt die ganze Karte, ⛶ schaltet auf Vollbild. Mit der Maus verschiebt man die Karte mit der
+  rechten (oder mittleren) Taste bzw. mit gedrückter Leertaste – beim Meister zieht die linke Taste ja
+  den Auswahlrahmen.
+- Figuren, Namen und Figurenbilder bleiben auch stark vergrößert scharf (sie werden in echter
+  Bildschirmgröße gezeichnet, nicht mit der Karte hochskaliert). Figurenbilder werden mit bis zu
+  512 × 512 Punkten gespeichert; ältere, kleinere Bilder einfach neu hochladen („Figur bearbeiten“).
+  Weit herausgezoomt blenden sich Namen aus – außer bei der eigenen und der Figur am Zug.
 - Figuren ziehen (Drag & Drop): Der Meister jede Figur, Spieler nur die eigene. Am Computer bewegen
   die Pfeiltasten eine ausgewählte Figur um ein Feld.
 - Alles erscheint sofort bei allen. Läuft ein Kampf, leuchtet die Figur, die am Zug ist
@@ -259,7 +283,8 @@ auf dem Server gespeichert und für den Meister sichtbar.
 
 Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite prüft
 Regeln, Würfel, Heldenmodell, Proben, Zusammenführen gleichzeitiger Änderungen, den Abgleich,
-das gemeinsame Protokoll, die Kampfreihenfolge sowie Raster, Einrasten, Zoom und die Karten-Steuerung
+das gemeinsame Protokoll, die Kampfreihenfolge sowie Raster, Einrasten, Zoom, Auswahlrahmen,
+gemeinsames Bewegen und die Karten-Steuerung
 (mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests
 erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle stehen ganz oben.
 
@@ -304,7 +329,7 @@ js/config.js             Supabase-URL und öffentlicher anon-Key
 js/app.js                Start: Startseite, Raum oder „Ohne Raum“
 js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, Gruppe, Karte
 js/room-map.js           Karte im Raum: laden, live aktuell halten, Aktionen (Meister/Spieler)
-js/map.js                Karte als reine Funktionen: Raster, Einrasten, Aufstellen, Zoom
+js/map.js                Karte als reine Funktionen: Raster, Einrasten, Aufstellen, Zoom, Auswahl
 js/map-api.js            Karte auf dem Server: Karten, Figuren, Bilder (Storage), Realtime
 js/image.js              Bilder vor dem Hochladen verkleinern bzw. zuschneiden
 js/room-log.js           Gemeinsames Würfelprotokoll (Server, Warteschlange für offline)
@@ -335,7 +360,8 @@ js/ui/home-view.js       Startseite (Raum beitreten/erstellen, ohne Raum)
 js/ui/group-view.js      Tab „Gruppe“ (Meister-Übersicht)
 js/ui/combat-view.js     Kampfkarte: Initiative-Reihenfolge, wer ist am Zug
 js/ui/map-view.js        Tab „Karte“: Werkzeugleiste, Hinweise, Raster einstellen
-js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren ziehen
+js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren auswählen und ziehen
+js/ui/map-inspector.js   Meister: Panel für ausgewählte Figuren (LeP, AsP, Zustände, verbergen …)
 js/ui/map-dialogs.js     Meister: Karten verwalten, Figuren aufstellen und bearbeiten
 js/ui/visibility-control.js  Auswahl „Öffentlich / Nur Meister / Verdeckt“
 js/ui/hero-choice.js     Held anlegen/übernehmen, Verbindungszustände

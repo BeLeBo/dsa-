@@ -380,20 +380,54 @@ export function createMapController({
     if (token?.image_path) await api.removeUnusedImages(roomId, [token.image_path]).catch(onError);
   }
 
-  /** Figur bewegen: sofort auf dem Gerät, dann auf dem Server. Bei Fehler zurück an den alten Platz. */
-  async function moveToken(tokenId, point) {
-    const token = state.get().tokens.find((entry) => entry.id === tokenId);
+  /**
+   * Figuren bewegen (eine oder mehrere): sofort auf dem Gerät, dann auf dem Server.
+   * Was der Server ablehnt, springt an den alten Platz zurück; der erste Fehler wird gemeldet.
+   * @param {{ id: string, x: number, y: number }[]} moves
+   */
+  async function moveTokens(moves) {
     const map = viewMap();
-    if (!token || !map) return;
-    const target = clampToMap(point, map);
-    handleTokenRow({ ...token, x: target.x, y: target.y });
-    try {
-      await api.moveToken(tokenId, target.x, target.y);
-    } catch (error) {
-      const current = state.get().tokens.find((entry) => entry.id === tokenId);
-      if (current) handleTokenRow({ ...current, x: token.x, y: token.y });
-      throw error;
+    const before = new Map(state.get().tokens.map((token) => [token.id, token]));
+    const valid = moves
+      .filter((move) => before.has(move.id) && map)
+      .map((move) => ({ id: move.id, ...clampToMap(move, map) }));
+    if (valid.length === 0) return;
+    const movedIds = new Set(valid.map((move) => move.id));
+    const moved = valid.map((move) => ({ ...before.get(move.id), x: move.x, y: move.y }));
+    state.update({ tokens: [...state.get().tokens.filter((token) => !movedIds.has(token.id)), ...moved] }); // bewegte oben
+
+    const results = await Promise.allSettled(valid.map((move) => api.moveToken(move.id, move.x, move.y)));
+    const failed = valid.filter((move, index) => results[index].status === 'rejected');
+    if (failed.length === 0) return;
+    for (const move of failed) {
+      const current = state.get().tokens.find((token) => token.id === move.id);
+      const original = before.get(move.id);
+      if (current) handleTokenRow({ ...current, x: original.x, y: original.y });
     }
+    throw results.find((result) => result.status === 'rejected').reason;
+  }
+
+  /** Eine Figur bewegen (Kurzform von moveTokens). */
+  function moveToken(tokenId, point) {
+    return moveTokens([{ id: tokenId, x: point.x, y: point.y }]);
+  }
+
+  /** Meister: mehrere Figuren verbergen oder zeigen. */
+  async function setTokensHidden(tokenIds, hidden) {
+    const saved = await Promise.all(tokenIds.map((id) => api.updateToken(id, { hidden })));
+    for (const row of saved) handleTokenRow(row);
+  }
+
+  /** Meister: mehrere Figuren entfernen (Bilder, die niemand mehr nutzt, werden aufgeräumt). */
+  async function removeTokens(tokenIds) {
+    const tokens = state.get().tokens.filter((token) => tokenIds.includes(token.id));
+    const results = await Promise.allSettled(tokens.map((token) => api.deleteToken(token.id)));
+    const removed = tokens.filter((token, index) => results[index].status === 'fulfilled');
+    for (const token of removed) handleTokenDeleted(token.id);
+    const imagePaths = removed.map((token) => token.image_path).filter(Boolean);
+    if (imagePaths.length) await api.removeUnusedImages(roomId, imagePaths).catch(onError);
+    const failure = results.find((result) => result.status === 'rejected');
+    if (failure) throw failure.reason;
   }
 
   return {
@@ -418,7 +452,10 @@ export function createMapController({
       addHeroes,
       editToken,
       removeToken,
+      removeTokens,
+      setTokensHidden,
       moveToken,
+      moveTokens,
     },
   };
 }

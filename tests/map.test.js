@@ -24,6 +24,9 @@ import {
   mapToScreen,
   zoomAt,
   pinchView,
+  normalizeRect,
+  tokensInRect,
+  moveGroup,
   MIN_GRID_SIZE,
   MAX_GRID_SIZE,
   MAX_ZOOM,
@@ -154,6 +157,59 @@ test('Karte: Figuren', 'Am Zug: Held über die ID, Gegner über den Namen', () =
   assertEqual(tokensForTurn(tokens, { characterId: 'c1', name: 'Alrik Wolfsfell' }), ['t1']);
   assertEqual(tokensForTurn(tokens, { characterId: null, name: 'Ork 2' }), ['t2']);
   assertEqual(tokensForTurn(tokens, null), []);
+});
+
+test('Karte: Auswahl', 'Auswahlrechteck in jede Richtung aufziehen', () => {
+  assertEqual(normalizeRect({ x: 300, y: 50 }, { x: 100, y: 200 }), { left: 100, top: 50, right: 300, bottom: 200 });
+});
+
+test('Karte: Auswahl', 'Rechteck erfasst alle Figuren, die es berührt (Figuren sind Kreise)', () => {
+  const tokens = [
+    { id: 'innen', x: 150, y: 100, size: 1 },
+    { id: 'Rand', x: 100, y: 100, size: 1 }, // Radius 25, Rechteck beginnt 20 daneben
+    { id: 'knapp daneben', x: 100, y: 300, size: 1 }, // 30 entfernt
+    { id: 'Ecke', x: 102, y: 38, size: 1 }, // diagonal 25,46 entfernt: Quadrat ja, Kreis nein
+    { id: 'groß', x: 400, y: 100, size: 4 }, // Radius 100
+  ];
+  const rect = normalizeRect({ x: 120, y: 56 }, { x: 320, y: 270 });
+  assertEqual(tokensInRect(tokens, rect, GRID), ['innen', 'Rand', 'groß']);
+  assertEqual(tokensInRect(tokens, normalizeRect({ x: 0, y: 0 }, { x: 5, y: 5 }), GRID), [], 'leere Fläche');
+});
+
+test('Karte: Auswahl', 'Gruppe bewegen: gezogene Figur rastet ein, die Formation bleibt', () => {
+  const group = [
+    { id: 'a', x: 35, y: 45, size: 1 },
+    { id: 'b', x: 85, y: 45, size: 1 },
+    { id: 'c', x: 110, y: 120, size: 2 },
+  ];
+  assertEqual(moveGroup(group, 'a', { x: 240, y: 250 }, GRID, MAP), [
+    { id: 'a', x: 235, y: 245 },
+    { id: 'b', x: 285, y: 245 },
+    { id: 'c', x: 310, y: 320 },
+  ]);
+  assertEqual(
+    moveGroup(group, 'b', { x: 100, y: 60 }, { ...GRID, show: false }, MAP),
+    [
+      { id: 'a', x: 50, y: 60 },
+      { id: 'b', x: 100, y: 60 },
+      { id: 'c', x: 125, y: 135 },
+    ],
+    'ohne Raster frei',
+  );
+});
+
+test('Karte: Auswahl', 'Gruppe bewegen: am Kartenrand bleiben alle auf der Karte', () => {
+  const group = [
+    { id: 'a', x: 35, y: 45, size: 1 },
+    { id: 'b', x: 85, y: 45, size: 1 },
+    { id: 'c', x: 110, y: 120, size: 2 },
+  ];
+  const moves = moveGroup(group, 'a', { x: 5000, y: 30 }, GRID, MAP);
+  assertEqual(moves[0], { id: 'a', x: 985, y: 45 }, 'gezogene Figur auf das letzte Feld');
+  assertTrue(
+    moves.every((move) => move.x >= 0 && move.x <= MAP.width && move.y >= 0 && move.y <= MAP.height),
+    JSON.stringify(moves),
+  );
 });
 
 test('Karte: Bilder', 'Kartenname aus Dateiname, Verkleinern ohne Vergrößern', () => {
@@ -385,6 +441,106 @@ test(CONTROLLER, 'Figur bewegen: sofort sichtbar, bei Fehler zurück an den alte
   await moving.catch(() => (failed = true));
   assertTrue(failed, 'Fehler wird weitergegeben');
   assertEqual([controller.state.get().tokens[0].x, controller.state.get().tokens[0].y], [100, 100], 'zurückgesetzt');
+  cleanup();
+});
+
+test(CONTROLLER, 'Mehrere Figuren bewegen: alle sofort, abgelehnte zurück', async () => {
+  const api = fakeApi({
+    moveToken: async (id) => {
+      if (id === 't2') throw new Error('Diese Figur gibt es nicht mehr.');
+    },
+  });
+  const { controller, cleanup } = mapController({ api });
+  addMap(api, 'm1');
+  api.db.tokens.push(
+    { id: 't1', map_id: 'm1', name: 'A', x: 100, y: 100 },
+    { id: 't2', map_id: 'm1', name: 'B', x: 150, y: 100 },
+    { id: 't3', map_id: 'm1', name: 'C', x: 500, y: 500 },
+  );
+  await controller.load();
+  const moving = controller.actions.moveTokens([
+    { id: 't1', x: 300, y: 300 },
+    { id: 't2', x: 350, y: 300 },
+    { id: 'weg', x: 1, y: 1 },
+  ]);
+  const position = (id) => {
+    const token = controller.state.get().tokens.find((entry) => entry.id === id);
+    return [token.x, token.y];
+  };
+  assertEqual(
+    [position('t1'), position('t2')],
+    [
+      [300, 300],
+      [350, 300],
+    ],
+    'sofort',
+  );
+  assertEqual(
+    controller.state.get().tokens.map((token) => token.id),
+    ['t3', 't1', 't2'],
+    'bewegte Figuren liegen oben',
+  );
+  let error = null;
+  await moving.catch((caught) => (error = caught));
+  assertEqual(error?.message, 'Diese Figur gibt es nicht mehr.');
+  assertEqual(
+    [position('t1'), position('t2'), position('t3')],
+    [
+      [300, 300],
+      [150, 100],
+      [500, 500],
+    ],
+  );
+  cleanup();
+});
+
+test(CONTROLLER, 'Meister: mehrere Figuren verbergen und entfernen', async () => {
+  const { controller, api, cleanup } = mapController();
+  addMap(api, 'm1');
+  api.db.tokens.push(
+    { id: 't1', map_id: 'm1', name: 'A', image_path: 'raum/a.webp', x: 0, y: 0, hidden: false },
+    { id: 't2', map_id: 'm1', name: 'B', image_path: null, x: 0, y: 0, hidden: false },
+    { id: 't3', map_id: 'm1', name: 'C', image_path: 'raum/c.webp', x: 0, y: 0, hidden: false },
+  );
+  await controller.load();
+  await controller.actions.setTokensHidden(['t1', 't2'], true);
+  assertEqual(
+    controller.state
+      .get()
+      .tokens.filter((token) => token.hidden)
+      .map((token) => token.id),
+    ['t1', 't2'],
+  );
+  await controller.actions.removeTokens(['t1', 't2']);
+  assertEqual(
+    controller.state.get().tokens.map((token) => token.id),
+    ['t3'],
+  );
+  assertEqual(api.calls.at(-1), ['removeUnusedImages', ['raum/a.webp']], 'nur vorhandene Bilder');
+  cleanup();
+});
+
+test(CONTROLLER, 'Meister: Entfernen, das teilweise scheitert, entfernt den Rest', async () => {
+  const api = fakeApi();
+  const deleteToken = api.deleteToken;
+  api.deleteToken = async (id) => {
+    if (id === 't2') throw new Error('Keine Verbindung zum Server.');
+    return deleteToken(id);
+  };
+  const { controller, cleanup } = mapController({ api });
+  addMap(api, 'm1');
+  api.db.tokens.push(
+    { id: 't1', map_id: 'm1', name: 'A', x: 0, y: 0 },
+    { id: 't2', map_id: 'm1', name: 'B', x: 0, y: 0 },
+  );
+  await controller.load();
+  let error = null;
+  await controller.actions.removeTokens(['t1', 't2']).catch((caught) => (error = caught));
+  assertEqual(error?.message, 'Keine Verbindung zum Server.');
+  assertEqual(
+    controller.state.get().tokens.map((token) => token.id),
+    ['t2'],
+  );
   cleanup();
 });
 

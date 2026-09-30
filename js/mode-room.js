@@ -43,7 +43,7 @@ import {
 } from './sync.js';
 import { normalizeHero, heroName } from './sheet.js';
 import { isPlainObject } from './util.js';
-import { toInt } from './rules.js';
+import { toInt, clampConditionLevel } from './rules.js';
 import { readLocalHero } from './mode-local.js';
 
 /** Wartezeit bis zum nächsten Verbindungsversuch, wenn der Server nicht erreichbar ist. */
@@ -81,6 +81,20 @@ export function startRoomMode(initialSession, { onLeave }) {
   });
 
   /** Heldendaten zu einer ID: geöffneter Held aus dem Speicher, sonst aus der Gruppenliste. */
+  /**
+   * Änderungen des Meisters, die noch auf dem Weg zum Server sind (je Held, in Reihenfolge).
+   * Sie liegen über jedem Stand, der vom Server kommt – so springt die Anzeige bei schnellen
+   * Tipps nicht kurz auf einen Zwischenstand zurück.
+   */
+  const pendingHeroChanges = new Map();
+  function withPendingChanges(row) {
+    const pending = row ? pendingHeroChanges.get(row.id) : null;
+    if (!pending?.length || !isPlainObject(row.data)) return row;
+    const hero = normalizeHero(row.data);
+    for (const mutate of pending) mutate(hero);
+    return { ...row, data: hero };
+  }
+
   function heroFor(characterId) {
     if (sync?.id === characterId) return store.hero;
     const row = room.get().characters.find((character) => character.id === characterId);
@@ -249,7 +263,11 @@ export function startRoomMode(initialSession, { onLeave }) {
     }
     const me = roster.members.find((member) => member.user_id === session.userId);
     if (me && me.role !== session.role) updateSession({ role: me.role });
-    room.update({ members: roster.members, characters: roster.characters, combat: roster.room.combat ?? null });
+    room.update({
+      members: roster.members,
+      characters: roster.characters.map(withPendingChanges),
+      combat: roster.room.combat ?? null,
+    });
     logClearedAt = roster.room.log_cleared_at;
     mapController.handleRoomRow(roster.room);
     return roster;
@@ -273,7 +291,7 @@ export function startRoomMode(initialSession, { onLeave }) {
   async function handleCharacterRow(incoming) {
     const row = await completeRow(incoming).catch(() => null);
     if (!row) return;
-    room.update({ characters: upsertById(room.get().characters, row) });
+    room.update({ characters: upsertById(room.get().characters, withPendingChanges(row)) });
     if (sync?.id === row.id) {
       sync.applyRemote(row.data);
     } else if (!isMaster() && !sync && row.owner_id === session.userId) {
@@ -412,28 +430,73 @@ export function startRoomMode(initialSession, { onLeave }) {
   }
 
   /**
-   * Meister: LE (o. Ä.) eines Helden direkt aus der Übersicht ändern. Mehrere schnelle Tipps
-   * werden nacheinander ausgeführt, damit keiner verloren geht.
+   * Meister: Werte eines Helden direkt ändern (Übersicht „Gruppe“, Panel auf der Karte).
+   * Ist der Held geöffnet, geht es über den Heldenbogen (mit Abgleich). Sonst sofort in der
+   * Anzeige, und auf dem Server nacheinander: neuester Stand laden, ändern, speichern –
+   * so geht bei schnellen Tipps nichts verloren und Änderungen der Spieler bleiben erhalten.
+   * @param {(hero: object) => void} mutate  ändert den (normalisierten) Helden
    */
-  let poolQueue = Promise.resolve();
-  function adjustPool(characterId, key, delta) {
+  let heroQueue = Promise.resolve();
+  function changeHero(characterId, mutate) {
     if (sync?.id === characterId) {
-      const pool = store.hero.base[key];
-      pool.current = toInt(pool.current) + delta;
+      mutate(store.hero);
       store.changed('value', null);
       return;
     }
-    poolQueue = poolQueue
+    const pending = pendingHeroChanges.get(characterId) ?? [];
+    pending.push(mutate);
+    pendingHeroChanges.set(characterId, pending);
+    const done = () => {
+      pending.splice(pending.indexOf(mutate), 1);
+      if (pending.length === 0 && pendingHeroChanges.get(characterId) === pending) {
+        pendingHeroChanges.delete(characterId);
+      }
+    };
+    const shown = room.get().characters.find((character) => character.id === characterId);
+    if (shown) {
+      const preview = normalizeHero(shown.data);
+      mutate(preview);
+      room.update({ characters: upsertById(room.get().characters, { ...shown, data: preview }) });
+    }
+    heroQueue = heroQueue
       .then(async () => {
         const row = await fetchCharacter(characterId);
-        if (!row) return;
+        if (!row) return done();
         const hero = normalizeHero(row.data);
-        hero.base[key].current = toInt(hero.base[key].current) + delta;
+        mutate(hero);
         await saveCharacterData(characterId, hero);
-        room.update({ characters: upsertById(room.get().characters, { ...row, data: hero }) });
+        done();
+        room.update({ characters: upsertById(room.get().characters, withPendingChanges({ ...row, data: hero })) });
       })
-      .catch((error) => showError(error, 'Ändern fehlgeschlagen'));
+      .catch(async (error) => {
+        done();
+        showError(error, 'Ändern fehlgeschlagen');
+        const row = await fetchCharacter(characterId).catch(() => null); // Anzeige wieder auf Serverstand
+        if (row) room.update({ characters: upsertById(room.get().characters, withPendingChanges(row)) });
+      });
   }
+
+  const heroActions = {
+    adjustPool: (characterId, key, delta) =>
+      changeHero(characterId, (hero) => {
+        hero.base[key].current = toInt(hero.base[key].current) + delta;
+      }),
+    setPool: (characterId, key, value) =>
+      changeHero(characterId, (hero) => {
+        hero.base[key].current = toInt(value);
+      }),
+    setCondition: (characterId, id, level) =>
+      changeHero(characterId, (hero) => {
+        hero.conditions[id] = clampConditionLevel(level);
+      }),
+    open: (id) =>
+      run('Öffnen fehlgeschlagen', async () => {
+        const row = room.get().characters.find((character) => character.id === id);
+        if (!row) return;
+        await openCharacter(row);
+        shell.selectTab(TABS.hero.id);
+      }),
+  };
 
   function menuItems() {
     const heroItems = store.hero
@@ -454,6 +517,9 @@ export function startRoomMode(initialSession, { onLeave }) {
     room,
     isMaster,
     myCharacterId: () => (isMaster() ? null : (sync?.id ?? null)),
+    heroFor,
+    heroActions,
+    subscribeHero: (listener) => store.subscribe(listener),
   });
 
   createGroupView(shell.panel(TABS.group.id), {
@@ -463,14 +529,8 @@ export function startRoomMode(initialSession, { onLeave }) {
     actions: {
       share,
       leave,
-      adjustPool,
-      open: (id) =>
-        run('Öffnen fehlgeschlagen', async () => {
-          const row = room.get().characters.find((character) => character.id === id);
-          if (!row) return;
-          await openCharacter(row);
-          shell.selectTab(TABS.hero.id);
-        }),
+      adjustPool: heroActions.adjustPool,
+      open: heroActions.open,
       assign: (characterId, userId) =>
         run('Übergeben fehlgeschlagen', async () => {
           await assignCharacter(characterId, userId);

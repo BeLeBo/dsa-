@@ -1980,6 +1980,8 @@ input.num::-webkit-inner-spin-button {
 
 .map-frame {
   position: relative;
+  display: flex;
+  flex-direction: column;
   height: 60vh;
   min-height: 260px;
   overflow: hidden;
@@ -2001,9 +2003,11 @@ body.map-fullscreen-open {
   overflow: hidden;
 }
 
+/* Die Karte nimmt den Platz über dem Panel des Meisters ein */
 .map-viewport {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 120px;
   overflow: hidden;
   touch-action: none;
   cursor: grab;
@@ -2016,7 +2020,6 @@ body.map-fullscreen-open {
   top: 0;
   left: 0;
   transform-origin: 0 0;
-  will-change: transform;
   --inverse-scale: 1;
 }
 
@@ -2044,9 +2047,19 @@ body.map-fullscreen-open {
   stroke: rgb(255 255 255 / 0.75);
 }
 
+.map-viewport.is-select-mode {
+  cursor: crosshair;
+}
+
+.map-viewport.is-panning {
+  cursor: grabbing;
+}
+
+/* Figuren liegen in Bildschirmgröße über der Karte – dadurch immer scharf */
 .map-tokens {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 
 .map-token {
@@ -2057,6 +2070,7 @@ body.map-fullscreen-open {
   justify-content: center;
   cursor: default;
   outline: none;
+  pointer-events: auto;
 }
 
 .map-token.is-movable {
@@ -2071,9 +2085,9 @@ body.map-fullscreen-open {
   height: 100%;
   overflow: hidden;
   border-radius: 50%;
-  border: calc(3px * var(--inverse-scale)) solid var(--token-color);
+  border: 3px solid var(--token-color);
   background: var(--token-color);
-  box-shadow: 0 calc(2px * var(--inverse-scale)) calc(6px * var(--inverse-scale)) rgb(0 0 0 / 0.45);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.45);
   color: #fff;
   transition: box-shadow 0.15s ease;
 }
@@ -2100,12 +2114,12 @@ body.map-fullscreen-open {
 .map-token-name {
   position: absolute;
   top: 100%;
-  margin-top: calc(2px * var(--inverse-scale));
-  padding: 0 calc(5px * var(--inverse-scale));
-  border-radius: calc(6px * var(--inverse-scale));
-  background: rgb(255 255 255 / 0.85);
+  margin-top: 2px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.88);
   color: #16130f;
-  font-size: calc(12px * var(--inverse-scale));
+  font-size: 0.75rem;
   font-weight: 700;
   line-height: 1.35;
   white-space: nowrap;
@@ -2118,7 +2132,7 @@ body.map-fullscreen-open {
 }
 
 .map-token.is-dragging .map-token-face {
-  box-shadow: 0 calc(8px * var(--inverse-scale)) calc(18px * var(--inverse-scale)) rgb(0 0 0 / 0.55);
+  box-shadow: 0 8px 18px rgb(0 0 0 / 0.55);
 }
 
 .map-token.is-hidden {
@@ -2131,26 +2145,206 @@ body.map-fullscreen-open {
 
 .map-token.is-turn .map-token-face {
   box-shadow:
-    0 0 0 calc(3px * var(--inverse-scale)) #fff,
-    0 0 0 calc(6px * var(--inverse-scale)) var(--accent);
+    0 0 0 3px #fff,
+    0 0 0 6px var(--accent);
 }
 
-/* Weit herausgezoomt: Namen nur bei eigener Figur, Figur am Zug und beim Ziehen */
-.map-stage.is-compact .map-token-name {
-  display: none;
+.map-token.is-selected .map-token-face {
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 0 6px var(--focus);
 }
 
-.map-stage.is-compact .map-token.is-mine .map-token-name,
-.map-stage.is-compact .map-token.is-turn .map-token-name,
-.map-stage.is-compact .map-token.is-dragging .map-token-name,
-.map-stage.is-compact .map-token:focus-visible .map-token-name {
-  display: block;
+.map-token.is-selected.is-turn .map-token-face {
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 0 6px var(--focus),
+    0 0 0 9px var(--accent);
 }
 
 .map-token:focus-visible .map-token-face {
   box-shadow:
-    0 0 0 calc(3px * var(--inverse-scale)) #fff,
-    0 0 0 calc(6px * var(--inverse-scale)) var(--focus);
+    0 0 0 3px #fff,
+    0 0 0 6px var(--focus);
+}
+
+/* Weit herausgezoomt: Namen nur bei eigener, ausgewählter, gezogener Figur und der am Zug */
+.map-tokens.is-compact .map-token-name {
+  display: none;
+}
+
+/* Bei mehreren markierten Figuren stehen die Namen im Panel – sonst überlappen sie */
+.map-tokens.is-compact .map-token.is-mine .map-token-name,
+.map-tokens.is-compact .map-token.is-turn .map-token-name,
+.map-tokens.is-compact:not(.has-group) .map-token.is-selected .map-token-name,
+.map-tokens.is-compact .map-token:focus-visible .map-token-name {
+  display: block;
+}
+
+.map-marquee {
+  position: absolute;
+  border: 2px dashed var(--focus);
+  background: rgb(31 95 191 / 0.12);
+  pointer-events: none;
+}
+
+.map-marquee[hidden] {
+  display: none;
+}
+
+/* Panel des Meisters für ausgewählte Figuren */
+/* Panel des Meisters unter der Karte – verdeckt keine Figuren */
+.map-inspector {
+  position: relative;
+  z-index: 3;
+  flex: none;
+  max-height: 50%;
+  overflow-y: auto;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 -2px 10px rgb(0 0 0 / 0.15);
+}
+
+.map-frame.is-fullscreen .map-inspector {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inspector-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector-title strong {
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.inspector-pools {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 6px 16px;
+  margin: 6px 0;
+}
+
+.inspector-pool {
+  display: grid;
+  grid-template-columns: 3.4em var(--touch) minmax(3em, 5em) var(--touch) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector-label {
+  font-weight: 800;
+}
+
+.inspector-max {
+  color: var(--muted);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.inspector-conditions > summary {
+  min-height: var(--touch);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.inspector-conditions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inspector-conditions > summary::before {
+  content: '▸';
+  color: var(--muted);
+}
+
+.inspector-conditions[open] > summary::before {
+  content: '▾';
+}
+
+.inspector-condition-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 4px 16px;
+}
+
+.inspector-condition {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--touch) 2.2em var(--touch);
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector-condition.is-active > span:first-child {
+  color: var(--failure);
+  font-weight: 700;
+}
+
+.inspector-level {
+  text-align: center;
+}
+
+.inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.inspector-actions .btn {
+  flex: 1 1 110px;
+  white-space: nowrap;
+}
+
+.inspector-list {
+  display: flex;
+  flex-direction: column;
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inspector-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.inspector-list-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.inspector-list-life {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector-list-value {
+  min-width: 4.5em;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .map-status {
