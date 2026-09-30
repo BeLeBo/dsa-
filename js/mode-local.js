@@ -4,7 +4,7 @@
 import { createShell, TABS } from './ui/shell.js';
 import { showError, showToast } from './ui/toast.js';
 import { confirmDialog } from './ui/dialog.js';
-import { downloadHero, pickHeroFile } from './ui/hero-file.js';
+import { downloadHero, pickHeroFile, showImportReport } from './ui/hero-file.js';
 import { createHeroStore } from './store.js';
 import { createSaver } from './saver.js';
 import { createLocalLog, LOG_KEY } from './log.js';
@@ -31,14 +31,15 @@ export function startLocalMode({ onLeave }) {
     items: [
       { label: 'Held exportieren (JSON-Sicherung)', onClick: () => downloadHero(store.hero) },
       {
-        label: 'Held importieren …',
+        label: 'Held importieren (Sicherung oder Optolith) …',
         onClick: async () => {
-          const imported = await pickHeroFile();
-          if (!imported) return;
-          const question = `„${heroName(store.hero)}“ auf diesem Gerät durch „${heroName(imported)}“ ersetzen?`;
+          const picked = await pickHeroFile();
+          if (!picked) return;
+          const question = `„${heroName(store.hero)}“ auf diesem Gerät durch „${heroName(picked.hero)}“ ersetzen?`;
           if (!(await confirmDialog(question, { confirmLabel: 'Ersetzen', danger: true }))) return;
-          store.replace(imported);
-          showToast(`„${heroName(imported)}“ wurde importiert.`);
+          store.replace(picked.hero);
+          showToast(`„${heroName(picked.hero)}“ wurde importiert.`);
+          showImportReport(picked.report);
         },
       },
       {

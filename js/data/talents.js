@@ -89,6 +89,7 @@ function technique(id, name, leading, ranged = false) {
 /** Kampftechniken mit Leiteigenschaft(en). Nahkampf: AT/PA, Fernkampf: FK. */
 export const COMBAT_TECHNIQUES = Object.freeze([
   technique('dolche', 'Dolche', 'GE'),
+  technique('faecher', 'Fächer', 'GE'),
   technique('fechtwaffen', 'Fechtwaffen', 'GE'),
   technique('hiebwaffen', 'Hiebwaffen', 'KK'),
   technique('kettenwaffen', 'Kettenwaffen', 'KK'),
@@ -97,6 +98,7 @@ export const COMBAT_TECHNIQUES = Object.freeze([
   technique('raufen', 'Raufen', 'GE/KK'),
   technique('schilde', 'Schilde', 'KK'),
   technique('schwerter', 'Schwerter', 'GE/KK'),
+  technique('spiesswaffen', 'Spießwaffen', 'KK'),
   technique('stangenwaffen', 'Stangenwaffen', 'GE/KK'),
   technique('zweihandhiebwaffen', 'Zweihandhiebwaffen', 'KK'),
   technique('zweihandschwerter', 'Zweihandschwerter', 'KK'),

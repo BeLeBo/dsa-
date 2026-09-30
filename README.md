@@ -100,7 +100,7 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 1. Der Meister öffnet die App → **Neuen Raum erstellen** → Name und **Meister-PIN** festlegen.
 2. Unter **Gruppe** → **Einladung teilen** den Link (oder den 6-stelligen Raumcode) an die Gruppe schicken.
 3. Spieler öffnen den Link → Namen eingeben → **Beitreten** → **Neuen Helden anlegen**
-   (oder einen Helden von diesem Gerät bzw. aus einer JSON-Datei übernehmen).
+   (oder einen Helden von diesem Gerät, aus einer Sicherung oder aus **Optolith** übernehmen – siehe unten).
 
 ### 8. Als App auf dem Handy installieren (empfohlen)
 
@@ -182,6 +182,32 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 - **Bedienung am Handy:** Alle Knöpfe sind mindestens 44 px groß, die Tab-Leiste liegt unten in
   Daumenreichweite, Eingabefelder zoomen beim Antippen nicht (iPhone). Auf großen Bildschirmen
   steht der Heldenbogen zweispaltig.
+
+## Helden aus Optolith übernehmen
+
+Wer seine Helden mit [Optolith](https://github.com/elyukai/optolith-client) gebaut hat, muss nichts abtippen:
+
+1. In Optolith den Helden öffnen → **Heldenbögen** → den **MapTool-Export** speichern (Datei `.rptok`).
+2. Zusätzlich empfohlen: In der Heldenliste den Helden **exportieren** (Datei `.json`).
+3. In der App: im Raum **„Helden aus Datei laden (Sicherung oder Optolith)“** (bzw. Menü → „Held aus Datei
+   ersetzen …“), ohne Raum Menü → **„Held importieren …“** – und **beide Dateien zusammen** auswählen.
+
+Danach zeigt die App, was übernommen wurde und was noch fehlt. Im Raum ist der Held damit sofort
+auf dem Server gespeichert und für den Meister sichtbar.
+
+- **Aus der `.rptok`:** Eigenschaften, LeP/AsP/KaP, SK, ZK, AW, INI, GS, Schicksalspunkte, AP gesamt und
+  ausgegeben, alle Talente mit Probe, Spezialisierungen, Kampftechniken, Vorteile, Nachteile,
+  Sonderfertigkeiten, Sprachen und Schriften (mit Stufe), Berufsgeheimnisse, Zauber, Rituale,
+  Liturgien und Zeremonien (mit Probe), Waffen (TP inkl. Schadensbonus, AT/PA, Reichweite), Rüstung,
+  Inventar und Geld.
+- **Aus der `.json` zusätzlich:** Spezies, Erfahrungsgrad, persönliche Daten (Familie, Geburtsort,
+  Alter, Größe, Gewicht, Sozialstatus …) und Gegenstandsarten – Tiere landen beim Packtier, Wagen
+  beim Wagen.
+- **Von Hand nachtragen:** Kultur und Profession, Haar-/Augenfarbe, Zaubertricks und Segnungen sowie
+  Kosten/Dauer/Reichweite von Zaubern – diese Namen bzw. Angaben exportiert Optolith nicht.
+- Nur die `.json` geht auch: Dann fehlen die Namen von Vorteilen, Sonderfertigkeiten und Zaubern
+  (Optolith speichert dort nur Nummern), LeP, SK und ZK werden aus Spezies und Eigenschaften berechnet.
+- Einen **PDF-Heldenbogen** kann die App nicht einlesen.
 
 ## Karte
 
@@ -287,6 +313,9 @@ js/combat.js             Kampfreihenfolge als reine Funktionen (Initiative, Rund
 js/mode-local.js         Modus „Ohne Raum“: Held nur auf diesem Gerät
 js/supabase.js           Server: supabase-js laden, anonym anmelden, Fehlermeldungen
 js/room.js               Räume erstellen/beitreten/verlassen, Sitzung, Eingaben prüfen
+js/optolith.js           Import aus Optolith: MapTool-Token (.rptok) und Heldendatei (.json)
+js/hero-files.js         Gewählte Helden-Dateien erkennen (Sicherung, .rptok, Optolith-.json)
+js/zip.js                Dateien aus ZIP-Archiven lesen (die .rptok ist ein ZIP)
 js/sync.js               Helden laden/speichern, Offline-Speicher, Realtime
 js/merge.js              Gleichzeitige Änderungen zusammenführen (Drei-Wege-Merge)
 js/rules.js              Reine DSA5-Regel-Logik (kein DOM, kein Zufall)
@@ -310,7 +339,7 @@ js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren ziehen
 js/ui/map-dialogs.js     Meister: Karten verwalten, Figuren aufstellen und bearbeiten
 js/ui/visibility-control.js  Auswahl „Öffentlich / Nur Meister / Verdeckt“
 js/ui/hero-choice.js     Held anlegen/übernehmen, Verbindungszustände
-js/ui/hero-file.js       Held als JSON sichern und laden
+js/ui/hero-file.js       Held als JSON sichern und laden, Importbericht (Optolith)
 js/ui/dom.js             Sicheres Erzeugen von Elementen (nie innerHTML mit Nutzerdaten)
 js/ui/fields.js          An den Helden gebundene Eingabefelder
 js/ui/dialog.js          Dialoge (am Handy als Blatt von unten)

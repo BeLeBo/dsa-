@@ -12,7 +12,7 @@ import { createMapView } from './ui/map-view.js';
 import { renderHeroChoice } from './ui/hero-choice.js';
 import { showToast, showError } from './ui/toast.js';
 import { confirmDialog } from './ui/dialog.js';
-import { downloadHero, pickHeroFile } from './ui/hero-file.js';
+import { downloadHero, pickHeroFile, showImportReport } from './ui/hero-file.js';
 import { createHeroStore, createObservable } from './store.js';
 import { VISIBILITY, VISIBILITY_LABELS } from './log.js';
 import { createRoomLog } from './room-log.js';
@@ -403,10 +403,12 @@ export function startRoomMode(initialSession, { onLeave }) {
   }
 
   async function replaceFromFile() {
-    const imported = await pickHeroFile();
-    if (!imported) return;
-    const question = `„${heroName(store.hero)}“ durch „${heroName(imported)}“ aus der Datei ersetzen?`;
-    if (await confirmDialog(question, { confirmLabel: 'Ersetzen', danger: true })) store.replace(imported);
+    const picked = await pickHeroFile();
+    if (!picked) return;
+    const question = `„${heroName(store.hero)}“ durch „${heroName(picked.hero)}“ aus der Datei ersetzen?`;
+    if (!(await confirmDialog(question, { confirmLabel: 'Ersetzen', danger: true }))) return;
+    store.replace(picked.hero);
+    showImportReport(picked.report);
   }
 
   /**
@@ -437,7 +439,7 @@ export function startRoomMode(initialSession, { onLeave }) {
     const heroItems = store.hero
       ? [
           { label: 'Held exportieren (JSON-Sicherung)', onClick: () => downloadHero(store.hero) },
-          { label: 'Held aus Datei ersetzen …', onClick: replaceFromFile },
+          { label: 'Held aus Datei ersetzen (Sicherung oder Optolith) …', onClick: replaceFromFile },
         ]
       : [];
     return [

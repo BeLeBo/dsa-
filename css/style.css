@@ -2297,3 +2297,14 @@ body.map-fullscreen-open {
   overflow-wrap: anywhere;
   color: var(--muted);
 }
+
+/* ---------- Importbericht (Optolith) ---------- */
+
+.import-list {
+  margin: 0 0 8px;
+  padding-left: 1.2em;
+}
+
+.import-list li {
+  margin-bottom: 4px;
+}

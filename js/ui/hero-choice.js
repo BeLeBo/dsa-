@@ -4,7 +4,7 @@
  * Verbindungs- und Fehlerzustände.
  */
 import { h } from './dom.js';
-import { pickHeroFile } from './hero-file.js';
+import { pickHeroFile, showImportReport, IMPORT_HINT } from './hero-file.js';
 import { createHero, heroName } from '../sheet.js';
 
 function card(title, ...content) {
@@ -45,11 +45,14 @@ export function renderHeroChoice({ state, isMaster, localHero, errorMessage, onC
   }
 
   const status = h('p', { class: 'error-text', hidden: true, role: 'alert' });
+  /** loadHero liefert { hero, report } (report nur beim Import aus Optolith) oder null. */
   const create = async (loadHero) => {
     status.hidden = true;
     try {
-      const hero = await loadHero();
-      if (hero) await onCreate(hero);
+      const loaded = await loadHero();
+      if (!loaded) return;
+      await onCreate(loaded.hero);
+      showImportReport(loaded.report);
     } catch (error) {
       status.textContent = error.message;
       status.hidden = false;
@@ -61,17 +64,22 @@ export function renderHeroChoice({ state, isMaster, localHero, errorMessage, onC
     { class: 'menu-list' },
     h(
       'button',
-      { type: 'button', class: 'btn btn-primary', onclick: () => create(() => createHero()) },
+      { type: 'button', class: 'btn btn-primary', onclick: () => create(() => ({ hero: createHero() })) },
       'Neuen Helden anlegen',
     ),
     localHero
       ? h(
           'button',
-          { type: 'button', class: 'btn', onclick: () => create(() => localHero) },
+          { type: 'button', class: 'btn', onclick: () => create(() => ({ hero: localHero })) },
           `„${heroName(localHero)}“ von diesem Gerät übernehmen`,
         )
       : null,
-    h('button', { type: 'button', class: 'btn', onclick: () => create(pickHeroFile) }, 'Helden aus Datei laden (JSON)'),
+    h(
+      'button',
+      { type: 'button', class: 'btn', onclick: () => create(pickHeroFile) },
+      'Helden aus Datei laden (Sicherung oder Optolith)',
+    ),
+    h('p', { class: 'section-hint' }, IMPORT_HINT),
   );
 
   if (isMaster) {

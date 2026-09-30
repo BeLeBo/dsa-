@@ -7,6 +7,7 @@ import './sheet.test.js';
 import './sync.test.js';
 import './combat.test.js';
 import './map.test.js';
+import './optolith.test.js';
 
 const results = await runTests();
 window.testResults = results;
