@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DSA5-Regeltests</title>
+    <title>DSA5-Tests</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -113,8 +113,8 @@
   </head>
   <body>
     <main>
-      <h1>DSA5-Regeltests</h1>
-      <p class="hint">Prüft <code>js/rules.js</code> und <code>js/dice.js</code> automatisch beim Laden der Seite.</p>
+      <h1>DSA5-Tests</h1>
+      <p class="hint">Prüft Regeln, Würfel, Heldenmodell und Proben automatisch beim Laden der Seite.</p>
       <div id="summary" class="summary">Tests laufen …</div>
       <div id="results"></div>
     </main>
@@ -138,10 +138,6 @@
       }
       window.addEventListener('error', (event) => showLoadError(event.message));
     </script>
-    <script
-      type="module"
-      src="rules.test.js"
-      onerror="showLoadError('rules.test.js oder ein Modul konnte nicht geladen werden.')"
-    ></script>
+    <script type="module" src="run.js" onerror="showLoadError('Ein Testmodul konnte nicht geladen werden.')"></script>
   </body>
 </html>

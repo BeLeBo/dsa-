@@ -11,7 +11,7 @@ Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles
 | Phase | Inhalt                                                                 | Status    |
 | ----- | ---------------------------------------------------------------------- | --------- |
 | 1     | Dateistruktur, Regel-Logik (`rules.js`), Würfel (`dice.js`), Testseite | ✅ fertig |
-| 2     | Heldenbogen lokal (noch ohne Server)                                   | offen     |
+| 2     | Heldenbogen lokal (noch ohne Server)                                   | ✅ fertig |
 | 3     | Supabase: SQL, Räume, Rollen, Sync                                     | offen     |
 | 4     | Würfelprotokoll, Meister-Ansicht, Initiative                           | offen     |
 | 5     | Mobile-Feinschliff, PWA                                                | offen     |
@@ -19,45 +19,76 @@ Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles
 Die vollständige Einrichtungsanleitung (Supabase-Projekt anlegen, SQL ausführen, Keys eintragen,
 auf GitHub Pages veröffentlichen) kommt mit Phase 3 in diese Datei.
 
-## Dateistruktur
+## App lokal starten
 
-Bereits vorhanden:
-
-```
-js/rules.js            Reine DSA5-Regel-Logik (kein DOM, kein Zufall)
-js/dice.js             Würfeln mit crypto.getRandomValues, Würfelausdrücke wie 2W6+3
-tests/rules.test.html  Testseite – prüft rules.js und dice.js automatisch
-tests/rules.test.js    Die Testfälle
-tests/harness.js       Kleines Testwerkzeug für die Testseite
-```
-
-Geplant für die folgenden Phasen:
-
-```
-index.html             Einstieg der App
-css/style.css          Gestaltung (mobile-first, Hell/Dunkel)
-js/app.js              Start, Navigation, Tab-Leiste
-js/data/talents.js     DSA5-Talente und Kampftechniken
-js/sheet.js            Heldenmodell: Standardwerte, Export/Import
-js/checks.js           Proben ausführen (Heldenbogen + Würfel + Regeln → Protokolleintrag)
-js/room.js             Räume erstellen/beitreten, Meister-PIN, Rollen
-js/sync.js             Supabase, Speichern mit Debounce, Realtime, Offline-Warteschlange
-js/ui/*.js             Oberflächen-Module (Heldenbogen, Probendialog, Protokoll, Gruppe …)
-supabase/schema.sql    Tabellen und Row Level Security
-manifest.webmanifest   PWA-Manifest
-sw.js                  Service Worker (offline lesbar)
-```
-
-## Tests ausführen
-
-ES-Module laden nicht über `file://`. Deshalb die Seite über einen einfachen Webserver öffnen:
+ES-Module laden nicht über `file://`. Deshalb die App über einen einfachen Webserver öffnen:
 
 ```bash
 # im Projektordner
 python3 -m http.server 8000
 ```
 
-Dann im Browser <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite zeigt oben
+Dann im Browser <http://localhost:8000/> öffnen. Bis Phase 3 wird der Held nur im Browser dieses
+Geräts gespeichert (localStorage). Über das Menü (⋮ oben rechts) lässt er sich als JSON-Datei
+exportieren und wieder importieren.
+
+## Bedienung
+
+- **Held:** Alle Bereiche lassen sich auf- und zuklappen (merkt sich das Gerät). Änderungen werden
+  nach ca. 0,8 Sekunden gespeichert; oben steht „wird gespeichert …“ bzw. „gespeichert“.
+- **Proben:** Ein Tipp auf eine Eigenschaft, ein Talent, einen Zauber, AT/PA/FK, Ausweichen oder
+  Initiative öffnet den Probendialog mit Erleichterung/Erschwernis. Zustände werden automatisch
+  eingerechnet (im Dialog abschaltbar). Das Ergebnis zeigt jeden Würfel, den Zielwert und die Rest-FP.
+- **Schicksalspunkt:** Im Ergebnis „Schicksalspunkt einsetzen“ tippen, Würfel auswählen, neu werfen.
+- **Zauber & Liturgien:** Die Kosten (erste Zahl aus „Kosten“) werden nach der Probe von AsP bzw. KaP
+  abgezogen – mit „Rückgängig“-Knopf.
+- **Waffen:** Knöpfe für AT, PA (bzw. FK) und TP. Nach einer gelungenen Attacke gibt es direkt
+  „Schaden würfeln“, bei kritischem Treffer verdoppelt.
+- **Stift-Symbol:** öffnet die Bearbeitung eines Eintrags (Probeneigenschaften, Spezialisierung, Waffendaten …).
+- **Leere Felder bei AW, INI und Kampfwerten** bedeuten „automatisch berechnen“; ein eingetragener Wert hat Vorrang.
+- **Würfeln:** freie Ausdrücke wie `2W6+3`, `1W20`, `3W20` sowie Schnellzugriff auf Eigenschaften und Waffen.
+- **Protokoll:** alle Würfe mit Heldennamen und Uhrzeit, zum Aufklappen mit allen Einzelwürfeln.
+- **Menü:** Export/Import, neuer Held, Hell-/Dunkel-/Automatik-Modus.
+
+## Dateistruktur
+
+```
+index.html               Einstieg der App
+css/style.css            Gestaltung (mobile-first, Hell/Dunkel)
+js/app.js                Start: Kopfzeile, Tab-Leiste, Ansichten, Speichern
+js/rules.js              Reine DSA5-Regel-Logik (kein DOM, kein Zufall)
+js/dice.js               Würfeln mit crypto.getRandomValues, Würfelausdrücke wie 2W6+3
+js/data/talents.js       Stammdaten: 59 Talente, Kampftechniken, Zauberarten
+js/sheet.js              Heldenmodell: Standardheld, Reparieren, Export/Import, abgeleitete Werte
+js/checks.js             Proben ausführen (Held + Würfel + Regeln → Protokolleintrag), Schicksalspunkte
+js/format.js             Texte für Ergebnisse und Modifikatoren
+js/store.js              Hält den Helden und meldet Änderungen an die Ansichten
+js/saver.js              Speichern mit Verzögerung (Debounce) und Statusanzeige
+js/log.js                Würfelprotokoll dieses Geräts
+js/storage.js            Sicherer Zugriff auf localStorage
+js/util.js               Allgemeine Hilfsfunktionen
+js/ui/dom.js             Sicheres Erzeugen von Elementen (nie innerHTML mit Nutzerdaten)
+js/ui/fields.js          An den Helden gebundene Eingabefelder
+js/ui/dialog.js          Dialoge (am Handy als Blatt von unten)
+js/ui/toast.js           Meldungen, auch Fehler und „Rückgängig“
+js/ui/check-dialog.js    Probendialog
+js/ui/roll-view.js       Darstellung von Würfen (Dialog und Protokoll)
+js/ui/roll-actions.js    Würfelknöpfe → Probenbeschreibung
+js/ui/dice-view.js       Tab „Würfeln“
+js/ui/log-view.js        Tab „Protokoll“
+js/ui/menu.js            Menü (Export/Import, neuer Held, Darstellung)
+js/ui/theme.js           Hell-/Dunkelmodus
+js/ui/sheet/*.js         Heldenbogen: Bereiche, berechnete Anzeigen, Steuerung
+tests/rules.test.html    Testseite – prüft alles automatisch
+tests/*.test.js          Testfälle (Regeln & Würfel, Heldenmodell & Proben)
+```
+
+Noch geplant: `js/room.js`, `js/sync.js`, `supabase/schema.sql` (Phase 3), Meister-Ansicht (Phase 4),
+`manifest.webmanifest` und `sw.js` (Phase 5).
+
+## Tests ausführen
+
+Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite zeigt oben
 „Alle … Tests bestanden ✓“ oder listet fehlgeschlagene Tests rot mit erwartetem und erhaltenem Wert.
 Nach der Veröffentlichung auf GitHub Pages ist dieselbe Seite unter `…/tests/rules.test.html` erreichbar.
 
@@ -65,7 +96,7 @@ Die fünf Pflicht-Testfälle aus der Aufgabenstellung stehen als eigene Gruppe g
 
 ## Regelentscheidungen
 
-Diese Punkte sind in `js/rules.js` umgesetzt. Falls eure Runde es anders spielt, lässt sich das
+Diese Punkte sind in `js/rules.js` bzw. `js/checks.js` umgesetzt. Falls eure Runde es anders spielt, lässt sich das
 jeweils an einer Stelle ändern:
 
 - **Modifikatoren:** positiv = Erleichterung, negativ = Erschwernis. Bei Fertigkeitsproben gilt der
@@ -86,6 +117,7 @@ jeweils an einer Stelle ändern:
 - **Abgeleitete Kampfwerte (als Rechenhilfe):** AT = KtW + MU-Bonus, PA = KtW/2 (aufgerundet) + Bonus
   der besten Leiteigenschaft, FK = KtW + FF-Bonus, Bonus = +1 je volle 3 Punkte über 8.
   Ausweichen = GE/2, INI-Basis = (MU+GE)/2, jeweils kaufmännisch gerundet.
+- **Spezialisierung:** Eine passende Fertigkeitsspezialisierung erhöht den FW um 2 (im Probendialog wählbar).
 - **Initiative:** INI-Basis + 1W6. Bei Gleichstand zuerst der höhere INI-Basiswert, dann ein Stechwurf.
 - **Zufall:** ausschließlich `crypto.getRandomValues` mit Verwerfungsverfahren, damit alle Seiten
   eines Würfels exakt gleich wahrscheinlich sind.

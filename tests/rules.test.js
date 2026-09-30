@@ -1,7 +1,7 @@
 /**
  * rules.test.js – Automatische Prüfung von rules.js und dice.js.
  */
-import { test, assertEqual, assertTrue, assertThrows, runTests, renderResults } from './harness.js';
+import { test, assertEqual, assertTrue, assertThrows } from './harness.js';
 import {
   SPECIAL,
   skillCheck,
@@ -32,6 +32,7 @@ import {
   toInt,
   toNumber,
 } from '../js/rules.js';
+import { fixedRolls } from './fixtures.js';
 import {
   DiceError,
   randomInt,
@@ -41,15 +42,6 @@ import {
   evaluateDiceExpression,
   rollExpression,
 } from '../js/dice.js';
-
-/** Würfelfunktion, die feste Werte der Reihe nach liefert (für deterministische Tests). */
-function fixedRolls(values) {
-  const queue = [...values];
-  return () => {
-    if (queue.length === 0) throw new Error('Keine festen Würfelwerte mehr übrig');
-    return queue.shift();
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Pflicht-Testfälle aus der Aufgabenstellung
@@ -428,11 +420,3 @@ test(DICE, 'Zufall stammt aus crypto.getRandomValues', () => {
   }
   assertTrue(calls >= 1, 'crypto.getRandomValues wurde nicht aufgerufen');
 });
-
-// ---------------------------------------------------------------------------
-// Ausführen & anzeigen
-// ---------------------------------------------------------------------------
-
-const results = runTests();
-window.testResults = results;
-renderResults(results, document.getElementById('results'), document.getElementById('summary'));

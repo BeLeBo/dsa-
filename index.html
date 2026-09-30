@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="Heldenbogen und Würfel für Das Schwarze Auge 5 – am Handy und am Spieltisch." />
+    <title>DSA5 am Spieltisch</title>
+    <script>
+      // Gewählte Darstellung vor dem ersten Zeichnen setzen (verhindert kurzes Aufblitzen).
+      try {
+        const theme = JSON.parse(localStorage.getItem('dsa5.ui.theme'));
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch {
+        // Kein Zugriff auf localStorage: Systemeinstellung verwenden.
+      }
+    </script>
+    <link rel="stylesheet" href="css/style.css" />
+    <script type="module" src="js/app.js"></script>
+  </head>
+  <body>
+    <div id="app" class="app">
+      <p class="loading">Lade Heldenbogen …</p>
+    </div>
+    <noscript>
+      <p class="loading">Diese App braucht JavaScript. Bitte aktiviere es in deinem Browser.</p>
+    </noscript>
+    <script>
+      // Falls die App nicht startet (z. B. als Datei geöffnet oder sehr alter Browser): Hinweis statt leerer Seite.
+      setTimeout(() => {
+        if (document.querySelector('.app-header')) return;
+        const hint =
+          location.protocol === 'file:'
+            ? 'Bitte die App über einen Webserver oder GitHub Pages öffnen – als lokale Datei funktioniert sie nicht.'
+            : 'Die App konnte nicht geladen werden. Bitte die Seite neu laden oder einen aktuellen Browser verwenden.';
+        document
+          .getElementById('app')
+          .replaceChildren(Object.assign(document.createElement('p'), { className: 'loading', textContent: hint }));
+      }, 5000);
+    </script>
+  </body>
+</html>

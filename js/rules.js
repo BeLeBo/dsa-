@@ -41,6 +41,9 @@ export const MAX_CONDITION_LEVEL = 4;
 /** DSA5: Die Summe aller Zustandsabzüge beträgt höchstens −5. */
 export const MAX_CONDITION_PENALTY = 5;
 
+/** DSA5: Eine passende Fertigkeitsspezialisierung erhöht den FW um 2. */
+export const SPECIALIZATION_BONUS = 2;
+
 /** Römische Stufenbezeichnungen für die Anzeige (Index = Stufe). */
 export const ROMAN_LEVELS = Object.freeze(['0', 'I', 'II', 'III', 'IV']);
 
