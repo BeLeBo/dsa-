@@ -224,6 +224,7 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 | „Keine Verbindung zum Server …“                             | Internet prüfen; ist das Projekt pausiert, im Dashboard **Restore**. |
 | „Kein Raum mit diesem Code gefunden.“                       | Code prüfen (Groß-/Kleinschreibung ist egal).                        |
 | Nach einem Update ist noch die alte Version zu sehen        | App schließen und erneut öffnen (siehe „Updates“ unten).             |
+| „Die App konnte nicht geladen werden …“                     | Werbe-/Tracker-Blocker für die Seite ausschalten, dann neu laden.    |
 | „Der Speicher für Kartenbilder fehlt …“                     | `supabase/schema.sql` erneut ausführen (legt den Speicher an).       |
 | „Dieses Bild kann der Browser nicht öffnen …“               | Bild als JPG oder PNG speichern (z. B. HEIC-Fotos vom iPhone).       |
 
@@ -248,12 +249,16 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
   Anmeldung) werden nie zwischengespeichert – dafür sorgt die App selbst mit Gerätespeicher und Warteschlange.
 - **Updates:** Neue Dateien auf GitHub Pages sind spätestens beim zweiten Öffnen der App aktiv
   (beim ersten Öffnen werden sie im Hintergrund geladen). Bei jedem Update am besten in `sw.js` die
-  Versionsnummer in `CACHE_NAME` erhöhen (z. B. `'dsa5-app-v2'` → `'dsa5-app-v3'`): Dann wird der
+  Versionsnummer in `CACHE_NAME` erhöhen (z. B. `'dsa5-app-v3'` → `'dsa5-app-v4'`): Dann wird der
   alte Speicher vollständig gelöscht und alle Geräte laden die neue Version komplett frisch.
 - **Kartenbilder** liegen im nicht öffentlichen Supabase-Speicher `karten` unter `<Raum-ID>/…`:
   Sehen dürfen sie nur Mitglieder des Raums, hochladen und löschen nur der Meister. Nicht mehr
   benutzte Bilder löscht die App beim Entfernen von Karten und Figuren. Ob Spieler eine Karte
   sehen, entscheidet die Datenbank (gezeigte Karte, verborgene Figuren) – nicht nur die App.
+- **Werbe- und Tracker-Blocker** (z. B. in Opera GX, Brave, uBlock Origin) sperren Dateien auch nach
+  ihrem Namen. Schon eine gesperrte Datei verhindert den Start der ganzen App. Deshalb heißt z. B. die
+  Protokoll-Ansicht `protocol-view.js` und nicht `log-view.js` (steht in EasyPrivacy). Neue Dateien
+  besser nicht `log-view.js`, `analytics.js`, `tracking.js`, `ads.js` o. Ä. nennen.
 - Nutzereingaben werden nie als HTML eingefügt (`js/ui/dom.js`), damit niemand über Heldennamen
   o. Ä. Code in fremde Browser schleusen kann.
 
@@ -312,7 +317,7 @@ js/ui/check-dialog.js    Probendialog
 js/ui/roll-view.js       Darstellung von Würfen (Dialog und Protokoll)
 js/ui/roll-actions.js    Würfelknöpfe → Probenbeschreibung
 js/ui/dice-view.js       Tab „Würfeln“
-js/ui/log-view.js        Tab „Protokoll“
+js/ui/protocol-view.js   Tab „Protokoll“
 js/ui/menu.js            Menü mit Geräteeinstellungen
 js/ui/theme.js           Hell-/Dunkelmodus und Schriftgröße
 js/ui/segmented.js       Umschalter mit mehreren Optionen (z. B. Hell/Dunkel/Automatisch)

@@ -9,7 +9,7 @@ import { openMenu } from './menu.js';
 import { openCheckDialog } from './check-dialog.js';
 import { createSheetView } from './sheet/view.js';
 import { createDiceView } from './dice-view.js';
-import { createLogView } from './log-view.js';
+import { createLogView } from './protocol-view.js';
 import { readJson, writeJson } from '../storage.js';
 import { heroName, conditionState } from '../sheet.js';
 import { formatModifier } from '../format.js';

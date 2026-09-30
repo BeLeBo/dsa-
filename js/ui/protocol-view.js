@@ -1,5 +1,6 @@
 /**
- * log-view.js – Tab „Protokoll“: alle Würfe, neueste zuerst, zum Aufklappen.
+ * protocol-view.js – Tab „Protokoll“: alle Würfe, neueste zuerst, zum Aufklappen.
+ * (Nicht „log-view.js“ nennen: Dieser Name steht in Tracker-Sperrlisten wie EasyPrivacy.)
  * Funktioniert mit dem Geräteprotokoll (log.js) und dem Raumprotokoll (room-log.js).
  */
 import { h, setChildren } from './dom.js';

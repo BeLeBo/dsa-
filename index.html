@@ -38,17 +38,22 @@
       <p class="loading">Diese App braucht JavaScript. Bitte aktiviere es in deinem Browser.</p>
     </noscript>
     <script>
-      // Falls die App nicht startet (z. B. als Datei geöffnet oder sehr alter Browser): Hinweis statt leerer Seite.
-      setTimeout(() => {
-        if (!document.querySelector('#app > .loading')) return; // App hat bereits etwas angezeigt
-        const hint =
-          location.protocol === 'file:'
-            ? 'Bitte die App über einen Webserver oder GitHub Pages öffnen – als lokale Datei funktioniert sie nicht.'
-            : 'Die App konnte nicht geladen werden. Bitte die Seite neu laden oder einen aktuellen Browser verwenden.';
-        document
-          .getElementById('app')
-          .replaceChildren(Object.assign(document.createElement('p'), { className: 'loading', textContent: hint }));
-      }, 8000);
+      // Falls die App nicht startet (als Datei geöffnet, eine Datei blockiert, sehr alter Browser):
+      // Hinweis statt leerer Seite – sofort, wenn eine Datei nicht geladen werden konnte, sonst nach 8 s.
+      (() => {
+        const showHint = () => {
+          if (!document.querySelector('#app > .loading')) return; // App hat bereits etwas angezeigt
+          const hint =
+            location.protocol === 'file:'
+              ? 'Bitte die App über einen Webserver oder GitHub Pages öffnen – als lokale Datei funktioniert sie nicht.'
+              : 'Die App konnte nicht geladen werden. Ist ein Werbe- oder Tracker-Blocker aktiv (z. B. in Opera GX, Brave oder als Erweiterung)? Dann diese Seite dort als Ausnahme eintragen. Sonst die Seite neu laden oder einen aktuellen Browser verwenden.';
+          document
+            .getElementById('app')
+            .replaceChildren(Object.assign(document.createElement('p'), { className: 'loading', textContent: hint }));
+        };
+        document.querySelector('script[type="module"]').addEventListener('error', showHint);
+        setTimeout(showHint, 8000);
+      })();
     </script>
   </body>
 </html>

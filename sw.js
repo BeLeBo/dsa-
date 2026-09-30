@@ -11,7 +11,7 @@
  * Beim Start meldet die App alle geladenen Dateien (Nachricht „cache-urls“), damit auch
  * Module offline verfügbar sind, die hier nicht einzeln aufgeführt sind.
  */
-const CACHE_NAME = 'dsa5-app-v2';
+const CACHE_NAME = 'dsa5-app-v3';
 /** Alte App-Versionen werden gelöscht; der Bildspeicher der Karte (siehe map-api.js) bleibt. */
 const APP_CACHE_PREFIX = 'dsa5-app-';
 const SUPABASE_JS_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js';
