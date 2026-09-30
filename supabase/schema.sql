@@ -6,9 +6,11 @@
 --
 -- Rollen:
 --   Meister  – sieht und bearbeitet alle Helden des Raums, sieht alle Würfe,
---              führt den Kampf (Initiative) und kann das Protokoll leeren.
+--              führt den Kampf (Initiative), kann das Protokoll leeren und
+--              verwaltet Karten und Figuren.
 --   Spieler  – sieht und bearbeitet nur den eigenen Helden, sieht öffentliche Würfe
---              und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister).
+--              und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
+--              sieht die gezeigte Karte und bewegt die Figur des eigenen Helden.
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- =============================================================================
 
@@ -81,6 +83,43 @@ create table if not exists public.rolls (
   created_at timestamptz not null default now()
 );
 create index if not exists rolls_room_time on public.rolls (room_id, created_at desc);
+
+-- Karten (Bild liegt im Speicher „karten“, siehe unten). Das Raster wird als JSON gespeichert:
+-- { show, size, offsetX, offsetY, color }. `revision` zählt Änderungen, die Spieler nicht
+-- direkt mitbekommen (Figur verborgen oder gelöscht) – dann laden alle die Figuren neu.
+create table if not exists public.maps (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms (id) on delete cascade,
+  name text not null default '' check (char_length(name) <= 60),
+  image_path text not null check (char_length(image_path) <= 200),
+  width integer not null check (width between 1 and 10000),
+  height integer not null check (height between 1 and 10000),
+  grid jsonb not null default '{}'::jsonb check (jsonb_typeof(grid) = 'object' and pg_column_size(grid) < 2000),
+  revision integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists maps_room on public.maps (room_id);
+
+-- Karte, die gerade alle sehen (null = keine). Nur der Meister ändert sie.
+alter table public.rooms add column if not exists active_map_id uuid references public.maps (id) on delete set null;
+
+-- Figuren auf einer Karte. x/y = Mittelpunkt in Bildpunkten der Karte, size in Feldern.
+create table if not exists public.tokens (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms (id) on delete cascade,
+  map_id uuid not null references public.maps (id) on delete cascade,
+  character_id uuid references public.characters (id) on delete set null,
+  name text not null check (char_length(name) between 1 and 40),
+  image_path text check (image_path is null or char_length(image_path) <= 200),
+  color text not null default 'rot' check (color in ('rot', 'blau', 'gruen', 'gelb', 'lila', 'grau')),
+  size real not null default 1 check (size in (0.5, 1, 2, 3, 4)),
+  x double precision not null default 0 check (x between 0 and 10000),
+  y double precision not null default 0 check (y between 0 and 10000),
+  hidden boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+create index if not exists tokens_map on public.tokens (map_id);
+create index if not exists tokens_room on public.tokens (room_id);
 
 -- -----------------------------------------------------------------------------
 -- Hilfsfunktionen für die Zugriffsregeln
@@ -347,6 +386,160 @@ end;
 $$;
 
 -- -----------------------------------------------------------------------------
+-- Karte
+-- -----------------------------------------------------------------------------
+
+-- Ist diese Karte gerade für alle gezeigt? (Spieler sehen nur sie und ihre Figuren.)
+-- Prüft nur den Raum – so funktioniert die Regel auch für gerade eingefügte Zeilen.
+create or replace function public.is_active_map(p_room_id uuid, p_map_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (select 1 from public.rooms r where r.id = p_room_id and r.active_map_id = p_map_id);
+$$;
+
+-- Bilder liegen im Speicher unter „<Raum-ID>/<Datei>“. Liefert die Raum-ID oder null.
+create or replace function public.room_of_path(p_path text)
+returns uuid
+language sql
+immutable
+set search_path = ''
+as $$
+  select case
+    when split_part(coalesce(p_path, ''), '/', 1) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      then split_part(p_path, '/', 1)::uuid
+  end;
+$$;
+
+-- Die gezeigte Karte muss zum Raum gehören.
+create or replace function private.check_active_map()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.active_map_id is not null
+    and not exists (select 1 from public.maps m where m.id = new.active_map_id and m.room_id = new.id) then
+    raise exception 'Diese Karte gehört nicht zu diesem Raum.' using errcode = '22023';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists rooms_check_active_map on public.rooms;
+create trigger rooms_check_active_map
+  before update of active_map_id on public.rooms
+  for each row execute function private.check_active_map();
+
+create or replace function private.touch_token()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists tokens_touch on public.tokens;
+create trigger tokens_touch
+  before update on public.tokens
+  for each row execute function private.touch_token();
+
+-- Verbirgt oder löscht der Meister eine Figur, erfahren Spieler das nicht direkt
+-- (sie dürfen die Zeile nicht mehr sehen). Deshalb zählt die Karte dann hoch.
+create or replace function private.bump_map_revision()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE' then
+    update public.maps set revision = revision + 1 where id = old.map_id;
+  else
+    update public.maps set revision = revision + 1 where id = new.map_id;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists tokens_bump_on_delete on public.tokens;
+create trigger tokens_bump_on_delete
+  after delete on public.tokens
+  for each row execute function private.bump_map_revision();
+
+drop trigger if exists tokens_bump_on_hide on public.tokens;
+create trigger tokens_bump_on_hide
+  after update of hidden on public.tokens
+  for each row when (old.hidden is distinct from new.hidden)
+  execute function private.bump_map_revision();
+
+-- Figur bewegen: Meister jede, Spieler nur die Figur des eigenen Helden (wenn sichtbar).
+-- Die Position wird auf die Karte begrenzt.
+create or replace function public.move_token(p_token_id uuid, p_x double precision, p_y double precision)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_token public.tokens;
+  v_map public.maps;
+begin
+  perform private.require_user();
+  select * into v_token from public.tokens t where t.id = p_token_id;
+  if v_token.id is null then
+    raise exception 'Diese Figur gibt es nicht mehr.' using errcode = 'P0002';
+  end if;
+  if not public.is_room_master(v_token.room_id) and not (
+    not v_token.hidden
+    and public.is_room_member(v_token.room_id)
+    and public.is_active_map(v_token.room_id, v_token.map_id)
+    and exists (
+      select 1 from public.characters c
+      where c.id = v_token.character_id and c.owner_id = (select auth.uid())
+    )
+  ) then
+    raise exception 'Du kannst nur die Figur deines eigenen Helden bewegen.' using errcode = '42501';
+  end if;
+  select * into v_map from public.maps m where m.id = v_token.map_id;
+  update public.tokens
+  set x = least(greatest(coalesce(p_x, 0), 0), v_map.width),
+      y = least(greatest(coalesce(p_y, 0), 0), v_map.height)
+  where id = p_token_id;
+end;
+$$;
+
+-- Meister: Welche dieser Bilder benutzt keine Karte und keine Figur mehr?
+-- (Danach löscht die App sie aus dem Speicher.)
+create or replace function public.unused_images(p_room_id uuid, p_paths text[])
+returns table (path text)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+begin
+  perform private.require_user();
+  if not public.is_room_master(p_room_id) then
+    raise exception 'Nur der Meister kann Bilder aufräumen.' using errcode = '42501';
+  end if;
+  return query
+    select distinct p.path
+    from unnest(coalesce(p_paths, '{}'::text[])) as p (path)
+    where public.room_of_path(p.path) = p_room_id
+      and not exists (select 1 from public.maps m where m.image_path = p.path)
+      and not exists (select 1 from public.tokens t where t.image_path = p.path);
+end;
+$$;
+
+-- -----------------------------------------------------------------------------
 -- Row Level Security
 -- -----------------------------------------------------------------------------
 
@@ -432,14 +625,91 @@ create policy "Meister kann das Protokoll leeren" on public.rolls
   for delete to authenticated
   using (public.is_room_master(room_id));
 
+-- Karten: Meister alle (auch zur Vorbereitung), Spieler nur die gezeigte. Ändern nur der Meister.
+alter table public.maps enable row level security;
+alter table public.tokens enable row level security;
+
+drop policy if exists "Karten sehen" on public.maps;
+create policy "Karten sehen" on public.maps
+  for select to authenticated
+  using (
+    public.is_room_master(room_id)
+    or (public.is_room_member(room_id) and public.is_active_map(room_id, id))
+  );
+
+drop policy if exists "Meister legt Karten an" on public.maps;
+create policy "Meister legt Karten an" on public.maps
+  for insert to authenticated
+  with check (public.is_room_master(room_id) and public.room_of_path(image_path) = room_id);
+
+drop policy if exists "Meister bearbeitet Karten" on public.maps;
+create policy "Meister bearbeitet Karten" on public.maps
+  for update to authenticated
+  using (public.is_room_master(room_id))
+  with check (public.is_room_master(room_id));
+
+drop policy if exists "Meister löscht Karten" on public.maps;
+create policy "Meister löscht Karten" on public.maps
+  for delete to authenticated
+  using (public.is_room_master(room_id));
+
+-- Figuren: sichtbar auf sichtbaren Karten; verborgene Figuren nur für den Meister.
+-- Bewegen geht für Spieler nur über move_token() (eigener Held).
+drop policy if exists "Figuren sehen" on public.tokens;
+create policy "Figuren sehen" on public.tokens
+  for select to authenticated
+  using (
+    public.is_room_master(room_id)
+    or (not hidden and public.is_room_member(room_id) and public.is_active_map(room_id, map_id))
+  );
+
+drop policy if exists "Meister stellt Figuren auf" on public.tokens;
+create policy "Meister stellt Figuren auf" on public.tokens
+  for insert to authenticated
+  with check (
+    public.is_room_master(room_id)
+    and exists (select 1 from public.maps m where m.id = map_id and m.room_id = tokens.room_id)
+    and (
+      character_id is null
+      or exists (select 1 from public.characters c where c.id = character_id and c.room_id = tokens.room_id)
+    )
+    and (image_path is null or public.room_of_path(image_path) = room_id)
+  );
+
+drop policy if exists "Meister bearbeitet Figuren" on public.tokens;
+create policy "Meister bearbeitet Figuren" on public.tokens
+  for update to authenticated
+  using (public.is_room_master(room_id))
+  with check (
+    public.is_room_master(room_id)
+    and (
+      character_id is null
+      or exists (select 1 from public.characters c where c.id = character_id and c.room_id = tokens.room_id)
+    )
+    and (image_path is null or public.room_of_path(image_path) = room_id)
+  );
+
+drop policy if exists "Meister entfernt Figuren" on public.tokens;
+create policy "Meister entfernt Figuren" on public.tokens
+  for delete to authenticated
+  using (public.is_room_master(room_id));
+
 -- -----------------------------------------------------------------------------
 -- Rechte: nur angemeldete (auch anonyme) Nutzer, nur die nötigen Spalten.
 -- -----------------------------------------------------------------------------
 
 revoke all on public.rooms, public.room_members, public.characters, public.rolls from anon, authenticated;
+revoke all on public.maps, public.tokens from anon, authenticated;
 
 grant select on public.rooms to authenticated;
-grant update (combat) on public.rooms to authenticated;
+grant update (combat, active_map_id) on public.rooms to authenticated;
+grant select, delete on public.maps to authenticated;
+grant insert (id, room_id, name, image_path, width, height, grid) on public.maps to authenticated;
+grant update (name, grid) on public.maps to authenticated;
+grant select, delete on public.tokens to authenticated;
+grant insert (id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden)
+  on public.tokens to authenticated;
+grant update (character_id, name, image_path, color, size, x, y, hidden) on public.tokens to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
@@ -454,6 +724,10 @@ revoke all on function public.join_room(text, text) from public, anon;
 revoke all on function public.claim_master(text, text, text) from public, anon;
 revoke all on function public.assign_character(uuid, uuid) from public, anon;
 revoke all on function public.clear_log(uuid) from public, anon;
+revoke all on function public.is_active_map(uuid, uuid) from public, anon;
+revoke all on function public.room_of_path(text) from public, anon;
+revoke all on function public.move_token(uuid, double precision, double precision) from public, anon;
+revoke all on function public.unused_images(uuid, text[]) from public, anon;
 
 grant execute on function public.is_room_member(uuid) to authenticated;
 grant execute on function public.is_room_master(uuid) to authenticated;
@@ -462,9 +736,41 @@ grant execute on function public.join_room(text, text) to authenticated;
 grant execute on function public.claim_master(text, text, text) to authenticated;
 grant execute on function public.assign_character(uuid, uuid) to authenticated;
 grant execute on function public.clear_log(uuid) to authenticated;
+grant execute on function public.is_active_map(uuid, uuid) to authenticated;
+grant execute on function public.room_of_path(text) to authenticated;
+grant execute on function public.move_token(uuid, double precision, double precision) to authenticated;
+grant execute on function public.unused_images(uuid, text[]) to authenticated;
 
 -- -----------------------------------------------------------------------------
--- Realtime: Änderungen an Helden, Mitgliedern, Würfen und am Kampf live verteilen.
+-- Speicher für Kartenbilder und Figurenbilder (Supabase Storage, nicht öffentlich)
+-- Pfad: „<Raum-ID>/<Datei>“. Sehen: alle im Raum. Hochladen und Löschen: nur der Meister.
+-- Höchstens 5 MB je Bild; die App verkleinert Bilder vor dem Hochladen.
+-- -----------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('karten', 'karten', false, 5242880, array['image/webp', 'image/jpeg', 'image/png'])
+on conflict (id) do update
+  set public = false,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Kartenbilder sehen" on storage.objects;
+create policy "Kartenbilder sehen" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'karten' and public.is_room_member(public.room_of_path(name)));
+
+drop policy if exists "Kartenbilder hochladen" on storage.objects;
+create policy "Kartenbilder hochladen" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'karten' and public.is_room_master(public.room_of_path(name)));
+
+drop policy if exists "Kartenbilder löschen" on storage.objects;
+create policy "Kartenbilder löschen" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'karten' and public.is_room_master(public.room_of_path(name)));
+
+-- -----------------------------------------------------------------------------
+-- Realtime: Änderungen an Helden, Mitgliedern, Würfen, Kampf und Karte live verteilen.
 -- Die Zugriffsregeln oben gelten auch für Realtime.
 -- -----------------------------------------------------------------------------
 
@@ -475,7 +781,7 @@ begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     return;
   end if;
-  foreach v_table in array array['rooms', 'characters', 'room_members', 'rolls'] loop
+  foreach v_table in array array['rooms', 'characters', 'room_members', 'rolls', 'maps', 'tokens'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', v_table);
     exception when duplicate_object then

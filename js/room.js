@@ -13,7 +13,7 @@ export const MIN_PIN_LENGTH = 4;
 export const ROOM_CODE_LENGTH = 6;
 const MAX_NAME_LENGTH = 40;
 const SESSION_KEY = 'dsa5.raum';
-const ROOM_COLUMNS = 'id, code, name, combat, log_cleared_at';
+const ROOM_COLUMNS = 'id, code, name, combat, log_cleared_at, active_map_id';
 
 // ---------------------------------------------------------------------------
 // Eingaben prüfen (rein, ohne Server)

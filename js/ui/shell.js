@@ -1,6 +1,6 @@
 /**
  * shell.js – Rahmen der App: Kopfzeile (Held, Speicherstatus, Werte), Tabs unten
- * und die Ansichten Held, Würfeln, Protokoll (optional Gruppe).
+ * und die Ansichten Held, Würfeln, Protokoll (im Raum zusätzlich Karte und Gruppe).
  * Wird vom Modus „Ohne Raum“ und vom Raum-Modus gleichermaßen genutzt.
  */
 import { h, icon, setChildren, ICONS } from './dom.js';
@@ -20,6 +20,7 @@ export const TABS = Object.freeze({
   hero: { id: 'held', name: 'Held', icon: ICONS.hero },
   dice: { id: 'wuerfeln', name: 'Würfeln', icon: ICONS.dice },
   log: { id: 'protokoll', name: 'Protokoll', icon: ICONS.log },
+  map: { id: 'karte', name: 'Karte', icon: ICONS.map },
   group: { id: 'gruppe', name: 'Gruppe', icon: ICONS.group },
 });
 
@@ -200,6 +201,8 @@ export function createShell({
   return {
     panel: (id) => panels.get(id),
     selectTab: tabBar.select,
+    /** Zähler an einem Tab erhöhen, wenn er gerade nicht offen ist. */
+    notifyTab: tabBar.notify,
     setStatus: header.setStatus,
     refreshHeader: header.refresh,
     /** Held-Tab neu aufbauen (z. B. wenn sich der Inhalt ohne Held ändert). */

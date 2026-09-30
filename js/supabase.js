@@ -30,6 +30,26 @@ const NETWORK_PATTERN = /failed to fetch|networkerror|network request failed|loa
 
 const SCHEMA_HINT = 'Das Datenbankschema fehlt oder ist veraltet. Bitte supabase/schema.sql im SQL Editor ausführen.';
 
+const OWN_MESSAGE_CODES = ['P0002', '22023', '54000', '28000', '23505', '42501'];
+const POSTGRES_TEXT_PATTERN = /permission denied|row-level security|duplicate key|violates/i;
+
+/** Meldungen des Bildspeichers (Supabase Storage) für die Karte. */
+const STORAGE_MESSAGES = [
+  {
+    pattern: /bucket not found/i,
+    text: 'Der Speicher für Kartenbilder fehlt. Bitte supabase/schema.sql im SQL Editor erneut ausführen.',
+  },
+  {
+    pattern: /exceeded the maximum allowed size|payload too large|entity too large/i,
+    text: 'Das Bild ist zu groß (höchstens 5 MB).',
+  },
+  {
+    pattern: /mime type|invalid_mime/i,
+    text: 'Dieses Dateiformat ist nicht erlaubt. Bitte JPG, PNG oder WebP verwenden.',
+  },
+  { pattern: /object not found/i, text: 'Bild nicht gefunden – es wurde vermutlich gelöscht.' },
+];
+
 /** Übersetzt Fehler von supabase-js, fetch oder dem Laden von supabase-js in eine ServerError. */
 export function toServerError(error) {
   if (error instanceof ServerError) return error;
@@ -56,15 +76,17 @@ export function toServerError(error) {
   if (code === 'PGRST202' || code === '42P01' || code === '42883' || /could not find the function/i.test(message)) {
     return new ServerError(SCHEMA_HINT, { code });
   }
+  // Eigene Meldungen aus schema.sql sind bereits deutsch und verständlich (anders als die englischen von Postgres).
+  if (OWN_MESSAGE_CODES.includes(code) && message && !POSTGRES_TEXT_PATTERN.test(message)) {
+    return new ServerError(message, { code });
+  }
+  const storageProblem = STORAGE_MESSAGES.find(({ pattern }) => pattern.test(message));
+  if (storageProblem) return new ServerError(storageProblem.text, { code });
   if (code === '42501' || /row-level security|permission denied/i.test(message)) {
     return new ServerError('Dafür fehlt dir die Berechtigung (nur eigener Held bzw. nur für den Meister).', { code });
   }
   if (code === '23505' && /duplicate key/i.test(message)) {
     return new ServerError('Das gibt es schon – du hast in diesem Raum bereits einen Helden.', { code });
-  }
-  // Eigene Meldungen aus schema.sql sind bereits deutsch und verständlich.
-  if (['P0002', '22023', '54000', '28000', '23505'].includes(code) && message) {
-    return new ServerError(message, { code });
   }
   return new ServerError(`Serverfehler: ${message || 'unbekannt'}`, { code });
 }

@@ -184,6 +184,24 @@ test(ERRORS, 'Fehlendes Schema, fehlende Rechte, eigene Meldungen', () => {
     ),
     'doppelt',
   );
+  assertEqual(
+    toServerError({ code: '42501', message: 'Du kannst nur die Figur deines eigenen Helden bewegen.' }).message,
+    'Du kannst nur die Figur deines eigenen Helden bewegen.',
+    'eigene Berechtigungsmeldung bleibt',
+  );
+});
+
+test(ERRORS, 'Bildspeicher (Karte): verständliche Meldungen', () => {
+  assertTrue(toServerError({ message: 'Bucket not found' }).message.includes('schema.sql'), 'Speicher fehlt');
+  assertTrue(
+    toServerError({ message: 'The object exceeded the maximum allowed size' }).message.includes('zu groß'),
+    'zu groß',
+  );
+  assertTrue(toServerError({ message: 'mime type image/gif is not supported' }).message.includes('JPG'), 'Format');
+  assertTrue(
+    toServerError({ message: 'new row violates row-level security policy' }).message.includes('Berechtigung'),
+    'nur Meister',
+  );
 });
 
 // ---------------------------------------------------------------------------

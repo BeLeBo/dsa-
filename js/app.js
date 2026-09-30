@@ -19,8 +19,12 @@ const MODE_KEY = 'dsa5.modus';
 const NAME_KEY = 'dsa5.name';
 const MESSAGE_KEY = 'dsa5.startMeldung';
 
-// Fehler nie still verschlucken
-window.addEventListener('error', (event) => showError(event.error ?? event.message, 'Unerwarteter Fehler'));
+// Fehler nie still verschlucken (außer der harmlosen Browser-Meldung zu verschobenen Größenänderungen)
+const HARMLESS_ERRORS = /ResizeObserver loop/;
+window.addEventListener('error', (event) => {
+  if (HARMLESS_ERRORS.test(event.message ?? '')) return;
+  showError(event.error ?? event.message, 'Unerwarteter Fehler');
+});
 window.addEventListener('unhandledrejection', (event) => showError(event.reason, 'Unerwarteter Fehler'));
 
 /** Liest einen Raumcode aus dem Einladungslink und entfernt ihn aus der Adresszeile. */

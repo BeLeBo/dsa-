@@ -1915,3 +1915,385 @@ input.num::-webkit-inner-spin-button {
     align-items: start;
   }
 }
+
+/* ---------- Karte ---------- */
+
+.map-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.map-toolbar .btn {
+  flex: 1 1 70px;
+  padding-inline: 8px;
+  white-space: nowrap;
+}
+
+.map-title {
+  font-size: 1.1rem;
+}
+
+.map-notice .section-hint {
+  margin-top: 0;
+}
+
+.map-preview-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-small);
+  background: var(--critical-soft);
+  color: var(--critical);
+  font-weight: 600;
+}
+
+.map-preview-note span {
+  flex: 1 1 180px;
+}
+
+.map-grid-panel h3 {
+  margin: 0;
+}
+
+.map-grid-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.map-grid-fields .stepper input {
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.map-grid-panel > .btn {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.map-frame {
+  position: relative;
+  height: 60vh;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.map-frame.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  height: auto !important;
+  border: 0;
+  border-radius: 0;
+}
+
+body.map-fullscreen-open {
+  overflow: hidden;
+}
+
+.map-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.map-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+  --inverse-scale: 1;
+}
+
+.map-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.map-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.map-grid path {
+  stroke: rgb(0 0 0 / 0.6);
+  stroke-width: calc(2.4px * var(--inverse-scale));
+}
+
+.map-grid[data-color='hell'] path {
+  stroke: rgb(255 255 255 / 0.75);
+}
+
+.map-tokens {
+  position: absolute;
+  inset: 0;
+}
+
+.map-token {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  cursor: default;
+  outline: none;
+}
+
+.map-token.is-movable {
+  cursor: grab;
+}
+
+.map-token-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 50%;
+  border: calc(3px * var(--inverse-scale)) solid var(--token-color);
+  background: var(--token-color);
+  box-shadow: 0 calc(2px * var(--inverse-scale)) calc(6px * var(--inverse-scale)) rgb(0 0 0 / 0.45);
+  color: #fff;
+  transition: box-shadow 0.15s ease;
+}
+
+.map-token-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.map-token-initials {
+  font-weight: 800;
+  font-size: calc(var(--token-size) * 0.4);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.map-token-initials[data-length='3'],
+.map-token-initials[data-length='4'] {
+  font-size: calc(var(--token-size) * 0.3);
+}
+
+.map-token-name {
+  position: absolute;
+  top: 100%;
+  margin-top: calc(2px * var(--inverse-scale));
+  padding: 0 calc(5px * var(--inverse-scale));
+  border-radius: calc(6px * var(--inverse-scale));
+  background: rgb(255 255 255 / 0.85);
+  color: #16130f;
+  font-size: calc(12px * var(--inverse-scale));
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.map-token.is-dragging {
+  z-index: 2;
+  cursor: grabbing;
+}
+
+.map-token.is-dragging .map-token-face {
+  box-shadow: 0 calc(8px * var(--inverse-scale)) calc(18px * var(--inverse-scale)) rgb(0 0 0 / 0.55);
+}
+
+.map-token.is-hidden {
+  opacity: 0.55;
+}
+
+.map-token.is-hidden .map-token-face {
+  border-style: dashed;
+}
+
+.map-token.is-turn .map-token-face {
+  box-shadow:
+    0 0 0 calc(3px * var(--inverse-scale)) #fff,
+    0 0 0 calc(6px * var(--inverse-scale)) var(--accent);
+}
+
+/* Weit herausgezoomt: Namen nur bei eigener Figur, Figur am Zug und beim Ziehen */
+.map-stage.is-compact .map-token-name {
+  display: none;
+}
+
+.map-stage.is-compact .map-token.is-mine .map-token-name,
+.map-stage.is-compact .map-token.is-turn .map-token-name,
+.map-stage.is-compact .map-token.is-dragging .map-token-name,
+.map-stage.is-compact .map-token:focus-visible .map-token-name {
+  display: block;
+}
+
+.map-token:focus-visible .map-token-face {
+  box-shadow:
+    0 0 0 calc(3px * var(--inverse-scale)) #fff,
+    0 0 0 calc(6px * var(--inverse-scale)) var(--focus);
+}
+
+.map-status {
+  position: absolute;
+  inset: auto 12px 12px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.map-status[hidden] {
+  display: none;
+}
+
+.map-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-frame.is-fullscreen .map-controls {
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+}
+
+.map-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch);
+  height: var(--touch);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.map-control[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.map-control:active {
+  filter: brightness(0.92);
+}
+
+.map-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-list-row {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+
+.map-list-row.is-viewed {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.map-list-name {
+  display: flex;
+  flex-direction: column;
+}
+
+.map-list-row .button-row > .btn {
+  flex: 1 1 120px;
+}
+
+.map-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.map-upload h3 {
+  margin: 0;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.swatch {
+  width: var(--touch);
+  height: var(--touch);
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: 0 0 0 1.5px var(--border);
+  cursor: pointer;
+}
+
+.swatch.active {
+  box-shadow: 0 0 0 3px var(--text);
+}
+
+.file-picker {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.file-input:focus-visible + .btn {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.file-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}

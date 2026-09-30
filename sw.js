@@ -5,13 +5,15 @@
  *  - App-Dateien (JS, CSS, Icons): sofort aus dem Speicher, im Hintergrund aktualisiert.
  *    Eine neue Version ist damit spätestens beim übernächsten Öffnen aktiv.
  *  - supabase-js vom CDN: feste Version, einmal geladen und dann aus dem Speicher.
- *  - Anfragen an den Server (Helden, Würfe, Anmeldung) werden nie zwischengespeichert;
- *    dafür sorgt die App selbst mit ihrem Gerätespeicher und der Warteschlange.
+ *  - Anfragen an den Server (Helden, Würfe, Anmeldung, Kartenbilder) werden hier nie
+ *    zwischengespeichert; dafür sorgt die App selbst (Gerätespeicher, Warteschlange, Bildspeicher).
  *
  * Beim Start meldet die App alle geladenen Dateien (Nachricht „cache-urls“), damit auch
  * Module offline verfügbar sind, die hier nicht einzeln aufgeführt sind.
  */
-const CACHE_NAME = 'dsa5-app-v1';
+const CACHE_NAME = 'dsa5-app-v2';
+/** Alte App-Versionen werden gelöscht; der Bildspeicher der Karte (siehe map-api.js) bleibt. */
+const APP_CACHE_PREFIX = 'dsa5-app-';
 const SUPABASE_JS_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js';
 
 /** Mindestausstattung, die schon bei der Installation gespeichert wird. */
@@ -40,7 +42,13 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((names) => Promise.all(names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))))
+      .then((names) =>
+        Promise.all(
+          names
+            .filter((name) => name.startsWith(APP_CACHE_PREFIX) && name !== CACHE_NAME)
+            .map((name) => caches.delete(name)),
+        ),
+      )
       .then(() => self.clients.claim()),
   );
 });

@@ -1,7 +1,8 @@
 # DSA5 am Spieltisch
 
 Web-App, mit der eine Gruppe „Das Schwarze Auge 5“ online und unterwegs am Handy spielen kann:
-Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles live für alle synchronisiert.
+Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, gemeinsame Karte mit Figuren –
+alles live für alle synchronisiert.
 
 - Vanilla HTML, CSS und JavaScript (ES-Module), **kein Build-Schritt** – läuft direkt auf GitHub Pages.
 - Backend: Supabase (Datenbank, Realtime, anonyme Anmeldung – keine E-Mail nötig).
@@ -17,6 +18,7 @@ Helden vollständig eintragen, Proben direkt aus dem Heldenbogen würfeln, alles
 | 3     | Supabase: SQL, Räume, Rollen, Sync                                     | ✅ fertig |
 | 4     | Gemeinsames Würfelprotokoll, Meister-Ansicht, Initiative               | ✅ fertig |
 | 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)              | ✅ fertig |
+| 6     | Karte mit Figuren (hochladen, Raster, Drag & Drop, live)               | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -45,9 +47,10 @@ Die App meldet jedes Gerät anonym an – niemand braucht eine E-Mail-Adresse.
 2. Den kompletten Inhalt von [`supabase/schema.sql`](supabase/schema.sql) einfügen.
 3. **Run** klicken. Erwartet: „Success. No rows returned“.
 
-Das Skript legt die Tabellen `rooms` (inkl. laufendem Kampf), `room_members`, `characters`
-(Held als `jsonb`) und `rolls` (Würfelprotokoll) an, dazu die Zugriffsregeln (Row Level Security),
-die Funktionen zum Erstellen/Beitreten und die Realtime-Freigaben. Es darf jederzeit erneut
+Das Skript legt die Tabellen `rooms` (inkl. laufendem Kampf und gezeigter Karte), `room_members`,
+`characters` (Held als `jsonb`), `rolls` (Würfelprotokoll), `maps` und `tokens` (Karten und Figuren)
+an, dazu den nicht öffentlichen Bildspeicher `karten` (Supabase Storage), die Zugriffsregeln
+(Row Level Security), die Funktionen zum Erstellen/Beitreten und die Realtime-Freigaben. Es darf jederzeit erneut
 ausgeführt werden – **nach jedem Update der App bitte einmal erneut ausführen**, damit neue
 Spalten und Regeln dazukommen (bestehende Daten bleiben erhalten).
 
@@ -139,6 +142,8 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
   Alle sehen die Reihenfolge live; wer dran ist, bekommt **„Du bist am Zug!“**.
 - **Meister-Übersicht:** Unter **Gruppe** stehen alle Helden mit LE, AsP, KaP, SchiP und
   Zuständen – live. LE lässt sich dort direkt mit −/+ ändern (z. B. Schaden abziehen).
+- **Karte:** Im Tab **Karte** zeigt der Meister eine Karte mit Figuren (siehe „Karte“ unten).
+  Spieler sehen nur die gezeigte Karte und bewegen nur die Figur ihres eigenen Helden.
 - **Offline:** Jede Änderung wird zuerst auf dem Gerät gespeichert. Oben steht dann
   „offline – wird später übertragen“. Sobald wieder eine Verbindung besteht, wird mit dem Serverstand
   zusammengeführt und gespeichert. Würfe ohne Verbindung stehen mit „wird übertragen …“ im
@@ -177,6 +182,37 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
   Daumenreichweite, Eingabefelder zoomen beim Antippen nicht (iPhone). Auf großen Bildschirmen
   steht der Heldenbogen zweispaltig.
 
+## Karte
+
+**Meister**
+
+1. Tab **Karte** → **Karte hochladen** (JPG, PNG oder WebP, z. B. Dungeon, Taverne, Landkarte).
+   Große Bilder verkleinert die App automatisch (längste Seite 3000 Punkte, höchstens 5 MB).
+   Handyfotos im HEIC-Format bitte vorher als JPG speichern.
+2. Eine neue Karte sieht zunächst **nur der Meister** („Vorbereitung“) – in Ruhe Figuren aufstellen,
+   dann **Allen zeigen**. Unter **Karten** lassen sich mehrere Karten verwalten: ansehen, allen zeigen,
+   ausblenden, umbenennen, löschen (mit allen Figuren darauf).
+3. **Raster:** an/aus, Feldgröße (oder „Felder in der Breite“), Versatz und Linienfarbe. Hat das Bild
+   schon Kästchen, die Werte so einstellen, dass die Linien übereinander liegen. Bei sichtbarem
+   Raster rasten Figuren beim Ablegen in die Felder ein (große Figuren mit 2 × 2 Feldern auf die Linien).
+4. **+ Figur:** Name, Anzahl (mehrere werden nummeriert: Ork 1, Ork 2 …), Größe (½ bis 4 × 4 Felder),
+   Farbe, optional ein Bild (wird quadratisch zugeschnitten) und **Verborgen** – verborgene Figuren
+   sieht nur der Meister (z. B. für einen Hinterhalt). Gehört die Figur zu einem Helden, darf dessen
+   Spieler sie bewegen.
+5. **Helden:** stellt alle Helden des Raums auf, die noch fehlen (mit ihrem Bild von einer früheren Karte).
+6. Eine Figur antippen öffnet die Bearbeitung (Name, Held, Größe, Farbe, Bild, verborgen, entfernen).
+
+**Alle**
+
+- Karte mit einem Finger verschieben, mit zwei Fingern (oder Mausrad, Knöpfe + und −) zoomen,
+  ◎ zeigt die ganze Karte, ⛶ schaltet auf Vollbild.
+- Figuren ziehen (Drag & Drop): Der Meister jede Figur, Spieler nur die eigene. Am Computer bewegen
+  die Pfeiltasten eine ausgewählte Figur um ein Feld.
+- Alles erscheint sofort bei allen. Läuft ein Kampf, leuchtet die Figur, die am Zug ist
+  (Helden über den Helden, Gegner über den Namen – z. B. „Ork 1“ im Kampf und auf der Karte).
+- Bilder werden nach dem ersten Laden auf dem Gerät gespeichert und nicht erneut heruntergeladen.
+  Die Karte selbst braucht eine Verbindung; ohne Netz zeigt der Tab einen Hinweis.
+
 ## Fehlerbehebung
 
 | Meldung                                                     | Lösung                                                               |
@@ -188,12 +224,15 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 | „Keine Verbindung zum Server …“                             | Internet prüfen; ist das Projekt pausiert, im Dashboard **Restore**. |
 | „Kein Raum mit diesem Code gefunden.“                       | Code prüfen (Groß-/Kleinschreibung ist egal).                        |
 | Nach einem Update ist noch die alte Version zu sehen        | App schließen und erneut öffnen (siehe „Updates“ unten).             |
+| „Der Speicher für Kartenbilder fehlt …“                     | `supabase/schema.sql` erneut ausführen (legt den Speicher an).       |
+| „Dieses Bild kann der Browser nicht öffnen …“               | Bild als JPG oder PNG speichern (z. B. HEIC-Fotos vom iPhone).       |
 
 ## Tests
 
 Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite prüft
 Regeln, Würfel, Heldenmodell, Proben, Zusammenführen gleichzeitiger Änderungen, den Abgleich,
-das gemeinsame Protokoll und die Kampfreihenfolge (mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests
+das gemeinsame Protokoll, die Kampfreihenfolge sowie Raster, Einrasten, Zoom und die Karten-Steuerung
+(mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests
 erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle stehen ganz oben.
 
 ## Technisches
@@ -209,8 +248,12 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
   Anmeldung) werden nie zwischengespeichert – dafür sorgt die App selbst mit Gerätespeicher und Warteschlange.
 - **Updates:** Neue Dateien auf GitHub Pages sind spätestens beim zweiten Öffnen der App aktiv
   (beim ersten Öffnen werden sie im Hintergrund geladen). Bei jedem Update am besten in `sw.js` die
-  Versionsnummer in `CACHE_NAME` erhöhen (z. B. `'dsa5-app-v1'` → `'dsa5-app-v2'`): Dann wird der
+  Versionsnummer in `CACHE_NAME` erhöhen (z. B. `'dsa5-app-v2'` → `'dsa5-app-v3'`): Dann wird der
   alte Speicher vollständig gelöscht und alle Geräte laden die neue Version komplett frisch.
+- **Kartenbilder** liegen im nicht öffentlichen Supabase-Speicher `karten` unter `<Raum-ID>/…`:
+  Sehen dürfen sie nur Mitglieder des Raums, hochladen und löschen nur der Meister. Nicht mehr
+  benutzte Bilder löscht die App beim Entfernen von Karten und Figuren. Ob Spieler eine Karte
+  sehen, entscheidet die Datenbank (gezeigte Karte, verborgene Figuren) – nicht nur die App.
 - Nutzereingaben werden nie als HTML eingefügt (`js/ui/dom.js`), damit niemand über Heldennamen
   o. Ä. Code in fremde Browser schleusen kann.
 
@@ -226,7 +269,11 @@ css/style.css            Gestaltung (mobile-first, Hell/Dunkel, Schriftgrößen)
 supabase/schema.sql      Tabellen, Zugriffsregeln (RLS), Funktionen, Realtime
 js/config.js             Supabase-URL und öffentlicher anon-Key
 js/app.js                Start: Startseite, Raum oder „Ohne Raum“
-js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, Gruppe
+js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, Gruppe, Karte
+js/room-map.js           Karte im Raum: laden, live aktuell halten, Aktionen (Meister/Spieler)
+js/map.js                Karte als reine Funktionen: Raster, Einrasten, Aufstellen, Zoom
+js/map-api.js            Karte auf dem Server: Karten, Figuren, Bilder (Storage), Realtime
+js/image.js              Bilder vor dem Hochladen verkleinern bzw. zuschneiden
 js/room-log.js           Gemeinsames Würfelprotokoll (Server, Warteschlange für offline)
 js/room-combat.js        Kampf im Raum: speichern, Initiative-Würfe übernehmen, „am Zug“
 js/combat.js             Kampfreihenfolge als reine Funktionen (Initiative, Runden)
@@ -251,6 +298,9 @@ js/ui/shell.js           Rahmen: Kopfzeile, Tabs, Ansichten
 js/ui/home-view.js       Startseite (Raum beitreten/erstellen, ohne Raum)
 js/ui/group-view.js      Tab „Gruppe“ (Meister-Übersicht)
 js/ui/combat-view.js     Kampfkarte: Initiative-Reihenfolge, wer ist am Zug
+js/ui/map-view.js        Tab „Karte“: Werkzeugleiste, Hinweise, Raster einstellen
+js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren ziehen
+js/ui/map-dialogs.js     Meister: Karten verwalten, Figuren aufstellen und bearbeiten
 js/ui/visibility-control.js  Auswahl „Öffentlich / Nur Meister / Verdeckt“
 js/ui/hero-choice.js     Held anlegen/übernehmen, Verbindungszustände
 js/ui/hero-file.js       Held als JSON sichern und laden

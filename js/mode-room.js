@@ -1,6 +1,6 @@
 /**
- * mode-room.js – Spielen im Raum: Helden, Würfelprotokoll und Kampf liegen auf dem Server
- * und werden live geteilt.
+ * mode-room.js – Spielen im Raum: Helden, Würfelprotokoll, Kampf und Karte liegen auf dem
+ * Server und werden live geteilt.
  *
  * Ablauf: anonym anmelden → Mitgliedschaft, Helden und Protokoll laden → eigenen Helden
  * (Spieler) bzw. zuletzt geöffneten Helden (Meister) öffnen → Live-Abo starten.
@@ -8,6 +8,7 @@
  */
 import { createShell, TABS } from './ui/shell.js';
 import { createGroupView } from './ui/group-view.js';
+import { createMapView } from './ui/map-view.js';
 import { renderHeroChoice } from './ui/hero-choice.js';
 import { showToast, showError } from './ui/toast.js';
 import { confirmDialog } from './ui/dialog.js';
@@ -16,6 +17,8 @@ import { createHeroStore, createObservable } from './store.js';
 import { VISIBILITY, VISIBILITY_LABELS } from './log.js';
 import { createRoomLog } from './room-log.js';
 import { createCombatController } from './room-combat.js';
+import { createMapController } from './room-map.js';
+import { subscribeToMapChanges } from './map-api.js';
 import { describeOutcome } from './format.js';
 import { ensureUser } from './supabase.js';
 import {
@@ -60,6 +63,7 @@ export function startRoomMode(initialSession, { onLeave }) {
   let session = { ...initialSession };
   let sync = null;
   let stopLive = null;
+  let stopMapLive = null;
   let connecting = false;
   let connected = false;
   let retryTimer = null;
@@ -113,7 +117,7 @@ export function startRoomMode(initialSession, { onLeave }) {
   const shell = createShell({
     store,
     log,
-    tabs: [TABS.hero, TABS.dice, TABS.log, TABS.group],
+    tabs: [TABS.hero, TABS.dice, TABS.log, TABS.map, TABS.group],
     title: () => session.name || `Raum ${session.code}`,
     subtitle: () => `${session.name ? `${session.name} · ` : ''}${session.code} · ${ROLE_NAMES[session.role]}`,
     actorName: () => (store.hero ? heroName(store.hero) : session.displayName),
@@ -132,6 +136,19 @@ export function startRoomMode(initialSession, { onLeave }) {
       note: 'Änderungen werden automatisch gespeichert und live mit dem Raum geteilt.',
     }),
     rollOptions: { visibility: true, canSeeSecret: isMaster },
+  });
+
+  const mapController = createMapController({
+    roomId: session.roomId,
+    isMaster,
+    characters: () => room.get().characters,
+    onShown: (map) => {
+      shell.notifyTab(TABS.map.id);
+      showToast(`Der Meister zeigt jetzt eine Karte: „${map.name || 'Karte'}“.`, {
+        action: { label: 'Ansehen', onClick: () => shell.selectTab(TABS.map.id) },
+      });
+    },
+    onError: (error) => showError(error, 'Karte'),
   });
 
   // -------------------------------------------------------------------------
@@ -153,6 +170,7 @@ export function startRoomMode(initialSession, { onLeave }) {
 
   function leaveLocally(message) {
     stopLive?.();
+    stopMapLive?.();
     clearRoomSession();
     onLeave(message);
   }
@@ -233,12 +251,14 @@ export function startRoomMode(initialSession, { onLeave }) {
     if (me && me.role !== session.role) updateSession({ role: me.role });
     room.update({ members: roster.members, characters: roster.characters, combat: roster.room.combat ?? null });
     logClearedAt = roster.room.log_cleared_at;
+    mapController.handleRoomRow(roster.room);
     return roster;
   }
 
-  /** Raum geändert (Kampf, Protokoll geleert). */
+  /** Raum geändert (Kampf, Protokoll geleert, andere Karte gezeigt). */
   function handleRoomRow(row) {
     combat.handleRoomRow(row);
+    mapController.handleRoomRow(row);
     if (Object.hasOwn(row, 'log_cleared_at') && row.log_cleared_at !== logClearedAt) {
       logClearedAt = row.log_cleared_at;
       log.load().catch(() => {});
@@ -288,9 +308,22 @@ export function startRoomMode(initialSession, { onLeave }) {
     });
   }
 
+  /** Karte: eigener Kanal – scheitert er (z. B. Schema veraltet), läuft der Rest trotzdem. */
+  async function startMapLive() {
+    stopMapLive?.();
+    stopMapLive = await subscribeToMapChanges(session.roomId, {
+      onMap: mapController.handleMapRow,
+      onMapDeleted: mapController.handleMapDeleted,
+      onToken: mapController.handleTokenRow,
+      onTokenDeleted: mapController.handleTokenDeleted,
+      onReconnect: mapController.load,
+    }).catch(() => null);
+  }
+
   function handleConnectError(error) {
     if (error.offline) {
       shell.setStatus('offline');
+      mapController.markOffline();
       if (!sync && !openFromCache()) setViewState('offline');
       retryTimer = setTimeout(connect, RECONNECT_DELAY_MS); // auch wenn nur der Server nicht erreichbar ist
       return;
@@ -321,6 +354,8 @@ export function startRoomMode(initialSession, { onLeave }) {
       if (!sync) shell.setStatus('online');
       await startLive();
       await log.load();
+      await startMapLive();
+      await mapController.load();
       connected = true;
     } catch (error) {
       handleConnectError(error);
@@ -411,6 +446,13 @@ export function startRoomMode(initialSession, { onLeave }) {
       { label: 'Raum verlassen', danger: true, onClick: leave },
     ];
   }
+
+  createMapView(shell.panel(TABS.map.id), {
+    controller: mapController,
+    room,
+    isMaster,
+    myCharacterId: () => (isMaster() ? null : (sync?.id ?? null)),
+  });
 
   createGroupView(shell.panel(TABS.group.id), {
     room,
