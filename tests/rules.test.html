@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DSA5-Regeltests</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f4ee;
+        --text: #1d1a16;
+        --muted: #6b645a;
+        --card: #ffffff;
+        --border: #ddd5c8;
+        --pass: #1e7a3c;
+        --fail: #b3261e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15130f;
+          --text: #f1ece3;
+          --muted: #a79f93;
+          --card: #1f1c17;
+          --border: #3a352d;
+          --pass: #6fcf8c;
+          --fail: #ff8a80;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.5 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 1.05rem;
+        margin: 0 0 8px;
+      }
+      p.hint {
+        color: var(--muted);
+        margin: 0 0 16px;
+      }
+      .summary {
+        padding: 12px 16px;
+        border-radius: 10px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        border: 2px solid var(--border);
+      }
+      .summary.pass {
+        border-color: var(--pass);
+        color: var(--pass);
+      }
+      .summary.fail {
+        border-color: var(--fail);
+        color: var(--fail);
+      }
+      section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin-bottom: 12px;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      li {
+        padding: 6px 0;
+        border-top: 1px solid var(--border);
+      }
+      li:first-child {
+        border-top: 0;
+      }
+      .mark {
+        display: inline-block;
+        width: 1.5em;
+        font-weight: 700;
+      }
+      li.pass .mark {
+        color: var(--pass);
+      }
+      li.fail .mark {
+        color: var(--fail);
+      }
+      .error {
+        color: var(--fail);
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 0.9rem;
+        margin: 4px 0 0 1.5em;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>DSA5-Regeltests</h1>
+      <p class="hint">Prüft <code>js/rules.js</code> und <code>js/dice.js</code> automatisch beim Laden der Seite.</p>
+      <div id="summary" class="summary">Tests laufen …</div>
+      <div id="results"></div>
+    </main>
+
+    <script>
+      function showProblem(text) {
+        const summary = document.getElementById('summary');
+        summary.className = 'summary fail';
+        summary.textContent = text;
+        document.body.dataset.status = 'fail';
+      }
+      function showLoadError(message) {
+        showProblem(`Fehler beim Laden der Tests: ${message}`);
+      }
+      // ES-Module funktionieren nicht über file:// – dann einen Hinweis zeigen statt still zu scheitern.
+      if (location.protocol === 'file:') {
+        showProblem(
+          'Diese Seite muss über einen Webserver geöffnet werden (z. B. „python3 -m http.server“ im Projektordner, ' +
+            'dann http://localhost:8000/tests/rules.test.html) oder über GitHub Pages.',
+        );
+      }
+      window.addEventListener('error', (event) => showLoadError(event.message));
+    </script>
+    <script
+      type="module"
+      src="rules.test.js"
+      onerror="showLoadError('rules.test.js oder ein Modul konnte nicht geladen werden.')"
+    ></script>
+  </body>
+</html>
