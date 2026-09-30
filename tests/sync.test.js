@@ -121,23 +121,13 @@ test(ROOM, 'Beitreten prüfen', () => {
   assertEqual(validateJoin({ code: 'K7MPQ2', displayName: 'Alrik' }), null);
   assertTrue(validateJoin({ code: 'K7M', displayName: 'Alrik' }).includes('6 Zeichen'), 'Code zu kurz');
   assertTrue(validateJoin({ code: 'K7MPQ2', displayName: '  ' }).includes('Namen'), 'Name fehlt');
-  assertTrue(
-    validateJoin({ code: 'K7MPQ2', displayName: 'A', asMaster: true, pin: '12' }).includes('PIN'),
-    'PIN zu kurz',
-  );
-  assertEqual(validateJoin({ code: 'K7MPQ2', displayName: 'A', asMaster: true, pin: '1234' }), null);
+  assertEqual(validateJoin({ code: 'K7MPQ2', displayName: 'A', asMaster: true }), null, 'Meister ohne PIN');
 });
 
-test(ROOM, 'Raum erstellen prüfen', () => {
-  assertEqual(validateCreate({ displayName: 'Rahja', pin: '4711', pinRepeat: '4711' }), null);
-  assertTrue(
-    validateCreate({ displayName: 'Rahja', pin: '4711', pinRepeat: '4712' }).includes('stimmen nicht'),
-    'PINs verschieden',
-  );
-  assertTrue(
-    validateCreate({ displayName: 'x'.repeat(41), pin: '4711', pinRepeat: '4711' }).includes('40'),
-    'Name zu lang',
-  );
+test(ROOM, 'Raum erstellen prüfen (ohne PIN)', () => {
+  assertEqual(validateCreate({ displayName: 'Rahja' }), null);
+  assertTrue(validateCreate({ displayName: '  ' }).includes('Namen'), 'Name fehlt');
+  assertTrue(validateCreate({ displayName: 'x'.repeat(41) }).includes('40'), 'Name zu lang');
 });
 
 test(ROOM, 'Einladungslink', () => {
@@ -163,6 +153,13 @@ test(ERRORS, 'Fehlendes Schema, fehlende Rechte, eigene Meldungen', () => {
   assertTrue(
     toServerError({ code: 'PGRST202', message: 'Could not find the function' }).message.includes('schema.sql'),
     'Schema',
+  );
+  assertTrue(
+    toServerError({
+      code: 'PGRST204',
+      message: "Could not find the 'le_max' column of 'tokens' in the schema cache",
+    }).message.includes('schema.sql'),
+    'Neue Spalte fehlt: schema.sql erneut ausführen',
   );
   assertTrue(
     toServerError({ code: '42501', message: 'new row violates row-level security policy' }).message.includes(

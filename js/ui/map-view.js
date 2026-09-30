@@ -9,6 +9,7 @@ import { segmentedControl } from './segmented.js';
 import { createMapStage } from './map-stage.js';
 import { openMapsDialog, openTokenDialog } from './map-dialogs.js';
 import { createMapInspector } from './map-inspector.js';
+import { createHeroBar } from './hero-bar.js';
 import { confirmDialog } from './dialog.js';
 import { imageUrl } from '../map-api.js';
 import { currentEntry } from '../combat.js';
@@ -151,10 +152,13 @@ function createGridPanel(controller, onToggle) {
  * @param {(characterId: string) => object|null} options.heroFor  Heldendaten (Meister: alle)
  * @param {object} options.heroActions  { adjustPool, setPool, setCondition, open } – siehe mode-room.js
  * @param {(listener: Function) => Function} options.subscribeHero  Änderungen am geöffneten Helden
+ * @param {object} options.store          Store mit dem geöffneten Helden (Leiste „Probe & Werte“)
+ * @param {() => string|null} options.openHeroId  ID des auf diesem Gerät geöffneten Helden
+ * @param {(spec: object) => void} options.openCheck  Probendialog öffnen
  */
 export function createMapView(
   panel,
-  { controller, room, isMaster, myCharacterId, heroFor, heroActions, subscribeHero },
+  { controller, room, isMaster, myCharacterId, heroFor, heroActions, subscribeHero, store, openHeroId, openCheck },
 ) {
   const canMove = (token) => isMaster() || (Boolean(token.character_id) && token.character_id === myCharacterId());
   const editToken = (token) =>
@@ -172,7 +176,11 @@ export function createMapView(
     isMine: (token) => !isMaster() && canMove(token),
     selectable: isMaster,
     onMove: (moves) => controller.actions.moveTokens(moves).catch((error) => showError(error, 'Figur nicht bewegt')),
-    onSelect: () => inspector.render(),
+    onSelect: () => renderPanels(),
+    // Spieler tippt die eigene Figur an: Werte und Proben aufklappen.
+    onTap: (token) => {
+      if (token.character_id && token.character_id === openHeroId()) heroBar.expand();
+    },
     onActivate: editToken,
     onDeleteSelection: removeTokens,
     loadImage: imageUrl,
@@ -184,12 +192,27 @@ export function createMapView(
     },
     heroFor,
     heroActions,
+    tokenLife: {
+      adjust: (id, delta) =>
+        controller.actions.adjustTokenLife(id, delta).catch((error) => showError(error, 'LeP nicht gespeichert')),
+      set: (id, value) =>
+        controller.actions.setTokenLife(id, value).catch((error) => showError(error, 'LeP nicht gespeichert')),
+      setMax: (id, value) => run('LeP nicht gespeichert', () => controller.actions.editToken(id, { leMax: value })),
+    },
     onEdit: editToken,
     onHide: (ids, hidden) => run('Nicht gespeichert', () => controller.actions.setTokensHidden(ids, hidden)),
     onRemove: removeTokens,
     onClose: () => stage.setSelection([]),
   });
-  stage.element.append(inspector.element);
+  const heroBar = createHeroBar({ store, heroId: openHeroId, heroActions, openCheck });
+  stage.element.append(inspector.element, heroBar.element);
+
+  /** Unter der Karte: Auswahl des Meisters oder – sonst – die Leiste des geöffneten Helden. */
+  function renderPanels() {
+    inspector.render();
+    heroBar.setSuppressed(!inspector.element.hidden);
+    heroBar.render();
+  }
   const toolbar = h('div', { class: 'map-toolbar' });
   const notice = h('div', { class: 'map-notice' });
   const message = h('div', { class: 'map-message' });
@@ -389,7 +412,7 @@ export function createMapView(
       updateHighlight();
       gridPanel.refresh();
     }
-    inspector.render();
+    renderPanels();
     layout();
   }
 
@@ -397,9 +420,9 @@ export function createMapView(
   room.subscribe(() => {
     updateHighlight();
     renderToolbar(controller.viewMap());
-    inspector.render();
+    renderPanels();
   });
-  subscribeHero(() => inspector.render());
+  subscribeHero(() => renderPanels());
   // Nicht direkt im Beobachter die Höhe ändern (sonst meldet der Browser eine Endlosschleife).
   new ResizeObserver(() => requestAnimationFrame(layout)).observe(panel);
   window.addEventListener('resize', layout);

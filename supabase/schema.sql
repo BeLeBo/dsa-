@@ -12,12 +12,13 @@
 --              und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
 --              sieht die gezeigte Karte und bewegt die Figur des eigenen Helden.
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
+-- Meister wird, wer den Raum erstellt oder beim Beitreten „Ich bin Meister“ wählt
+-- (ohne PIN – die Gruppe vertraut sich; den Raumcode kennt ohnehin nur die Gruppe).
 -- =============================================================================
 
 create extension if not exists pgcrypto with schema extensions;
 
--- Privates Schema: wird nicht über die API veröffentlicht. Nur die Funktionen
--- unten greifen darauf zu (Meister-PIN, Fehlversuche).
+-- Privates Schema: wird nicht über die API veröffentlicht (Hilfsfunktionen).
 create schema if not exists private;
 revoke all on schema private from public;
 
@@ -39,17 +40,9 @@ alter table public.rooms add column if not exists combat jsonb
 -- Zeitpunkt, zu dem der Meister das Protokoll zuletzt geleert hat (für alle Geräte).
 alter table public.rooms add column if not exists log_cleared_at timestamptz;
 
-create table if not exists private.room_pins (
-  room_id uuid primary key references public.rooms (id) on delete cascade,
-  pin_hash text not null
-);
-
-create table if not exists private.pin_attempts (
-  id bigint generated always as identity primary key,
-  room_id uuid not null references public.rooms (id) on delete cascade,
-  attempted_at timestamptz not null default now()
-);
-create index if not exists pin_attempts_room_time on private.pin_attempts (room_id, attempted_at);
+-- Frühere Versionen hatten eine Meister-PIN – die gespeicherten PINs werden nicht mehr gebraucht.
+drop table if exists private.pin_attempts;
+drop table if exists private.room_pins;
 
 create table if not exists public.room_members (
   room_id uuid not null references public.rooms (id) on delete cascade,
@@ -118,6 +111,11 @@ create table if not exists public.tokens (
   hidden boolean not null default false,
   updated_at timestamptz not null default now()
 );
+-- Lebensenergie von Gegnern und NSC (Helden haben ihre LeP im Heldenbogen). Leer = nicht erfasst.
+alter table public.tokens add column if not exists le_current integer
+  check (le_current is null or le_current between -999 and 9999);
+alter table public.tokens add column if not exists le_max integer
+  check (le_max is null or le_max between 0 and 9999);
 create index if not exists tokens_map on public.tokens (map_id);
 create index if not exists tokens_room on public.tokens (room_id);
 
@@ -234,8 +232,13 @@ $$;
 -- Aufrufbare Funktionen (RPC) für Räume
 -- -----------------------------------------------------------------------------
 
+-- Frühere Fassungen (mit Meister-PIN) entfernen, damit es keine zwei Varianten gibt.
+drop function if exists public.claim_master(text, text, text);
+drop function if exists public.create_room(text, text, text);
+drop function if exists public.join_room(text, text);
+
 -- Raum erstellen: Die aufrufende Person wird Meister.
-create or replace function public.create_room(p_room_name text, p_display_name text, p_pin text)
+create or replace function public.create_room(p_room_name text, p_display_name text)
 returns table (room_id uuid, code text, name text, role text)
 language plpgsql
 security definer
@@ -249,10 +252,6 @@ declare
   v_room uuid;
   v_code text;
 begin
-  if char_length(coalesce(p_pin, '')) < 4 then
-    raise exception 'Die Meister-PIN muss mindestens 4 Zeichen lang sein.' using errcode = '22023';
-  end if;
-
   loop
     v_code := private.new_room_code();
     begin
@@ -264,9 +263,6 @@ begin
     end;
   end loop;
 
-  insert into private.room_pins (room_id, pin_hash)
-  values (v_room, extensions.crypt(p_pin, extensions.gen_salt('bf')));
-
   insert into public.room_members (room_id, user_id, display_name, role)
   values (v_room, v_user, v_display, 'master');
 
@@ -274,8 +270,9 @@ begin
 end;
 $$;
 
--- Raum als Spieler beitreten (bestehende Meister behalten ihre Rolle).
-create or replace function public.join_room(p_code text, p_display_name text)
+-- Raum beitreten: als Spieler (wer schon Meister ist, bleibt es) oder mit
+-- p_as_master = true als Meister („Ich bin Meister“, z. B. auf einem zweiten Gerät).
+create or replace function public.join_room(p_code text, p_display_name text, p_as_master boolean default false)
 returns table (room_id uuid, code text, name text, role text)
 language plpgsql
 security definer
@@ -288,54 +285,15 @@ declare
   v_room uuid := private.find_room(p_code);
 begin
   insert into public.room_members (room_id, user_id, display_name, role)
-  values (v_room, v_user, v_display, 'player')
-  on conflict (room_id, user_id) do update set display_name = excluded.display_name;
+  values (v_room, v_user, v_display, case when coalesce(p_as_master, false) then 'master' else 'player' end)
+  on conflict (room_id, user_id) do update
+    set display_name = excluded.display_name,
+        role = case when coalesce(p_as_master, false) then 'master' else public.room_members.role end;
 
   return query
     select r.id, r.code, r.name, m.role
     from public.rooms r
     join public.room_members m on m.room_id = r.id and m.user_id = v_user
-    where r.id = v_room;
-end;
-$$;
-
--- Als Meister beitreten (PIN nötig). Falsche PIN: keine Zeile zurück.
--- Schutz vor Durchprobieren: höchstens 10 Fehlversuche je Raum in 15 Minuten.
-create or replace function public.claim_master(p_code text, p_display_name text, p_pin text)
-returns table (room_id uuid, code text, name text, role text)
-language plpgsql
-security definer
-set search_path = ''
-as $$
-#variable_conflict use_column
-declare
-  v_user uuid := private.require_user();
-  v_display text := private.clean_display_name(p_display_name);
-  v_room uuid := private.find_room(p_code);
-  v_hash text;
-begin
-  delete from private.pin_attempts a where a.attempted_at < now() - interval '1 day';
-
-  if (
-    select count(*) from private.pin_attempts a
-    where a.room_id = v_room and a.attempted_at > now() - interval '15 minutes'
-  ) >= 10 then
-    raise exception 'Zu viele falsche PIN-Eingaben. Bitte in 15 Minuten erneut versuchen.' using errcode = '54000';
-  end if;
-
-  select p.pin_hash into v_hash from private.room_pins p where p.room_id = v_room;
-  if v_hash is null or extensions.crypt(coalesce(p_pin, ''), v_hash) <> v_hash then
-    insert into private.pin_attempts (room_id) values (v_room);
-    return;
-  end if;
-
-  insert into public.room_members (room_id, user_id, display_name, role)
-  values (v_room, v_user, v_display, 'master')
-  on conflict (room_id, user_id) do update set display_name = excluded.display_name, role = 'master';
-
-  return query
-    select r.id, r.code, r.name, 'master'::text
-    from public.rooms r
     where r.id = v_room;
 end;
 $$;
@@ -707,9 +665,10 @@ grant select, delete on public.maps to authenticated;
 grant insert (id, room_id, name, image_path, width, height, grid) on public.maps to authenticated;
 grant update (name, grid) on public.maps to authenticated;
 grant select, delete on public.tokens to authenticated;
-grant insert (id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden)
+grant insert (id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max)
   on public.tokens to authenticated;
-grant update (character_id, name, image_path, color, size, x, y, hidden) on public.tokens to authenticated;
+grant update (character_id, name, image_path, color, size, x, y, hidden, le_current, le_max)
+  on public.tokens to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
@@ -719,9 +678,8 @@ grant insert (id, room_id, character_id, actor, visibility, data) on public.roll
 
 revoke all on function public.is_room_member(uuid) from public, anon;
 revoke all on function public.is_room_master(uuid) from public, anon;
-revoke all on function public.create_room(text, text, text) from public, anon;
-revoke all on function public.join_room(text, text) from public, anon;
-revoke all on function public.claim_master(text, text, text) from public, anon;
+revoke all on function public.create_room(text, text) from public, anon;
+revoke all on function public.join_room(text, text, boolean) from public, anon;
 revoke all on function public.assign_character(uuid, uuid) from public, anon;
 revoke all on function public.clear_log(uuid) from public, anon;
 revoke all on function public.is_active_map(uuid, uuid) from public, anon;
@@ -731,9 +689,8 @@ revoke all on function public.unused_images(uuid, text[]) from public, anon;
 
 grant execute on function public.is_room_member(uuid) to authenticated;
 grant execute on function public.is_room_master(uuid) to authenticated;
-grant execute on function public.create_room(text, text, text) to authenticated;
-grant execute on function public.join_room(text, text) to authenticated;
-grant execute on function public.claim_master(text, text, text) to authenticated;
+grant execute on function public.create_room(text, text) to authenticated;
+grant execute on function public.join_room(text, text, boolean) to authenticated;
 grant execute on function public.assign_character(uuid, uuid) to authenticated;
 grant execute on function public.clear_log(uuid) to authenticated;
 grant execute on function public.is_active_map(uuid, uuid) to authenticated;
@@ -790,3 +747,7 @@ begin
   end loop;
 end;
 $$;
+
+-- Die Supabase-API (PostgREST) soll neue Funktionen und Spalten sofort kennen – nicht erst,
+-- wenn sie ihren Zwischenspeicher von selbst erneuert.
+notify pgrst, 'reload schema';

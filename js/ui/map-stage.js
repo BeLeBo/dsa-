@@ -98,6 +98,7 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
  * @param {() => boolean} options.selectable            Auswahl erlaubt (Meister)?
  * @param {(moves: {id, x, y}[]) => void} options.onMove  Figuren abgelegt (eingerastet)
  * @param {(ids: string[]) => void} options.onSelect      Auswahl hat sich geändert
+ * @param {(token: object) => void} options.onTap         Figur angetippt, ohne Auswahl (Spieler)
  * @param {(token: object) => void} options.onActivate    Enter auf einer Figur (Tastatur)
  * @param {(ids: string[]) => void} options.onDeleteSelection  Entf-Taste bei Auswahl
  * @param {(path: string) => Promise<string>} options.loadImage  Bildadresse zu einem Speicherpfad
@@ -108,6 +109,7 @@ export function createMapStage({
   selectable = () => false,
   onMove,
   onSelect = () => {},
+  onTap = () => {},
   onActivate = () => {},
   onDeleteSelection = () => {},
   loadImage,
@@ -475,7 +477,10 @@ export function createMapStage({
   }
 
   function tapToken({ token, additive }) {
-    if (!selectable()) return;
+    if (!selectable()) {
+      onTap(token);
+      return;
+    }
     if (additive) toggleSelected(token.id);
     else setSelection([token.id]);
   }

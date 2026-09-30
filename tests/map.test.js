@@ -27,6 +27,8 @@ import {
   normalizeRect,
   tokensInRect,
   moveGroup,
+  parseLife,
+  lifeAfterMaxChange,
   MIN_GRID_SIZE,
   MAX_GRID_SIZE,
   MAX_ZOOM,
@@ -210,6 +212,24 @@ test('Karte: Auswahl', 'Gruppe bewegen: am Kartenrand bleiben alle auf der Karte
     moves.every((move) => move.x >= 0 && move.x <= MAP.width && move.y >= 0 && move.y <= MAP.height),
     JSON.stringify(moves),
   );
+});
+
+test('Karte: LeP von Gegnern', 'Eingaben: leer = keine LeP, Zahlen begrenzt', () => {
+  assertEqual(parseLife(''), null);
+  assertEqual(parseLife('  '), null);
+  assertEqual(parseLife('abc'), null);
+  assertEqual(parseLife('24'), 24);
+  assertEqual(parseLife(' 7,6 '), 8, 'Komma, gerundet');
+  assertEqual(parseLife(-5), -5, 'aktueller Wert darf unter 0 fallen');
+  assertEqual(parseLife(-5, 0), 0, 'Maximum nicht negativ');
+  assertEqual(parseLife(123456), 9999);
+});
+
+test('Karte: LeP von Gegnern', 'Neues Maximum: unverletzt → volle LeP, verletzt bleibt', () => {
+  assertEqual(lifeAfterMaxChange({ le_current: null, le_max: null }, 30), { le_max: 30, le_current: 30 });
+  assertEqual(lifeAfterMaxChange({ le_current: 30, le_max: 30 }, 35), { le_max: 35, le_current: 35 });
+  assertEqual(lifeAfterMaxChange({ le_current: 12, le_max: 30 }, 35), { le_max: 35, le_current: 12 });
+  assertEqual(lifeAfterMaxChange({ le_current: 12, le_max: 30 }, null), { le_max: null, le_current: null });
 });
 
 test('Karte: Bilder', 'Kartenname aus Dateiname, Verkleinern ohne Vergrößern', () => {
@@ -541,6 +561,94 @@ test(CONTROLLER, 'Meister: Entfernen, das teilweise scheitert, entfernt den Rest
     controller.state.get().tokens.map((token) => token.id),
     ['t2'],
   );
+  cleanup();
+});
+
+test(CONTROLLER, 'Meister: Gegner mit LeP aufstellen – Helden ohne', async () => {
+  const characters = [{ id: 'c1', data: { general: { name: 'Alrik' } } }];
+  const { controller, api, cleanup } = mapController({ characters });
+  addMap(api, 'm1');
+  await controller.load();
+  const orks = await controller.actions.addTokens(
+    { name: 'Ork', count: 2, size: 1, color: 'gruen', leMax: '30' },
+    { x: 500, y: 400 },
+  );
+  assertEqual(
+    orks.map((token) => [token.le_current, token.le_max]),
+    [
+      [30, 30],
+      [30, 30],
+    ],
+  );
+  const [hero] = await controller.actions.addTokens(
+    { name: 'Alrik', characterId: 'c1', count: 1, size: 1, color: 'blau', leMax: '30' },
+    { x: 500, y: 400 },
+  );
+  assertEqual([hero.le_current, hero.le_max], [null, null], 'Held: LeP stehen im Heldenbogen');
+  const edited = await controller.actions.editToken(orks[0].id, { leMax: '' });
+  assertEqual([edited.le_current, edited.le_max], [null, null], 'LeP entfernen');
+  cleanup();
+});
+
+test(
+  CONTROLLER,
+  'Meister: LeP von Gegnern – sofort sichtbar, der Reihe nach gespeichert, kein Zurückspringen',
+  async () => {
+    const saves = [];
+    const api = fakeApi();
+    const updateToken = api.updateToken;
+    api.updateToken = async (id, changes) => {
+      saves.push(changes.le_current);
+      await wait(20); // Server braucht etwas
+      return updateToken(id, changes);
+    };
+    const { controller, cleanup } = mapController({ api });
+    addMap(api, 'm1');
+    api.db.tokens.push(
+      { id: 't1', map_id: 'm1', name: 'Ork', x: 100, y: 100, le_current: 30, le_max: 30 },
+      { id: 't2', map_id: 'm1', name: 'Wolf', x: 200, y: 100, le_current: null, le_max: null },
+    );
+    await controller.load();
+    const life = () => controller.state.get().tokens.find((token) => token.id === 't1').le_current;
+    const pending = [1, 2, 3].map(() => controller.actions.adjustTokenLife('t1', -1));
+    assertEqual(life(), 27, 'sofort');
+    // Ein älterer Stand kommt live vom Server, während noch gespeichert wird:
+    controller.handleTokenRow({ id: 't1', map_id: 'm1', name: 'Ork', x: 100, y: 100, le_current: 29, le_max: 30 });
+    assertEqual(life(), 27, 'älterer Serverstand überschreibt die Eingabe nicht');
+    await Promise.all(pending);
+    assertEqual(saves, [29, 28, 27], 'nacheinander gespeichert');
+    assertEqual(life(), 27);
+    controller.handleTokenRow({ id: 't1', map_id: 'm1', name: 'Ork', x: 100, y: 100, le_current: 5, le_max: 30 });
+    assertEqual(life(), 5, 'danach gilt wieder der Server');
+    assertEqual(
+      controller.state.get().tokens.map((token) => token.id),
+      ['t1', 't2'],
+      'LeP ändern stellt die Figur nicht nach oben',
+    );
+    await controller.actions.adjustTokenLife('t2', -3);
+    assertEqual(
+      controller.state.get().tokens.find((token) => token.id === 't2').le_current,
+      -3,
+      'ohne erfasste LeP: ab 0',
+    );
+    cleanup();
+  },
+);
+
+test(CONTROLLER, 'Meister: LeP nicht gespeichert → alter Wert zurück', async () => {
+  const api = fakeApi({
+    updateToken: async () => {
+      throw new Error('Keine Verbindung zum Server.');
+    },
+  });
+  const { controller, cleanup } = mapController({ api });
+  addMap(api, 'm1');
+  api.db.tokens.push({ id: 't1', map_id: 'm1', name: 'Ork', x: 100, y: 100, le_current: 30, le_max: 30 });
+  await controller.load();
+  let error = null;
+  await controller.actions.setTokenLife('t1', '12').catch((caught) => (error = caught));
+  assertEqual(error?.message, 'Keine Verbindung zum Server.');
+  assertEqual(controller.state.get().tokens[0].le_current, 30);
   cleanup();
 });
 

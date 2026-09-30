@@ -2,7 +2,7 @@
  * home-view.js – Startseite: Raum beitreten, Raum erstellen (als Meister) oder ohne Raum spielen.
  */
 import { h, setChildren } from './dom.js';
-import { MIN_PIN_LENGTH, ROOM_CODE_LENGTH } from '../room.js';
+import { ROOM_CODE_LENGTH } from '../room.js';
 
 function textField(label, { name, value = '', type = 'text', placeholder = '', autocomplete = 'off', maxlength }) {
   return h(
@@ -54,19 +54,11 @@ function actionForm({ title, intro, fields, submitLabel, busyLabel, onSubmit, ex
 }
 
 function joinForm({ prefillCode, lastName, onJoin }) {
-  const pinField = textField('Meister-PIN', { name: 'pin', type: 'password', autocomplete: 'current-password' });
-  pinField.hidden = true;
   const masterToggle = h(
     'label',
     { class: 'check' },
-    h('input', {
-      type: 'checkbox',
-      name: 'asMaster',
-      onchange: (event) => {
-        pinField.hidden = !event.target.checked;
-      },
-    }),
-    h('span', {}, 'Ich bin Meister (PIN nötig)'),
+    h('input', { type: 'checkbox', name: 'asMaster' }),
+    h('span', {}, 'Ich bin Meister'),
   );
   return actionForm({
     title: 'Raum beitreten',
@@ -82,7 +74,6 @@ function joinForm({ prefillCode, lastName, onJoin }) {
       }),
       textField('Dein Name', { name: 'displayName', value: lastName, placeholder: 'z. B. Alrik', maxlength: 40 }),
       masterToggle,
-      pinField,
     ),
     submitLabel: 'Beitreten',
     busyLabel: 'Verbinde …',
@@ -93,7 +84,7 @@ function joinForm({ prefillCode, lastName, onJoin }) {
 function createForm({ lastName, onCreate }) {
   return actionForm({
     title: 'Neuen Raum erstellen',
-    intro: `Du wirst Meister. Mit der Meister-PIN (mindestens ${MIN_PIN_LENGTH} Zeichen) kannst du später auch von anderen Geräten als Meister beitreten.`,
+    intro: 'Du wirst Meister. Von einem anderen Gerät trittst du mit „Ich bin Meister“ wieder als Meister bei.',
     fields: h(
       'div',
       { class: 'stack' },
@@ -104,8 +95,6 @@ function createForm({ lastName, onCreate }) {
         placeholder: 'z. B. Meisterin Rahja',
         maxlength: 40,
       }),
-      textField('Meister-PIN', { name: 'pin', type: 'password', autocomplete: 'new-password' }),
-      textField('PIN wiederholen', { name: 'pinRepeat', type: 'password', autocomplete: 'new-password' }),
     ),
     submitLabel: 'Raum erstellen',
     busyLabel: 'Erstelle Raum …',
@@ -121,8 +110,8 @@ function createForm({ lastName, onCreate }) {
  * @param {string}  options.prefillCode Raumcode aus einem Einladungslink
  * @param {string}  options.lastName    zuletzt benutzter Name
  * @param {string}  [options.message]   Hinweis (z. B. warum man hier gelandet ist)
- * @param {Function} options.onJoin     ({ code, displayName, asMaster, pin }) => Promise
- * @param {Function} options.onCreate   ({ roomName, displayName, pin, pinRepeat }) => Promise
+ * @param {Function} options.onJoin     ({ code, displayName, asMaster }) => Promise
+ * @param {Function} options.onCreate   ({ roomName, displayName }) => Promise
  * @param {Function} options.onLocal    () => void
  */
 export function renderHome(

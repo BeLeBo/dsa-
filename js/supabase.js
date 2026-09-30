@@ -84,7 +84,11 @@ export function toServerError(error) {
   if (/invalid api key|no api key/i.test(message)) {
     return new ServerError('Der Supabase-Schlüssel in js/config.js ist ungültig.', { code });
   }
-  if (code === 'PGRST202' || code === '42P01' || code === '42883' || /could not find the function/i.test(message)) {
+  // Funktion, Tabelle oder Spalte fehlt: Nach einem App-Update wurde schema.sql noch nicht erneut ausgeführt.
+  if (
+    ['PGRST202', 'PGRST204', '42P01', '42883', '42703'].includes(code) ||
+    /could not find the (function|'?\w+'? column)/i.test(message)
+  ) {
     return new ServerError(SCHEMA_HINT, { code });
   }
   // Eigene Meldungen aus schema.sql sind bereits deutsch und verständlich (anders als die englischen von Postgres).

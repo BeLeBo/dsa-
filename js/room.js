@@ -1,5 +1,5 @@
 /**
- * room.js – Räume: erstellen, beitreten (als Spieler oder mit PIN als Meister),
+ * room.js – Räume: erstellen, beitreten (als Spieler oder als Meister),
  * verlassen, Mitglieder laden. Die Sitzung (welcher Raum, welche Rolle) wird
  * auf dem Gerät gespeichert, damit man nach dem Neuladen direkt weiterspielt.
  */
@@ -9,7 +9,6 @@ import { readJson, writeJson } from './storage.js';
 
 export const ROLES = Object.freeze({ MASTER: 'master', PLAYER: 'player' });
 export const ROLE_NAMES = Object.freeze({ master: 'Meister', player: 'Spieler' });
-export const MIN_PIN_LENGTH = 4;
 export const ROOM_CODE_LENGTH = 6;
 const MAX_NAME_LENGTH = 40;
 const SESSION_KEY = 'dsa5.raum';
@@ -39,22 +38,14 @@ export function validateRoomCode(code) {
     : `Der Raumcode hat ${ROOM_CODE_LENGTH} Zeichen (Buchstaben und Ziffern).`;
 }
 
-export function validatePin(pin) {
-  return String(pin ?? '').length >= MIN_PIN_LENGTH
-    ? null
-    : `Die Meister-PIN braucht mindestens ${MIN_PIN_LENGTH} Zeichen.`;
-}
-
 /** Erste Fehlermeldung für „Raum beitreten“ oder null. */
-export function validateJoin({ code, displayName, asMaster, pin }) {
-  return validateRoomCode(code) ?? validateDisplayName(displayName) ?? (asMaster ? validatePin(pin) : null);
+export function validateJoin({ code, displayName }) {
+  return validateRoomCode(code) ?? validateDisplayName(displayName);
 }
 
 /** Erste Fehlermeldung für „Raum erstellen“ oder null. */
-export function validateCreate({ displayName, pin, pinRepeat }) {
-  const problem = validateDisplayName(displayName) ?? validatePin(pin);
-  if (problem) return problem;
-  return pin === pinRepeat ? null : 'Die beiden PIN-Eingaben stimmen nicht überein.';
+export function validateCreate({ displayName }) {
+  return validateDisplayName(displayName);
 }
 
 /** Einladungslink, der die App mit vorausgefülltem Raumcode öffnet. */
@@ -100,25 +91,29 @@ function rejectIfInvalid(problem) {
   if (problem) throw new ServerError(problem);
 }
 
-export async function createRoom({ roomName, displayName, pin, pinRepeat }) {
-  rejectIfInvalid(validateCreate({ displayName, pin, pinRepeat }));
+export async function createRoom({ roomName, displayName }) {
+  rejectIfInvalid(validateCreate({ displayName }));
   const userId = await ensureUser();
   const client = await getClient();
   const rows = await unwrap(
-    client.rpc('create_room', { p_room_name: roomName ?? '', p_display_name: displayName.trim(), p_pin: pin }),
+    client.rpc('create_room', { p_room_name: roomName ?? '', p_display_name: displayName.trim() }),
   );
   return sessionFromRow(rows[0], displayName, userId);
 }
 
-export async function joinRoom({ code, displayName, asMaster = false, pin = '' }) {
-  rejectIfInvalid(validateJoin({ code, displayName, asMaster, pin }));
+/** Beitreten – mit asMaster als Meister (z. B. vom zweiten Gerät des Meisters), ohne PIN. */
+export async function joinRoom({ code, displayName, asMaster = false }) {
+  rejectIfInvalid(validateJoin({ code, displayName }));
   const userId = await ensureUser();
   const client = await getClient();
-  const args = { p_code: normalizeRoomCode(code), p_display_name: displayName.trim() };
   const rows = await unwrap(
-    asMaster ? client.rpc('claim_master', { ...args, p_pin: pin }) : client.rpc('join_room', args),
+    client.rpc('join_room', {
+      p_code: normalizeRoomCode(code),
+      p_display_name: displayName.trim(),
+      p_as_master: Boolean(asMaster),
+    }),
   );
-  if (rows.length === 0) throw new ServerError('Falsche Meister-PIN.');
+  if (rows.length === 0) throw new ServerError('Beitreten fehlgeschlagen. Bitte erneut versuchen.');
   return sessionFromRow(rows[0], displayName, userId);
 }
 

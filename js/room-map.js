@@ -18,6 +18,8 @@ import {
   placeTokens,
   colorForIndex,
   clampToMap,
+  parseLife,
+  lifeAfterMaxChange,
   MAX_TOKEN_NAME_LENGTH,
   MAX_MAP_NAME_LENGTH,
 } from './map.js';
@@ -76,7 +78,7 @@ export function createMapController({
 
   async function loadTokens(mapId) {
     const tokens = mapId ? await api.fetchTokens(mapId) : [];
-    if (state.get().viewMapId === mapId) state.update({ tokens });
+    if (state.get().viewMapId === mapId) state.update({ tokens: tokens.map(withPendingLife) });
   }
 
   /** Bestimmt die angezeigte Karte neu und lädt ihre Figuren, wenn nötig. */
@@ -153,9 +155,18 @@ export function createMapController({
     refreshView().catch(() => {});
   }
 
-  function handleTokenRow(row) {
-    if (!row?.id || row.map_id !== state.get().viewMapId) return;
-    state.update({ tokens: upsertById(withoutId(state.get().tokens, row.id), row) }); // bewegte Figur nach oben
+  function handleTokenRow(incoming) {
+    if (!incoming?.id || incoming.map_id !== state.get().viewMapId) return;
+    const row = withPendingLife(incoming);
+    const tokens = state.get().tokens;
+    const previous = tokens.find((token) => token.id === row.id);
+    const moved = !previous || previous.x !== row.x || previous.y !== row.y;
+    state.update({
+      // Bewegte Figur nach oben; sonst (z. B. neue LeP) bleibt die Reihenfolge.
+      tokens: moved
+        ? upsertById(withoutId(tokens, row.id), row)
+        : tokens.map((token) => (token.id === row.id ? row : token)),
+    });
   }
 
   function handleTokenDeleted(id) {
@@ -285,6 +296,7 @@ export function createMapController({
     const size = Number(spec.size) || 1;
     const positions = placeTokens(names.length, clampToMap(center, map), size, grid, map, state.get().tokens);
     const imagePath = spec.imageFile ? await uploadTokenImage(spec.imageFile) : null;
+    const leMax = spec.characterId ? null : parseLife(spec.leMax, 0); // Helden haben ihre LeP im Bogen
     const rows = names.map((name, index) => ({
       room_id: roomId,
       map_id: map.id,
@@ -296,6 +308,8 @@ export function createMapController({
       x: positions[index].x,
       y: positions[index].y,
       hidden: spec.hidden === true,
+      le_max: leMax,
+      le_current: leMax,
     }));
     try {
       const created = await api.createTokens(rows);
@@ -341,7 +355,7 @@ export function createMapController({
 
   /**
    * Meister: Figur bearbeiten.
-   * @param {object} changes  { name, characterId, size, color, hidden }
+   * @param {object} changes  { name, characterId, size, color, hidden, leMax (Text/Zahl, leer = keine LeP) }
    * @param {object} image    { file } neues Bild, { remove: true } Bild entfernen, sonst unverändert
    */
   async function editToken(tokenId, changes, image = {}) {
@@ -358,6 +372,7 @@ export function createMapController({
       color: changes.color ?? token.color,
       hidden: changes.hidden ?? token.hidden,
     };
+    if (changes.leMax !== undefined) Object.assign(update, lifeAfterMaxChange(token, parseLife(changes.leMax, 0)));
     if (newPath || image.remove) update.image_path = newPath;
     let saved;
     try {
@@ -412,6 +427,61 @@ export function createMapController({
     return moveTokens([{ id: tokenId, x: point.x, y: point.y }]);
   }
 
+  // -------------------------------------------------------------------------
+  // LeP von Gegnern und NSC (Meister)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Neuester LeP-Wert je Figur, der noch gespeichert wird. Er liegt über allem, was vom Server
+   * kommt – so springt die Anzeige bei schnellen Tipps nicht auf einen Zwischenstand zurück.
+   */
+  const pendingLife = new Map();
+  let lifeQueue = Promise.resolve();
+
+  function withPendingLife(row) {
+    const pending = pendingLife.get(row.id);
+    return pending ? { ...row, le_current: pending.value } : row;
+  }
+
+  /** Setzt die aktuellen LeP einer Figur (sofort sichtbar; gespeichert wird der Reihe nach). */
+  function setTokenLife(tokenId, value) {
+    const token = state.get().tokens.find((entry) => entry.id === tokenId);
+    if (!token) return Promise.resolve();
+    const current = parseLife(value);
+    const before = token.le_current ?? null;
+    const ticket = { value: current };
+    pendingLife.set(tokenId, ticket);
+    const showLife = (life) =>
+      state.update({
+        tokens: state.get().tokens.map((entry) => (entry.id === tokenId ? { ...entry, le_current: life } : entry)),
+      });
+    showLife(current);
+    const saving = lifeQueue.then(() => api.updateToken(tokenId, { le_current: current }));
+    lifeQueue = saving.catch(() => {});
+    const isLatest = () => pendingLife.get(tokenId) === ticket;
+    return saving.then(
+      (row) => {
+        if (!isLatest()) return; // eine neuere Änderung folgt noch
+        pendingLife.delete(tokenId);
+        handleTokenRow(row);
+      },
+      (error) => {
+        if (isLatest()) {
+          pendingLife.delete(tokenId);
+          showLife(before);
+        }
+        throw error;
+      },
+    );
+  }
+
+  /** LeP einer Figur um delta ändern (ohne erfasste LeP: ausgehend vom Maximum bzw. 0). */
+  function adjustTokenLife(tokenId, delta) {
+    const token = state.get().tokens.find((entry) => entry.id === tokenId);
+    if (!token) return Promise.resolve();
+    return setTokenLife(tokenId, (token.le_current ?? token.le_max ?? 0) + delta);
+  }
+
   /** Meister: mehrere Figuren verbergen oder zeigen. */
   async function setTokensHidden(tokenIds, hidden) {
     const saved = await Promise.all(tokenIds.map((id) => api.updateToken(id, { hidden })));
@@ -454,6 +524,8 @@ export function createMapController({
       removeToken,
       removeTokens,
       setTokensHidden,
+      setTokenLife,
+      adjustTokenLife,
       moveToken,
       moveTokens,
     },

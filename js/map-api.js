@@ -10,7 +10,8 @@ import { newId } from './util.js';
 
 export const IMAGE_BUCKET = 'karten';
 const MAP_COLUMNS = 'id, room_id, name, image_path, width, height, grid, revision, created_at';
-const TOKEN_COLUMNS = 'id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, updated_at';
+const TOKEN_COLUMNS =
+  'id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max, updated_at';
 const IMAGE_CACHE = 'dsa5-bilder';
 const IMAGE_CACHE_HOST = 'https://dsa5-bilder.invalid/';
 const MAX_CACHED_IMAGES = 60;

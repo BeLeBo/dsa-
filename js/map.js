@@ -39,6 +39,9 @@ export const TOKEN_IMAGE_EDGE = 512;
 export const MAX_TOKENS_AT_ONCE = 20;
 export const MAX_TOKEN_NAME_LENGTH = 40;
 export const MAX_MAP_NAME_LENGTH = 60;
+/** Grenzen für die LeP von Gegnern/NSC (wie in der Datenbank). */
+export const MIN_TOKEN_LIFE = -999;
+export const MAX_TOKEN_LIFE = 9999;
 /** Stärkste Vergrößerung: ein Kartenpunkt = 4 Bildschirmpunkte. */
 export const MAX_ZOOM = 4;
 
@@ -244,6 +247,33 @@ export function moveGroup(group, leaderId, target, grid, map) {
     const point = clampToMap(snapToGrid(clampToMap({ x: token.x + dx, y: token.y + dy }, map), token.size, grid), map);
     return { id: token.id, ...point };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Lebensenergie von Gegnern und NSC
+// ---------------------------------------------------------------------------
+
+/**
+ * Eingabe → ganze Zahl in den erlaubten Grenzen, leer oder ungültig → null („nicht erfasst“).
+ * @param {number} [min]  kleinster Wert (für das Maximum 0, für den aktuellen Wert negativ erlaubt)
+ */
+export function parseLife(value, min = MIN_TOKEN_LIFE) {
+  const text = String(value ?? '')
+    .trim()
+    .replace(',', '.');
+  if (text === '') return null;
+  const number = Math.round(Number(text));
+  return Number.isFinite(number) ? clamp(number, min, MAX_TOKEN_LIFE) : null;
+}
+
+/**
+ * Neues LeP-Maximum einer Figur: Wer noch keine LeP hatte oder unverletzt war, hat danach volle LeP;
+ * sonst bleibt der aktuelle Wert. Leer entfernt die LeP.
+ */
+export function lifeAfterMaxChange(token, leMax) {
+  if (leMax === null) return { le_max: null, le_current: null };
+  const unhurt = token.le_current === null || token.le_current === undefined || token.le_current === token.le_max;
+  return { le_max: leMax, le_current: unhurt ? leMax : token.le_current };
 }
 
 /**

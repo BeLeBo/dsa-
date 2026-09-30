@@ -200,6 +200,8 @@ export function createShell({
 
   return {
     panel: (id) => panels.get(id),
+    /** Probendialog für den geöffneten Helden (z. B. von der Karte aus). */
+    openCheck,
     selectTab: tabBar.select,
     /** Zähler an einem Tab erhöhen, wenn er gerade nicht offen ist. */
     notifyTab: tabBar.notify,

@@ -2,8 +2,8 @@
  * map-inspector.js – Panel des Meisters unten auf der Karte für die ausgewählten Figuren.
  *  - Eine Heldenfigur: LeP, AsP, KaP und Schicksalspunkte (−/+ oder eintippen) sowie die
  *    Zustände direkt ändern, Heldenbogen öffnen, Figur bearbeiten oder verbergen.
- *  - Eine Gegner-/NSC-Figur: bearbeiten, verbergen.
- *  - Mehrere Figuren: Liste mit LeP der Helden, gemeinsam verbergen/zeigen oder entfernen.
+ *  - Eine Gegner-/NSC-Figur: LeP ändern (auch das Maximum), bearbeiten, verbergen.
+ *  - Mehrere Figuren: Liste mit LeP (Helden und Gegner), gemeinsam verbergen/zeigen oder entfernen.
  * Änderungen an Helden laufen über heroActions (mode-room.js) und sind sofort für alle sichtbar.
  */
 import { h, icon, ICONS, setChildren } from './dom.js';
@@ -26,12 +26,22 @@ function stepButton(label, text, onclick, disabled = false) {
  * @param {() => object[]} options.selectedTokens          die ausgewählten Figuren (aktueller Stand)
  * @param {(characterId: string) => object|null} options.heroFor  Heldendaten (normalisiert)
  * @param {object} options.heroActions  { adjustPool, setPool, setCondition, open }
+ * @param {object} options.tokenLife    LeP von Gegnern/NSC: { adjust(id, delta), set(id, wert), setMax(id, wert) }
  * @param {(token: object) => void} options.onEdit        Figur bearbeiten (Dialog)
  * @param {(ids: string[], hidden: boolean) => void} options.onHide
  * @param {(ids: string[]) => void} options.onRemove
  * @param {() => void} options.onClose                    Auswahl aufheben
  */
-export function createMapInspector({ selectedTokens, heroFor, heroActions, onEdit, onHide, onRemove, onClose }) {
+export function createMapInspector({
+  selectedTokens,
+  heroFor,
+  heroActions,
+  tokenLife,
+  onEdit,
+  onHide,
+  onRemove,
+  onClose,
+}) {
   const element = h('section', { class: 'map-inspector', hidden: true, 'aria-label': 'Ausgewählte Figuren' });
   let renderedKey = '';
   let renderedIds = '';
@@ -74,6 +84,42 @@ export function createMapInspector({ selectedTokens, heroFor, heroActions, onEdi
       input,
       stepButton(`${label} +1`, '+', () => heroActions.adjustPool(characterId, key, 1)),
       h('span', { class: 'inspector-max' }, `/ ${pool.max}`),
+    );
+  }
+
+  /** LeP einer Gegner-/NSC-Figur: aktueller Wert mit −/+, dahinter das Maximum (beides eintippbar). */
+  function npcLifeRow(token) {
+    const current = h('input', {
+      type: 'number',
+      class: 'num',
+      inputmode: 'numeric',
+      value: token.le_current ?? '',
+      placeholder: '–',
+      'aria-label': 'LeP aktuell',
+      onchange: (event) => tokenLife.set(token.id, event.target.value),
+    });
+    const max = h('input', {
+      type: 'number',
+      class: 'num inspector-max-input',
+      inputmode: 'numeric',
+      min: 0,
+      value: token.le_max ?? '',
+      placeholder: 'max',
+      'aria-label': 'LeP maximal',
+      onchange: (event) => tokenLife.setMax(token.id, event.target.value),
+    });
+    return h(
+      'div',
+      { class: 'inspector-pools' },
+      h(
+        'div',
+        { class: 'inspector-pool' },
+        h('span', { class: 'inspector-label' }, 'LeP'),
+        stepButton('LeP −1', '−', () => tokenLife.adjust(token.id, -1)),
+        current,
+        stepButton('LeP +1', '+', () => tokenLife.adjust(token.id, 1)),
+        h('span', { class: 'inspector-max' }, '/ ', max),
+      ),
     );
   }
 
@@ -147,9 +193,25 @@ export function createMapInspector({ selectedTokens, heroFor, heroActions, onEdi
     );
   }
 
+  /** LeP in der Liste: Held über den Heldenbogen, Gegner über die Figur (nur wenn erfasst). */
+  function listLife(token, hero) {
+    if (hero) {
+      const pool = hero.base.le;
+      return {
+        text: `${pool.current}/${pool.max}`,
+        adjust: (delta) => heroActions.adjustPool(token.character_id, 'le', delta),
+      };
+    }
+    if (token.character_id || (token.le_current == null && token.le_max == null)) return null;
+    return {
+      text: `${token.le_current ?? '–'}/${token.le_max ?? '–'}`,
+      adjust: (delta) => tokenLife.adjust(token.id, delta),
+    };
+  }
+
   function listRow(token) {
     const hero = token.character_id ? heroFor(token.character_id) : null;
-    const pool = hero?.base.le;
+    const life = listLife(token, hero);
     return h(
       'li',
       { class: 'inspector-list-row' },
@@ -159,13 +221,13 @@ export function createMapInspector({ selectedTokens, heroFor, heroActions, onEdi
         token.name,
         token.hidden ? h('span', { class: 'badge' }, 'verborgen') : null,
       ),
-      hero
+      life
         ? h(
             'span',
             { class: 'inspector-list-life' },
-            stepButton(`${token.name}: LeP −1`, '−', () => heroActions.adjustPool(token.character_id, 'le', -1)),
-            h('span', { class: 'inspector-list-value' }, h('small', {}, 'LeP '), `${pool.current}/${pool.max}`),
-            stepButton(`${token.name}: LeP +1`, '+', () => heroActions.adjustPool(token.character_id, 'le', 1)),
+            stepButton(`${token.name}: LeP −1`, '−', () => life.adjust(-1)),
+            h('span', { class: 'inspector-list-value' }, h('small', {}, 'LeP '), life.text),
+            stepButton(`${token.name}: LeP +1`, '+', () => life.adjust(1)),
           )
         : null,
     );
@@ -181,6 +243,8 @@ export function createMapInspector({ selectedTokens, heroFor, heroActions, onEdi
           token.name,
           token.hidden,
           token.character_id,
+          token.le_current,
+          token.le_max,
           hero ? [hero.base, hero.conditions, heroName(hero)] : null,
         ];
       }),
@@ -218,7 +282,8 @@ export function createMapInspector({ selectedTokens, heroFor, heroActions, onEdi
     const subtitle = hero
       ? `Held: ${heroName(hero)}${token.hidden ? ' · verborgen' : ''}`
       : `Gegner/NSC${token.hidden ? ' · verborgen' : ''}`;
-    setChildren(element, header(token.name, subtitle), hero ? heroDetails(token, hero) : null, actionButtons(tokens));
+    const details = hero ? heroDetails(token, hero) : token.character_id ? null : npcLifeRow(token);
+    setChildren(element, header(token.name, subtitle), details, actionButtons(tokens));
   }
 
   // Nach dem Tippen (Feld verlassen) auf den neuesten Stand bringen.

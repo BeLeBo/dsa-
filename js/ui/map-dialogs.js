@@ -9,6 +9,7 @@ import {
   TOKEN_COLORS,
   TOKEN_SIZES,
   MAX_TOKENS_AT_ONCE,
+  MAX_TOKEN_LIFE,
   MAX_TOKEN_NAME_LENGTH,
   MAX_MAP_NAME_LENGTH,
   mapNameFromFile,
@@ -326,6 +327,21 @@ export function openTokenDialog({ controller, token = null, characters, center }
   const fileInput = picker.input;
   const hiddenInput = h('input', { type: 'checkbox', checked: token?.hidden === true });
   const countField = field('Anzahl', countInput, 'Mehrere werden nummeriert: Ork 1, Ork 2 …');
+  const lifeInput = h('input', {
+    type: 'number',
+    class: 'num',
+    inputmode: 'numeric',
+    min: 0,
+    max: MAX_TOKEN_LIFE,
+    value: token?.le_max ?? '',
+    placeholder: 'z. B. 30',
+    'aria-label': 'Lebensenergie (LeP)',
+  });
+  const lifeField = field(
+    'Lebensenergie (LeP)',
+    lifeInput,
+    isNew ? 'Für Gegner und NSC – jede Figur startet mit vollen LeP. Leer = ohne LeP.' : 'Maximum. Leer = ohne LeP.',
+  );
 
   let previousHeroName = heroNameOf(heroSelect.value);
   heroSelect.addEventListener('change', () => {
@@ -333,8 +349,10 @@ export function openTokenDialog({ controller, token = null, characters, center }
     if (!nameInput.value.trim() || nameInput.value === previousHeroName) nameInput.value = name;
     previousHeroName = name;
     countField.hidden = !isNew || Boolean(heroSelect.value);
+    lifeField.hidden = Boolean(heroSelect.value); // Helden haben ihre LeP im Heldenbogen
   });
   countField.hidden = !isNew || Boolean(heroSelect.value);
+  lifeField.hidden = Boolean(heroSelect.value);
 
   const removeImage =
     !isNew && token.image_path
@@ -351,6 +369,7 @@ export function openTokenDialog({ controller, token = null, characters, center }
     field('Name', nameInput),
     characters.length ? field('Gehört zu Held', heroSelect, 'Der Spieler dieses Helden darf die Figur bewegen.') : null,
     isNew ? countField : null,
+    lifeField,
     field('Größe', sizeSelect),
     h(
       'div',
@@ -375,6 +394,7 @@ export function openTokenDialog({ controller, token = null, characters, center }
       size: Number(sizeSelect.value),
       color: values.color,
       hidden: hiddenInput.checked,
+      leMax: heroSelect.value ? undefined : lifeInput.value,
     };
     if (!spec.name) {
       showToast('Bitte einen Namen eingeben.');

@@ -520,6 +520,9 @@ export function startRoomMode(initialSession, { onLeave }) {
     heroFor,
     heroActions,
     subscribeHero: (listener) => store.subscribe(listener),
+    store,
+    openHeroId: () => sync?.id ?? null,
+    openCheck: shell.openCheck,
   });
 
   createGroupView(shell.panel(TABS.group.id), {

@@ -20,6 +20,7 @@ alles live für alle synchronisiert.
 | 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)              | ✅ fertig |
 | 6     | Karte mit Figuren (hochladen, Raster, Drag & Drop, live)               | ✅ fertig |
 | 7     | Optolith-Import, Mehrfachauswahl und Werte-Panel auf der Karte         | ✅ fertig |
+| 8     | Ohne Meister-PIN, LeP für Gegner, Proben und Werte auf der Karte       | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -98,7 +99,7 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 
 ### 7. Losspielen
 
-1. Der Meister öffnet die App → **Neuen Raum erstellen** → Name und **Meister-PIN** festlegen.
+1. Der Meister öffnet die App → **Neuen Raum erstellen** → Namen eingeben – fertig (kein Passwort nötig).
 2. Unter **Gruppe** → **Einladung teilen** den Link (oder den 6-stelligen Raumcode) an die Gruppe schicken.
 3. Spieler öffnen den Link → Namen eingeben → **Beitreten** → **Neuen Helden anlegen**
    (oder einen Helden von diesem Gerät, aus einer Sicherung oder aus **Optolith** übernehmen – siehe unten).
@@ -121,7 +122,7 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 
 - **Meister** sieht unter **Gruppe** alle Helden live (LE, AsP, KaP, SchiP, Zustände), öffnet sie per
   **Öffnen** im Held-Tab und kann sie dort bearbeiten. Von einem weiteren Gerät tritt der Meister
-  mit Raumcode + **Ich bin Meister** + PIN bei.
+  mit Raumcode + **Ich bin Meister** bei.
 - **Spieler** sehen und bearbeiten nur ihren eigenen Helden – das erzwingt die Datenbank, nicht nur die App.
 - **Gleichzeitige Änderungen:** Zieht der Meister LE ab, während der Spieler Notizen tippt, bleibt
   beides erhalten. Ändern beide genau dasselbe Feld, gewinnt die letzte Eingabe auf dem Gerät, das
@@ -129,8 +130,9 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 - **Gerät gewechselt?** Jedes Gerät hat eine eigene anonyme Anmeldung. Auf dem neuen Gerät dem Raum
   beitreten, dann weist der Meister unter **Gruppe** → **Gehört** den Helden dem neuen Eintrag zu.
   Alternativ: Held exportieren und auf dem neuen Gerät aus der Datei laden.
-- **Meister-PIN:** wird nur als Hash gespeichert. Nach 10 falschen Eingaben innerhalb von 15 Minuten
-  ist der Raum für PIN-Versuche kurz gesperrt. Längere PINs sind sicherer.
+- **Kein Passwort:** Meister wird, wer den Raum erstellt oder beim Beitreten **Ich bin Meister**
+  ankreuzt. Das ist bewusst einfach gehalten – wer den Raumcode kennt, gehört zur Gruppe. Den Code
+  deshalb nur in der Gruppe teilen.
 - **Würfelprotokoll:** Jeder Wurf landet mit Heldennamen und Uhrzeit im gemeinsamen Protokoll.
   Pro Wurf wählbar: **Öffentlich** (alle sehen ihn), **Nur Meister** (du und der Meister) oder
   **Verdeckt** (nur der Meister – du selbst siehst das Ergebnis nicht, z. B. für Sinnesschärfe).
@@ -223,32 +225,43 @@ auf dem Server gespeichert und für den Meister sichtbar.
 3. **Raster:** an/aus, Feldgröße (oder „Felder in der Breite“), Versatz und Linienfarbe. Hat das Bild
    schon Kästchen, die Werte so einstellen, dass die Linien übereinander liegen. Bei sichtbarem
    Raster rasten Figuren beim Ablegen in die Felder ein (große Figuren mit 2 × 2 Feldern auf die Linien).
-4. **+ Figur:** Name, Anzahl (mehrere werden nummeriert: Ork 1, Ork 2 …), Größe (½ bis 4 × 4 Felder),
+4. **+ Figur:** Name, Anzahl (mehrere werden nummeriert: Ork 1, Ork 2 …), **Lebensenergie (LeP)** für
+   Gegner und NSC (jede Figur startet mit vollen LeP, leer = ohne LeP), Größe (½ bis 4 × 4 Felder),
    Farbe, optional ein Bild (wird quadratisch zugeschnitten) und **Verborgen** – verborgene Figuren
    sieht nur der Meister (z. B. für einen Hinterhalt). Gehört die Figur zu einem Helden, darf dessen
-   Spieler sie bewegen.
+   Spieler sie bewegen; seine LeP stehen dann im Heldenbogen.
 5. **Helden:** stellt alle Helden des Raums auf, die noch fehlen (mit ihrem Bild von einer früheren Karte).
 6. **Figur antippen** wählt sie aus; unter der Karte erscheint ein Panel:
    - **Held:** LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder direkt eintippen, Zustände
      (Schmerz, Belastung …) hoch- und runtersetzen. Die Änderung landet sofort im Heldenbogen des
      Spielers; trägt er gleichzeitig etwas anderes ein, bleibt beides erhalten. AsP und KaP stehen
      nur da, wenn der Held welche hat.
+   - **Gegner/NSC:** LeP mit − / + ändern oder eintippen, dahinter das Maximum (ebenfalls eintippbar;
+     eine unverletzte Figur hat danach wieder volle LeP). Ohne eingetragene LeP zählt − / + ab 0.
    - **Heldenbogen** öffnet den ganzen Bogen, **Figur bearbeiten** Name, Held, Größe, Farbe, Bild und
      Entfernen, **Verbergen/Zeigen** blendet die Figur für die Spieler aus und ein.
    - × oder ein Tipp auf eine freie Stelle der Karte hebt die Auswahl auf.
 7. **Mehrere Figuren markieren** – wie am Desktop:
-   - Maus: auf freier Fläche mit der linken Taste einen **Rahmen aufziehen**; **Strg** oder **Umschalt**
-     - Klick nimmt einzelne Figuren dazu oder heraus.
+   - Maus: auf freier Fläche mit der linken Taste einen **Rahmen aufziehen**; ein Klick mit gedrückter
+     **Strg**- oder **Umschalt**-Taste nimmt einzelne Figuren dazu oder heraus.
    - Handy/Tablet: Knopf **Auswählen** (gestricheltes Quadrat rechts), dann mit dem Finger einen Rahmen
      ziehen; nochmal tippen schaltet zurück aufs Verschieben.
    - Eine markierte Figur ziehen bewegt **alle gemeinsam**, die Aufstellung bleibt erhalten (jede rastet
-     ins Raster ein). Das Panel listet die Figuren mit den LeP der Helden und kann alle zusammen
+     ins Raster ein). Das Panel listet die Figuren mit ihren LeP (Helden und Gegner) und kann alle zusammen
      verbergen, zeigen oder entfernen.
    - Tastatur: Pfeiltasten bewegen alle markierten um ein Feld, **Entf** entfernt sie (mit Rückfrage),
      **Esc** hebt die Auswahl auf, **Enter** auf einer Figur öffnet „Figur bearbeiten“.
 
 **Alle**
 
+- **Probe & Werte:** Wer einen Helden geöffnet hat, sieht unter der Karte eine Leiste mit Name, LeP und
+  AsP. Aufgeklappt (Knopf **Probe & Werte** oder Tipp auf die eigene Figur):
+  - LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder eintippen – wie im Heldenbogen.
+  - **Probe suchen:** ein paar Buchstaben tippen („sinn“, „körper“, „igni“) und die Probe antippen –
+    Talente, Zauber, Liturgien, Eigenschaften, Waffen (AT/PA/FK), Kampftechniken, Ausweichen,
+    Initiative. Es öffnet sich derselbe Probendialog wie im Heldenbogen; der Wurf landet im Protokoll.
+  - Ohne Suchbegriff: die zuletzt gewürfelten Proben sowie Eigenschaften, Ausweichen, Initiative und
+    Waffen zum direkten Antippen.
 - Karte mit einem Finger verschieben, mit zwei Fingern (oder Mausrad, Knöpfe + und −) zoomen,
   ◎ zeigt die ganze Karte, ⛶ schaltet auf Vollbild. Mit der Maus verschiebt man die Karte mit der
   rechten (oder mittleren) Taste bzw. mit gedrückter Leertaste – beim Meister zieht die linke Taste ja
@@ -295,13 +308,17 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
   `curl -s <URL> | openssl dgst -sha384 -binary | openssl base64 -A`
 - Würfe werden auf dem eigenen Gerät mit `crypto.getRandomValues` gewürfelt. Verdeckte Würfe sieht
   der Spieler in der App nicht; wer sich im Browser in die Datenübertragung einliest, könnte sie
-  finden – für eine Runde unter Freunden ist das so gewollt einfach gehalten.
+  finden – für eine Runde unter Freunden ist das so gewollt einfach gehalten. Dasselbe gilt für die
+  LeP von Gegnern: Die App zeigt sie Spielern nicht, übertragen werden sie mit der Figur trotzdem.
 - **Offline-Speicher (Service Worker, `sw.js`):** Mit Verbindung kommen Seite und App-Dateien immer
   frisch vom Server (am Browser-Cache vorbei), ohne Verbindung – oder wenn das Netz länger als
   4 Sekunden braucht – aus dem Speicher. Anfragen an Supabase (Helden, Würfe, Anmeldung) werden nie
   zwischengespeichert – dafür sorgt die App selbst mit Gerätespeicher und Warteschlange.
 - **Updates:** Geänderte Dateien auf GitHub Pages (auch `js/config.js`) gelten beim nächsten Öffnen
   der App. Ändert sich `sw.js`, lädt sich die geöffnete App nach wenigen Sekunden einmal selbst neu.
+  Hat sich `supabase/schema.sql` geändert, das Skript einmal erneut im SQL Editor ausführen (es darf
+  mehrfach laufen, Räume, Helden und Karten bleiben erhalten) – sonst meldet die App „Das
+  Datenbankschema fehlt oder ist veraltet“.
   Bei größeren Updates am besten in `sw.js` die Versionsnummer in `CACHE_NAME` erhöhen
   (z. B. `'dsa5-app-v4'` → `'dsa5-app-v5'`): Dann wird der alte Speicher vollständig gelöscht.
 - **Kartenbilder** liegen im nicht öffentlichen Supabase-Speicher `karten` unter `<Raum-ID>/…`:
@@ -362,6 +379,8 @@ js/ui/combat-view.js     Kampfkarte: Initiative-Reihenfolge, wer ist am Zug
 js/ui/map-view.js        Tab „Karte“: Werkzeugleiste, Hinweise, Raster einstellen
 js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren auswählen und ziehen
 js/ui/map-inspector.js   Meister: Panel für ausgewählte Figuren (LeP, AsP, Zustände, verbergen …)
+js/ui/hero-bar.js        Karte: Leiste „Probe & Werte“ für den geöffneten Helden
+js/check-search.js       Proben suchen (Talente, Zauber, Eigenschaften, Kampf), zuletzt gewürfelt
 js/ui/map-dialogs.js     Meister: Karten verwalten, Figuren aufstellen und bearbeiten
 js/ui/visibility-control.js  Auswahl „Öffentlich / Nur Meister / Verdeckt“
 js/ui/hero-choice.js     Held anlegen/übernehmen, Verbindungszustände
