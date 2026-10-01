@@ -137,12 +137,12 @@ function mapRow(map, { activeMapId, viewMapId }, actions, close) {
             {
               type: 'button',
               class: 'btn',
-              onclick: run('Anzeigen fehlgeschlagen', async () => {
-                await actions.selectMap(map.id);
+              onclick: run('Öffnen fehlgeschlagen', async () => {
+                await actions.openMap(map.id);
                 close();
               }),
             },
-            'Ansehen',
+            'Öffnen',
           ),
       h(
         'button',
@@ -453,4 +453,53 @@ export function openTokenDialog({ controller, token = null, characters, center }
     busyButton(isNew ? 'Aufstellen' : 'Speichern', 'speichert …', save, 'btn btn-primary'),
   );
   if (isNew) nameInput.focus();
+}
+
+// ---------------------------------------------------------------------------
+// Spieler: eigene Figur aufstellen
+// ---------------------------------------------------------------------------
+
+/**
+ * Spieler: die Figur des eigenen Helden auf die gezeigte Karte stellen – Farbe und (optional)
+ * ein Bild. Name und LeP kommen aus dem Heldenbogen.
+ * @param {object} options { controller, heroName, center: () => {x, y} }
+ */
+export function openOwnTokenDialog({ controller, heroName: name, center }) {
+  const dialog = openDialog({ title: 'Meine Figur aufstellen' });
+  const values = { color: 'blau' };
+  const picker = imagePicker(
+    'Bild (optional)',
+    'Wird quadratisch zugeschnitten. Ohne Bild: das Bild deiner letzten Figur bzw. deine Initialen.',
+  );
+  setChildren(
+    dialog.body,
+    h('p', {}, `„${name}“ kommt auf ein freies Feld in der Mitte deines Ausschnitts. Danach kannst du sie ziehen.`),
+    h(
+      'div',
+      { class: 'field' },
+      h('span', { class: 'field-label' }, 'Farbe'),
+      colorPicker(values.color, (id) => (values.color = id)),
+    ),
+    picker.element,
+  );
+  const submit = h('button', { type: 'button', class: 'btn btn-primary' }, 'Aufstellen');
+  submit.addEventListener('click', async () => {
+    submit.disabled = true;
+    try {
+      await controller.actions.placeOwnToken(
+        { color: values.color, imageFile: picker.input.files[0] ?? null },
+        center(),
+      );
+      dialog.close(); // erst schließen: Meldungen in einem Dialog verschwinden mit ihm
+      showToast(`„${name}“ steht auf der Karte.`);
+    } catch (error) {
+      showError(error, 'Figur nicht aufgestellt');
+      submit.disabled = false;
+    }
+  });
+  setChildren(
+    dialog.footer,
+    h('button', { type: 'button', class: 'btn', onclick: () => dialog.close() }, 'Abbrechen'),
+    submit,
+  );
 }

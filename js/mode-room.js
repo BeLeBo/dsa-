@@ -136,7 +136,9 @@ export function startRoomMode(initialSession, { onLeave }) {
   const shell = createShell({
     store,
     log,
-    tabs: [TABS.hero, TABS.dice, TABS.log, TABS.map, TABS.group],
+    // Die Karte ist der Spielbildschirm. Wer noch keinen Helden hat, beginnt im Held-Tab (anlegen).
+    tabs: [TABS.map, TABS.hero, TABS.dice, TABS.log, TABS.group],
+    initialTab: isMaster() || session.characterId ? TABS.map.id : TABS.hero.id,
     title: () => session.name || `Raum ${session.code}`,
     subtitle: () => `${session.name ? `${session.name} · ` : ''}${session.code} · ${ROLE_NAMES[session.role]}`,
     actorName: () => (store.hero ? heroName(store.hero) : session.displayName),

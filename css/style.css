@@ -2264,134 +2264,6 @@ body.map-fullscreen-open {
   padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 
-/* Leiste des geöffneten Helden unter der Karte: Werte und Proben */
-.map-hero-bar {
-  position: relative;
-  z-index: 3;
-  flex: none;
-  max-height: 55%;
-  overflow-y: auto;
-  padding: 4px 12px 8px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  box-shadow: 0 -2px 10px rgb(0 0 0 / 0.15);
-}
-
-.map-frame.is-fullscreen .map-hero-bar {
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
-}
-
-.hero-bar-head {
-  position: sticky; /* Einklappen bleibt beim Scrollen erreichbar */
-  top: -4px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--touch);
-  padding-top: 4px;
-  background: var(--surface);
-}
-
-.hero-bar-title {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 10px;
-}
-
-.hero-bar-name {
-  overflow-wrap: anywhere;
-}
-
-.hero-bar-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 10px;
-  color: var(--muted);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.hero-bar-summary > span {
-  white-space: nowrap;
-}
-
-.hero-bar-toggle {
-  flex: none;
-  white-space: nowrap;
-}
-
-.hero-bar-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 4px;
-}
-
-.hero-bar-results h3 {
-  margin: 4px 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.hero-bar-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.hero-bar-choices > .hero-bar-choice {
-  flex: 1 0 auto;
-  min-width: 5.5em;
-}
-
-.hero-bar-choices.is-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-}
-
-.hero-bar-choice {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  min-width: 0;
-  min-height: var(--touch);
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  background: var(--surface-2);
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.hero-bar-choice:hover {
-  border-color: var(--focus);
-}
-
-.hero-bar-choice-name {
-  max-width: 100%;
-  overflow: hidden;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hero-bar-choice .row-sub {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 0.8rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .inspector-header {
   display: flex;
   align-items: center;
@@ -2430,6 +2302,7 @@ body.map-fullscreen-open {
 
 .inspector-max {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 4px;
   color: var(--muted);
@@ -2739,4 +2612,318 @@ body.map-fullscreen-open {
 
 a.btn {
   text-decoration: none;
+}
+
+/* Karten-Tabs des Meisters: mehrere Karten offen, die gezeigte mit Auge */
+.map-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.map-tab {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.map-tab.is-viewing {
+  border-color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.map-tab-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: var(--touch);
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.map-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-tab.is-shown .map-tab-name {
+  color: var(--accent);
+}
+
+.map-tab-close {
+  flex: none;
+  width: 36px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.map-tab-add {
+  flex: none;
+  min-height: var(--touch);
+  padding: 0 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-small);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   Spielbildschirm (Tab „Karte“): links Werte, Mitte Karte, rechts Proben.
+   Breit nebeneinander, am Handy als Schubladen über der Karte.
+   --------------------------------------------------------------------------- */
+.map-game {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-height: 260px;
+  overflow: hidden; /* zugeklappte Schubladen liegen außerhalb – die Seite darf nicht breiter werden */
+}
+
+.map-center {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.map-center > .map-frame {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.play-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(88%, 360px);
+  padding: 8px 12px 12px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.3);
+  visibility: hidden;
+  transition:
+    transform 0.2s ease,
+    visibility 0.2s;
+}
+
+.play-side-left {
+  left: 0;
+  transform: translateX(-104%);
+}
+
+.play-side-right {
+  right: 0;
+  transform: translateX(104%);
+}
+
+.play-side.is-open {
+  visibility: visible;
+  transform: none;
+}
+
+.play-side-head {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -8px -12px 0;
+  padding: 8px 12px 4px;
+  background: var(--surface);
+}
+
+.play-side-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.play-hero-name {
+  margin: 0;
+  font-weight: 800;
+}
+
+.play-section-title {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.play-condition-summary {
+  margin: 0;
+}
+
+.play-pools,
+.play-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.play-side .search {
+  margin-bottom: 0;
+}
+
+.play-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.play-check-section > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.play-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.play-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.play-check:hover {
+  border-color: var(--focus);
+}
+
+.play-check-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-check-value {
+  flex: none;
+  color: var(--muted);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Knöpfe für die Schubladen (nur am Handy) */
+.play-toggle {
+  position: absolute;
+  bottom: 10px;
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(50% - 16px);
+  min-height: var(--touch);
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.play-toggle-left {
+  left: 10px;
+}
+
+.play-toggle-right {
+  right: 10px;
+}
+
+.play-toggle[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.play-toggle-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Breit: Werte und Proben stehen fest neben der Karte */
+@media (min-width: 1000px) {
+  .map-game.has-hero {
+    grid-template-columns: 290px minmax(0, 1fr) 300px;
+  }
+
+  .play-side .inspector-pool {
+    grid-template-columns: 3em 40px minmax(2.6em, 1fr) 40px auto;
+    gap: 4px;
+  }
+
+  .play-side .inspector-condition {
+    grid-template-columns: minmax(0, 1fr) 40px 1.8em 40px;
+    gap: 4px;
+  }
+
+  .play-side .step-button {
+    width: 40px;
+    min-width: 40px;
+  }
+
+  .play-side {
+    position: static;
+    width: auto;
+    box-shadow: none;
+    visibility: visible;
+    transform: none;
+    transition: none;
+  }
+
+  .play-side-close,
+  .play-toggle {
+    display: none;
+  }
 }

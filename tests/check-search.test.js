@@ -6,10 +6,10 @@ import {
   searchKey,
   specKey,
   checkChoices,
-  quickChoices,
   searchChecks,
   recentChoices,
   rememberRecent,
+  checkSections,
   MAX_RECENT,
 } from '../js/check-search.js';
 import { createHero, createWeapon, createSpell } from '../js/sheet.js';
@@ -66,12 +66,6 @@ test(GROUP, 'Alle Proben: Eigenschaften, Talente, Kampf, Waffen, Zauber, Kampfte
   );
 });
 
-test(GROUP, 'Schnellwahl ohne Suchbegriff: Eigenschaften, Ausweichen, Initiative, Waffen', () => {
-  const quick = quickChoices(testHero());
-  assertEqual(quick.length, 8 + 2 + 3);
-  assertTrue(!quick.some((choice) => choice.group === 'Talent'), 'keine Talente');
-});
-
 test(GROUP, 'Suche: Wortanfang zuerst, dann enthalten; Art der Probe findet auch', () => {
   const choices = checkChoices(testHero());
   const names = (query) => searchChecks(choices, query).map((choice) => choice.name);
@@ -99,4 +93,33 @@ test(GROUP, 'Zuletzt gewürfelt: neueste zuerst, ohne Doppelte, nur was es beim 
   for (let i = 0; i < 10; i += 1) recent = rememberRecent(recent, { kind: 'attribute', code: `X${i}` });
   assertEqual(recent.length, MAX_RECENT);
   assertEqual(specKey({ kind: 'weapon', id: 'w1', value: 'at' }), 'weapon:w1:at');
+});
+
+test(GROUP, 'Vollständige Liste: Eigenschaften, Kampf, alle Talente nach Gruppen, Zauber, Kampftechniken', () => {
+  const sections = checkSections(testHero());
+  assertEqual(
+    sections.map((section) => section.title),
+    [
+      'Eigenschaften',
+      'Kampf',
+      'Talente: Körper',
+      'Talente: Gesellschaft',
+      'Talente: Natur',
+      'Talente: Wissen',
+      'Talente: Handwerk',
+      'Zauber & Liturgien',
+      'Kampftechniken',
+    ],
+  );
+  const talents = sections.filter((section) => section.id !== 'eigenschaften' && section.title.startsWith('Talente'));
+  assertEqual(
+    talents.reduce((sum, section) => sum + section.choices.length, 0),
+    59,
+    'alle 59 Talente',
+  );
+  const sinne = sections.find((section) => section.id === 'koerper').choices.find((c) => c.name === 'Sinnesschärfe');
+  assertEqual(sinne.value, 'FW 7', 'Wert für die Liste');
+  assertEqual(sections[0].choices[0].value, 'MU 14');
+  const ohneZauber = checkSections({ ...testHero(), spells: [] }).map((section) => section.id);
+  assertTrue(!ohneZauber.includes('magie'), 'ohne Zauber kein leerer Abschnitt');
 });

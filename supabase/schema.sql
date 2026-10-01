@@ -10,7 +10,7 @@
 --              verwaltet Karten und Figuren.
 --   Spieler  – sieht und bearbeitet nur den eigenen Helden, sieht öffentliche Würfe
 --              und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
---              sieht die gezeigte Karte und bewegt die Figur des eigenen Helden.
+--              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie.
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- Meister wird, wer den Raum erstellt oder beim Beitreten „Ich bin Meister“ wählt
 -- (ohne PIN – die Gruppe vertraut sich; den Raumcode kennt ohnehin nur die Gruppe).
@@ -546,6 +546,74 @@ begin
 end;
 $$;
 
+-- Spieler: die Figur des eigenen Helden selbst auf die gezeigte Karte stellen (einmal je Karte).
+-- Ohne eigenes Bild wird das Bild der letzten Figur dieses Helden übernommen. Der Meister darf
+-- das auch auf vorbereiteten Karten. Name und LeP kommen aus dem Heldenbogen.
+create or replace function public.place_own_token(
+  p_map_id uuid,
+  p_x double precision,
+  p_y double precision,
+  p_color text default null,
+  p_image_path text default null
+)
+returns setof public.tokens
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_map public.maps;
+  v_character public.characters;
+  v_image text := nullif(btrim(coalesce(p_image_path, '')), '');
+  v_color text := coalesce(nullif(p_color, ''), 'blau');
+begin
+  perform private.require_user();
+  select * into v_map from public.maps m where m.id = p_map_id;
+  if v_map.id is null or not public.is_room_member(v_map.room_id) then
+    raise exception 'Diese Karte gibt es nicht (mehr).' using errcode = 'P0002';
+  end if;
+  if not public.is_room_master(v_map.room_id) and not public.is_active_map(v_map.room_id, v_map.id) then
+    raise exception 'Deine Figur kannst du nur auf die Karte stellen, die der Meister gerade zeigt.'
+      using errcode = '42501';
+  end if;
+  if v_color not in ('rot', 'blau', 'gruen', 'gelb', 'lila', 'grau') then
+    raise exception 'Unbekannte Farbe.' using errcode = '22023';
+  end if;
+  if v_image is not null and public.room_of_path(v_image) is distinct from v_map.room_id then
+    raise exception 'Dieses Bild gehört nicht zu diesem Raum.' using errcode = '22023';
+  end if;
+  select * into v_character from public.characters c
+  where c.room_id = v_map.room_id and c.owner_id = (select auth.uid());
+  if v_character.id is null then
+    raise exception 'Lege zuerst deinen Helden an (Tab „Held“).' using errcode = '22023';
+  end if;
+  if exists (select 1 from public.tokens t where t.map_id = v_map.id and t.character_id = v_character.id) then
+    raise exception 'Deine Figur steht schon auf dieser Karte (vielleicht hat der Meister sie gerade verborgen).'
+      using errcode = '23505';
+  end if;
+  if v_image is null then
+    select t.image_path into v_image from public.tokens t
+    where t.character_id = v_character.id and t.image_path is not null
+    order by t.updated_at desc limit 1;
+  end if;
+  return query
+    insert into public.tokens (room_id, map_id, character_id, name, image_path, color, size, x, y, hidden)
+    values (
+      v_map.room_id,
+      v_map.id,
+      v_character.id,
+      left(coalesce(nullif(btrim(v_character.data -> 'general' ->> 'name'), ''), 'Held'), 40),
+      v_image,
+      v_color,
+      1,
+      least(greatest(coalesce(p_x, 0), 0), v_map.width),
+      least(greatest(coalesce(p_y, 0), 0), v_map.height),
+      false
+    )
+    returning *;
+end;
+$$;
+
 -- Meister: Welche dieser Bilder benutzt keine Karte und keine Figur mehr?
 -- (Danach löscht die App sie aus dem Speicher.)
 create or replace function public.unused_images(p_room_id uuid, p_paths text[])
@@ -759,6 +827,7 @@ revoke all on function public.is_active_map(uuid, uuid) from public, anon;
 revoke all on function public.room_of_path(text) from public, anon;
 revoke all on function public.move_token(uuid, double precision, double precision) from public, anon;
 revoke all on function public.unused_images(uuid, text[]) from public, anon;
+revoke all on function public.place_own_token(uuid, double precision, double precision, text, text) from public, anon;
 
 grant execute on function public.is_room_member(uuid) to authenticated;
 grant execute on function public.is_room_master(uuid) to authenticated;
@@ -770,10 +839,12 @@ grant execute on function public.is_active_map(uuid, uuid) to authenticated;
 grant execute on function public.room_of_path(text) to authenticated;
 grant execute on function public.move_token(uuid, double precision, double precision) to authenticated;
 grant execute on function public.unused_images(uuid, text[]) to authenticated;
+grant execute on function public.place_own_token(uuid, double precision, double precision, text, text) to authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Speicher für Kartenbilder und Figurenbilder (Supabase Storage, nicht öffentlich)
--- Pfad: „<Raum-ID>/<Datei>“. Sehen: alle im Raum. Hochladen und Löschen: nur der Meister.
+-- Pfad: „<Raum-ID>/<Datei>“. Sehen und hochladen: alle im Raum (Spieler: Bild ihrer eigenen
+-- Figur). Löschen: nur der Meister (die App räumt nicht mehr benutzte Bilder auf).
 -- Höchstens 5 MB je Bild; die App verkleinert Bilder vor dem Hochladen.
 -- -----------------------------------------------------------------------------
 
@@ -792,7 +863,7 @@ create policy "Kartenbilder sehen" on storage.objects
 drop policy if exists "Kartenbilder hochladen" on storage.objects;
 create policy "Kartenbilder hochladen" on storage.objects
   for insert to authenticated
-  with check (bucket_id = 'karten' and public.is_room_master(public.room_of_path(name)));
+  with check (bucket_id = 'karten' and public.is_room_member(public.room_of_path(name)));
 
 drop policy if exists "Kartenbilder löschen" on storage.objects;
 create policy "Kartenbilder löschen" on storage.objects
@@ -830,7 +901,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 1;
+  select 2;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

@@ -36,7 +36,7 @@ import {
   MAX_ZOOM,
   TOKEN_COLORS,
 } from '../js/map.js';
-import { createMapController, chooseViewMap } from '../js/room-map.js';
+import { createMapController, chooseViewMap, mapTabs } from '../js/room-map.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -377,6 +377,12 @@ function fakeApi(overrides = {}) {
       db.tokens = db.tokens.filter((token) => token.id !== tokenId);
     },
     moveToken: async (...args) => calls.push(['moveToken', ...args]),
+    placeOwnToken: async (mapId, x, y, color, imagePath) => {
+      calls.push(['placeOwnToken', mapId, x, y, color, imagePath]);
+      const token = { id: `t${(counter += 1)}`, map_id: mapId, character_id: 'c1', name: 'Alrik', x, y, color };
+      db.tokens.push(token);
+      return { ...token };
+    },
     fetchHeroTokenImages: async () => new Map([['c1', 'raum/alrik.webp']]),
     uploadImage: async () => 'raum/neu.webp',
     discardUpload: async (path) => calls.push(['discardUpload', path]),
@@ -409,7 +415,15 @@ function mapController({
     api,
     images: fakeImages,
   });
-  return { controller, api, roomId, cleanup: () => localStorage.removeItem(`dsa5.karte.${roomId}`) };
+  return {
+    controller,
+    api,
+    roomId,
+    cleanup: () => {
+      localStorage.removeItem(`dsa5.karte.${roomId}`);
+      localStorage.removeItem(`dsa5.karten-offen.${roomId}`);
+    },
+  };
 }
 
 function addMap(api, id, extra = {}) {
@@ -697,6 +711,74 @@ test(CONTROLLER, 'Meister: LeP nicht gespeichert → alter Wert zurück', async 
   await controller.actions.setTokenLife('t1', '12').catch((caught) => (error = caught));
   assertEqual(error?.message, 'Keine Verbindung zum Server.');
   assertEqual(controller.state.get().tokens[0].le_current, 30);
+  cleanup();
+});
+
+test(CONTROLLER, 'Karten-Tabs: gezeigte zuerst, dann geöffnete; gelöschte fallen heraus', () => {
+  const maps = [
+    { id: 'a', name: 'Taverne' },
+    { id: 'b', name: '' },
+    { id: 'c', name: 'Kerker' },
+  ];
+  assertEqual(mapTabs({ maps, openIds: ['c', 'b', 'weg'], activeMapId: 'a', viewMapId: 'c' }), [
+    { id: 'a', name: 'Taverne', shown: true, viewing: false },
+    { id: 'c', name: 'Kerker', shown: false, viewing: true },
+    { id: 'b', name: 'Karte', shown: false, viewing: false },
+  ]);
+  assertEqual(
+    mapTabs({ maps, openIds: [], activeMapId: null, viewMapId: 'b' }).map((tab) => tab.id),
+    ['b'],
+    'angesehene Karte ist immer ein Tab',
+  );
+});
+
+test(CONTROLLER, 'Meister: mehrere Karten offen – wechseln, während eine andere gezeigt wird', async () => {
+  const { controller, api, cleanup } = mapController();
+  addMap(api, 'm1');
+  addMap(api, 'm2');
+  addMap(api, 'm3');
+  api.db.tokens.push({ id: 't2', map_id: 'm2', name: 'Ork', x: 1, y: 1 });
+  controller.handleRoomRow({ active_map_id: 'm1' });
+  await controller.load();
+  assertEqual(controller.viewMap().id, 'm1', 'zuerst die gezeigte Karte');
+  await controller.actions.openMap('m2');
+  await controller.actions.openMap('m3');
+  await controller.actions.openMap('m2');
+  assertEqual(controller.state.get().openMapIds, ['m2', 'm3'], 'jede Karte nur einmal');
+  assertEqual(controller.viewMap().id, 'm2');
+  assertEqual(
+    controller.state.get().tokens.map((token) => token.id),
+    ['t2'],
+    'Figuren der geöffneten Karte',
+  );
+  assertEqual(controller.state.get().activeMapId, 'm1', 'Spieler sehen weiter Karte 1');
+  await controller.actions.closeMapTab('m3');
+  assertEqual([controller.state.get().openMapIds, controller.viewMap().id], [['m2'], 'm2'], 'anderen Tab schließen');
+  await controller.actions.closeMapTab('m2');
+  assertEqual(controller.viewMap().id, 'm1', 'offenen Tab schließen: zurück zur gezeigten Karte');
+  await controller.actions.openMap('m3');
+  await controller.actions.removeMap('m3');
+  assertEqual(controller.state.get().openMapIds, [], 'gelöschte Karte verschwindet aus den Tabs');
+  cleanup();
+});
+
+test(CONTROLLER, 'Spieler stellt die eigene Figur auf: freies Feld nahe der Mitte, Bild optional', async () => {
+  const { controller, api, cleanup } = mapController({ master: false });
+  addMap(api, 'm1', { grid: { show: true, size: 50, offsetX: 0, offsetY: 0 } });
+  api.db.tokens.push({ id: 'ork', map_id: 'm1', name: 'Ork', x: 525, y: 425, size: 1 });
+  controller.handleRoomRow({ active_map_id: 'm1' });
+  await controller.load();
+  const token = await controller.actions.placeOwnToken({ color: 'gelb', imageFile: null }, { x: 510, y: 410 });
+  const call = api.calls.find((entry) => entry[0] === 'placeOwnToken');
+  assertEqual([call[1], call[4], call[5]], ['m1', 'gelb', null], 'gezeigte Karte, Farbe, ohne Bild');
+  assertTrue(!(call[2] === 525 && call[3] === 425), 'nicht auf das besetzte Feld');
+  assertEqual([(call[2] - 25) % 50, (call[3] - 25) % 50], [0, 0], 'eingerastet');
+  assertTrue(
+    controller.state.get().tokens.some((entry) => entry.id === token.id),
+    'Figur sofort auf der Karte',
+  );
+  await controller.actions.placeOwnToken({ color: 'rot', imageFile: new Blob(['x']) }, { x: 0, y: 0 });
+  assertEqual(api.calls.filter((entry) => entry[0] === 'placeOwnToken')[1][5], 'raum/neu.webp', 'eigenes Bild');
   cleanup();
 });
 

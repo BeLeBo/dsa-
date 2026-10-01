@@ -92,7 +92,7 @@ function createHeader(store, { title, subtitle, menu }) {
   return { element, setStatus, refresh };
 }
 
-function createTabBar(tabs, panels) {
+function createTabBar(tabs, panels, initialTab = null) {
   const buttons = new Map();
   const badges = new Map();
   const unseen = new Map();
@@ -139,7 +139,7 @@ function createTabBar(tabs, panels) {
       return button;
     }),
   );
-  select(readJson(TAB_KEY, tabs[0].id));
+  select(initialTab ?? readJson(TAB_KEY, tabs[0].id));
   return { element, select, notify };
 }
 
@@ -154,6 +154,7 @@ function createTabBar(tabs, panels) {
  * @param {() => string} options.actorName     Name für freie Würfe
  * @param {object} [options.rollOptions]        { visibility, canSeeSecret() } – siehe Probendialog
  * @param {() => Node} options.renderEmptyHero Inhalt des Held-Tabs ohne Held
+ * @param {string} [options.initialTab]         Tab beim Start (sonst der zuletzt benutzte)
  * @param {() => object} options.menu     Menüeinträge (siehe menu.js)
  */
 export function createShell({
@@ -166,6 +167,7 @@ export function createShell({
   renderEmptyHero,
   menu,
   rollOptions = {},
+  initialTab = null,
 }) {
   const header = createHeader(store, { title, subtitle, menu });
   const panels = new Map(
@@ -186,7 +188,7 @@ export function createShell({
   createDiceView(panels.get(TABS.dice.id), { store, log, openCheck, actorName, rollOptions });
   createLogView(panels.get(TABS.log.id), log);
 
-  const tabBar = createTabBar(tabs, panels);
+  const tabBar = createTabBar(tabs, panels, initialTab);
   // Neue Würfe anderer zählen, solange das Protokoll nicht offen ist.
   log.subscribe((entries, change) => {
     if (change?.remote) tabBar.notify(TABS.log.id);

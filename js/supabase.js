@@ -33,7 +33,7 @@ export class ServerError extends Error {
  * Stand des Datenbankschemas, den diese App braucht. Muss zu public.schema_version() in
  * supabase/schema.sql passen – bei jeder Änderung am Schema beide hochzählen.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Projektadresse ohne Pfad. Im Dashboard steht oft der API-Endpunkt

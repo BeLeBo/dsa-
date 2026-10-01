@@ -1,15 +1,18 @@
 /**
- * map-view.js – Tab „Karte“ im Raum: die Karte mit allen Figuren, live für alle.
- * Meister: Karten verwalten, Raster einstellen, Figuren aufstellen und bearbeiten.
- * Spieler: sehen die gezeigte Karte und ziehen die Figur ihres Helden.
+ * map-view.js – Tab „Karte“ im Raum, der Spielbildschirm: die Karte mit allen Figuren, live für
+ * alle; daneben (Handy: als Schubladen) links die Werte, rechts die Proben des eigenen Helden.
+ * Meister: mehrere Karten offen (Tabs), Raster einstellen, Figuren aufstellen und bearbeiten.
+ * Spieler: sehen die gezeigte Karte, stellen ihre Figur auf und ziehen sie.
  */
-import { h, setChildren } from './dom.js';
+import { h, icon, ICONS, setChildren } from './dom.js';
 import { showToast, showError } from './toast.js';
 import { segmentedControl } from './segmented.js';
 import { createMapStage } from './map-stage.js';
-import { openMapsDialog, openTokenDialog } from './map-dialogs.js';
+import { openMapsDialog, openTokenDialog, openOwnTokenDialog } from './map-dialogs.js';
+import { mapTabs } from '../room-map.js';
+import { heroName } from '../sheet.js';
 import { createMapInspector } from './map-inspector.js';
-import { createHeroBar } from './hero-bar.js';
+import { createVitalsPanel, createChecksPanel, poolSummary } from './play-panels.js';
 import { confirmDialog } from './dialog.js';
 import { imageUrl } from '../map-api.js';
 import { currentEntry } from '../combat.js';
@@ -181,9 +184,9 @@ export function createMapView(
     selectable: isMaster,
     onMove: (moves) => controller.actions.moveTokens(moves).catch((error) => showError(error, 'Figur nicht bewegt')),
     onSelect: () => renderPanels(),
-    // Spieler tippt die eigene Figur an: Werte und Proben aufklappen.
+    // Spieler tippt die eigene Figur an: Werte aufklappen (am Handy die linke Schublade).
     onTap: (token) => {
-      if (token.character_id && token.character_id === openHeroId()) heroBar.expand();
+      if (token.character_id && token.character_id === openHeroId()) openDrawer('left');
     },
     onActivate: editToken,
     onDeleteSelection: removeTokens,
@@ -208,15 +211,56 @@ export function createMapView(
     onRemove: removeTokens,
     onClose: () => stage.setSelection([]),
   });
-  const heroBar = createHeroBar({ store, heroId: openHeroId, heroActions, openCheck });
-  stage.element.append(inspector.element, heroBar.element);
+  stage.element.append(inspector.element);
 
-  /** Unter der Karte: Auswahl des Meisters oder – sonst – die Leiste des geöffneten Helden. */
+  // Spielbildschirm: links die Werte, in der Mitte die Karte, rechts die Proben.
+  // Breit stehen die Seiten neben der Karte, am Handy kommen sie als Schublade (Knöpfe unten).
+  const vitals = createVitalsPanel({ store, heroId: openHeroId, heroActions, onClose: () => openDrawer(null) });
+  const checks = createChecksPanel({ store, openCheck, onClose: () => openDrawer(null) });
+  const vitalsToggle = h('button', {
+    type: 'button',
+    class: 'play-toggle play-toggle-left',
+    'aria-expanded': 'false',
+    'aria-label': 'Werte (LeP, AsP …)',
+    onclick: () => openDrawer(drawer === 'left' ? null : 'left'),
+  });
+  const checksToggle = h(
+    'button',
+    {
+      type: 'button',
+      class: 'play-toggle play-toggle-right',
+      'aria-expanded': 'false',
+      'aria-label': 'Proben',
+      onclick: () => openDrawer(drawer === 'right' ? null : 'right'),
+    },
+    icon(ICONS.dice),
+    h('span', {}, 'Proben'),
+  );
+  let drawer = null; // offene Schublade am Handy: 'left' | 'right' | null
+
+  function openDrawer(side) {
+    drawer = side;
+    vitals.element.classList.toggle('is-open', side === 'left');
+    checks.element.classList.toggle('is-open', side === 'right');
+    vitalsToggle.setAttribute('aria-expanded', String(side === 'left'));
+    checksToggle.setAttribute('aria-expanded', String(side === 'right'));
+  }
+
+  /** Seiten des Spielbildschirms und – beim Meister – das Panel der Auswahl unter der Karte. */
   function renderPanels() {
     inspector.render();
-    heroBar.setSuppressed(!inspector.element.hidden);
-    heroBar.render();
+    const hasHero = Boolean(store.hero && openHeroId());
+    game.classList.toggle('has-hero', hasHero);
+    for (const element of [vitals.element, checks.element, vitalsToggle, checksToggle]) element.hidden = !hasHero;
+    if (!hasHero) {
+      openDrawer(null);
+      return;
+    }
+    vitals.render();
+    checks.render();
+    setChildren(vitalsToggle, h('span', { class: 'play-toggle-label' }, poolSummary(store.hero)));
   }
+  const tabStrip = h('div', { class: 'map-tabs', role: 'tablist', 'aria-label': 'Geöffnete Karten' });
   const toolbar = h('div', { class: 'map-toolbar' });
   const notice = h('div', { class: 'map-notice' });
   const message = h('div', { class: 'map-message' });
@@ -224,7 +268,12 @@ export function createMapView(
     renderToolbar(controller.viewMap());
     layout();
   });
-  panel.append(toolbar, notice, gridPanel.element, stage.element, message);
+  const center = h('div', { class: 'map-center' }, stage.element, message);
+  const game = h('div', { class: 'map-game' }, vitals.element, center, checks.element, vitalsToggle, checksToggle);
+  panel.append(tabStrip, toolbar, notice, gridPanel.element, game);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && drawer && !document.querySelector('dialog[open]')) openDrawer(null);
+  });
 
   async function run(label, action) {
     try {
@@ -269,15 +318,38 @@ export function createMapView(
     return true;
   }
 
+  /** Spieler mit Held, dessen Figur noch nicht auf der gezeigten Karte steht. */
+  function canPlaceOwnToken(map) {
+    const heroId = openHeroId();
+    return Boolean(
+      map &&
+      !isMaster() &&
+      heroId &&
+      store.hero &&
+      !controller.state.get().tokens.some((token) => token.character_id === heroId),
+    );
+  }
+
+  function placeOwnToken() {
+    openOwnTokenDialog({ controller, heroName: heroName(store.hero), center: stage.visibleCenter });
+  }
+
   function renderToolbar(map) {
     const hasHeroes = room.get().characters.length > 0;
-    if (!changed('toolbar', map?.id, map?.name, isMaster(), gridPanel.isOpen(), hasHeroes)) return;
+    const canPlace = canPlaceOwnToken(map);
+    if (!changed('toolbar', map?.id, map?.name, isMaster(), gridPanel.isOpen(), hasHeroes, canPlace)) return;
     if (!map) {
       setChildren(toolbar);
       return;
     }
     if (!isMaster()) {
-      setChildren(toolbar, h('strong', { class: 'map-title' }, map.name || 'Karte'));
+      setChildren(
+        toolbar,
+        h('strong', { class: 'map-title' }, map.name || 'Karte'),
+        canPlace
+          ? h('button', { type: 'button', class: 'btn btn-primary', onclick: placeOwnToken }, 'Meine Figur aufstellen')
+          : null,
+      );
       return;
     }
     setChildren(
@@ -293,9 +365,66 @@ export function createMapView(
     );
   }
 
+  /**
+   * Meister: mehrere Karten offen (Tabs). Die gezeigte Karte trägt ein Auge; die anderen lassen
+   * sich bearbeiten und vorbereiten, während die Spieler weiter die gezeigte sehen.
+   */
+  function renderTabs(state) {
+    const tabs = isMaster() ? mapTabs({ ...state, openIds: state.openMapIds }) : [];
+    if (!changed('tabs', tabs, isMaster(), state.maps.length)) return;
+    tabStrip.hidden = !isMaster() || state.maps.length === 0;
+    if (tabStrip.hidden) return;
+    setChildren(
+      tabStrip,
+      tabs.map((tab) =>
+        h(
+          'div',
+          { class: `map-tab ${tab.viewing ? 'is-viewing' : ''} ${tab.shown ? 'is-shown' : ''}`.trim() },
+          h(
+            'button',
+            {
+              type: 'button',
+              role: 'tab',
+              class: 'map-tab-open',
+              'aria-selected': String(tab.viewing),
+              title: tab.shown ? 'Diese Karte sehen gerade alle' : 'Nur du siehst diese Karte',
+              onclick: () => run('Karte nicht geöffnet', () => controller.actions.selectMap(tab.id)),
+            },
+            tab.shown ? h('span', { class: 'map-tab-eye', 'aria-label': 'alle sehen sie' }, '👁') : null,
+            h('span', { class: 'map-tab-name' }, tab.name),
+          ),
+          tab.shown
+            ? null
+            : h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'map-tab-close',
+                  'aria-label': `„${tab.name}“ schließen`,
+                  onclick: () => run('Schließen fehlgeschlagen', () => controller.actions.closeMapTab(tab.id)),
+                },
+                '×',
+              ),
+        ),
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'map-tab-add',
+          'aria-label': 'Weitere Karte öffnen oder hochladen',
+          onclick: () => openMapsDialog(controller),
+        },
+        '+ Karte',
+      ),
+    );
+  }
+
   function renderNotice(state, map) {
     const mine = state.tokens.some(canMove);
-    if (!changed('notice', map?.id, map?.name, isMaster(), state.activeMapId, mine)) return;
+    const shownMap = state.maps.find((entry) => entry.id === state.activeMapId);
+    if (!changed('notice', map?.id, map?.name, isMaster(), state.activeMapId, shownMap?.name, mine, openHeroId()))
+      return;
     if (!map) {
       setChildren(notice);
       return;
@@ -313,7 +442,14 @@ export function createMapView(
           : h(
               'div',
               { class: 'map-preview-note' },
-              h('span', {}, 'Vorbereitung: Nur du siehst diese Karte.'),
+              h(
+                'span',
+                {},
+                'Vorbereitung: Nur du siehst diese Karte. ',
+                shownMap
+                  ? `Die Spieler sehen weiter „${shownMap.name || 'Karte'}“.`
+                  : 'Die Spieler sehen gerade keine Karte.',
+              ),
               h(
                 'button',
                 {
@@ -332,7 +468,11 @@ export function createMapView(
       h(
         'p',
         { class: 'section-hint' },
-        mine ? 'Ziehe deine Figur, um sie zu bewegen.' : 'Deine Figur stellt der Meister auf die Karte.',
+        mine
+          ? 'Ziehe deine Figur, um sie zu bewegen. Tippe sie an für deine Werte.'
+          : openHeroId()
+            ? 'Stell deine Figur mit „Meine Figur aufstellen“ auf die Karte – oder der Meister macht es.'
+            : 'Lege im Tab „Held“ deinen Helden an, dann kannst du deine Figur aufstellen.',
       ),
     );
   }
@@ -392,20 +532,20 @@ export function createMapView(
     stage.setHighlight(tokensForTurn(controller.state.get().tokens, currentEntry(room.get().combat)));
   }
 
-  /** Karte füllt den Platz bis zur Tab-Leiste (im Vollbild den ganzen Bildschirm). */
+  /** Spielbildschirm füllt den Platz bis zur Tab-Leiste (im Vollbild die Karte den ganzen Bildschirm). */
   function layout() {
-    const frame = stage.element;
-    if (panel.hidden || frame.hidden || frame.classList.contains('is-fullscreen')) return;
-    const top = frame.getBoundingClientRect().top + window.scrollY;
+    if (panel.hidden || stage.element.classList.contains('is-fullscreen')) return;
+    const top = game.getBoundingClientRect().top + window.scrollY;
     const tabBar = document.querySelector('.tab-bar')?.offsetHeight ?? 0;
     const height = `${Math.max(MIN_FRAME_HEIGHT, Math.round(window.innerHeight - top - tabBar - 12))}px`;
-    if (frame.style.height !== height) frame.style.height = height;
+    if (game.style.height !== height) game.style.height = height;
   }
 
   function render() {
     const state = controller.state.get();
     const map = controller.viewMap();
     if (!map && gridPanel.isOpen()) gridPanel.close();
+    renderTabs(state);
     renderToolbar(map);
     renderNotice(state, map);
     renderMessage(state, map);
@@ -428,6 +568,8 @@ export function createMapView(
     stage.refresh(); // Lebensbalken der Helden
   });
   subscribeHero(() => {
+    renderToolbar(controller.viewMap()); // „Meine Figur aufstellen“ erst mit Held
+    renderNotice(controller.state.get(), controller.viewMap());
     renderPanels();
     stage.refresh();
   });

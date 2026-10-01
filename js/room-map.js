@@ -36,6 +36,24 @@ function upsertById(list, row) {
 const withoutId = (list, id) => list.filter((entry) => entry.id !== id);
 
 /** Welche Karte zeigt dieses Gerät? Spieler: die gezeigte. Meister: gewählte, sonst gezeigte, sonst erste. */
+/**
+ * Karten-Tabs des Meisters: die gezeigte Karte zuerst, dann die geöffneten (in der Reihenfolge
+ * des Öffnens) und die gerade angesehene. Gelöschte Karten fallen heraus.
+ * @returns {{ id, name, shown: boolean, viewing: boolean }[]}
+ */
+export function mapTabs({ maps, openIds = [], activeMapId = null, viewMapId = null }) {
+  const ids = [...new Set([activeMapId, ...openIds, viewMapId].filter(Boolean))];
+  return ids
+    .map((id) => maps.find((map) => map.id === id))
+    .filter(Boolean)
+    .map((map) => ({
+      id: map.id,
+      name: map.name || 'Karte',
+      shown: map.id === activeMapId,
+      viewing: map.id === viewMapId,
+    }));
+}
+
 export function chooseViewMap({ maps, activeMapId, preferredMapId, isMaster }) {
   const exists = (id) => id && maps.some((map) => map.id === id);
   if (!isMaster) return exists(activeMapId) ? activeMapId : null;
@@ -64,7 +82,11 @@ export function createMapController({
   images = { prepareMapImage, prepareTokenImage },
 }) {
   const preferenceKey = `dsa5.karte.${roomId}`;
+  /** Geöffnete Karten des Meisters (Tabs) – je Gerät gemerkt. */
+  const openKey = `dsa5.karten-offen.${roomId}`;
+  const storedOpen = readJson(openKey, []);
   const state = createObservable({
+    openMapIds: Array.isArray(storedOpen) ? storedOpen : [],
     status: 'idle', // idle | loading | ready | offline | error
     error: '',
     maps: [],
@@ -201,7 +223,8 @@ export function createMapController({
       throw error;
     }
     state.update({ maps: upsertById(state.get().maps, map) });
-    writeJson(preferenceKey, map.id); // neue Karte gleich ansehen (noch nicht für alle)
+    rememberOpen([...state.get().openMapIds, map.id]); // neue Karte als Tab öffnen …
+    writeJson(preferenceKey, map.id); // … und gleich ansehen (noch nicht für alle)
     await refreshView();
     return map;
   }
@@ -221,6 +244,27 @@ export function createMapController({
     await refreshView();
   }
 
+  function rememberOpen(ids) {
+    const unique = [...new Set(ids)];
+    writeJson(openKey, unique);
+    state.update({ openMapIds: unique });
+  }
+
+  /** Meister: Karte als Tab öffnen und ansehen – die gezeigte Karte bleibt für alle, wie sie ist. */
+  async function openMap(mapId) {
+    rememberOpen([...state.get().openMapIds, mapId]);
+    await selectMap(mapId);
+  }
+
+  /** Meister: Tab schließen (die Karte bleibt erhalten). War sie offen, geht es zur gezeigten Karte. */
+  async function closeMapTab(mapId) {
+    const { openMapIds, activeMapId, viewMapId } = state.get();
+    rememberOpen(openMapIds.filter((id) => id !== mapId));
+    if (mapId !== viewMapId) return;
+    const next = activeMapId && activeMapId !== mapId ? activeMapId : (state.get().openMapIds[0] ?? null);
+    await selectMap(next);
+  }
+
   async function renameMap(mapId, name) {
     const map = await api.updateMap(mapId, {
       name: String(name ?? '')
@@ -235,6 +279,7 @@ export function createMapController({
     if (!map) return;
     const tokens = mapId === state.get().viewMapId ? state.get().tokens : await api.fetchTokens(mapId);
     await api.deleteMap(mapId);
+    rememberOpen(state.get().openMapIds.filter((id) => id !== mapId));
     state.update({
       maps: withoutId(state.get().maps, mapId),
       activeMapId: state.get().activeMapId === mapId ? null : state.get().activeMapId,
@@ -320,6 +365,27 @@ export function createMapController({
       return created;
     } catch (error) {
       if (imagePath) api.discardUpload(imagePath).catch(() => {});
+      throw error;
+    }
+  }
+
+  /**
+   * Spieler: die Figur des eigenen Helden selbst auf die gezeigte Karte stellen – auf ein freies
+   * Feld nahe der Bildschirmmitte. Ohne Bild nimmt der Server das der letzten Figur des Helden.
+   * @param {object} spec  { color, imageFile }
+   */
+  async function placeOwnToken(spec, center) {
+    const map = viewMap();
+    if (!map) throw new Error('Der Meister zeigt gerade keine Karte.');
+    const grid = normalizeGrid(map.grid, map);
+    const [position] = placeTokens(1, clampToMap(center, map), 1, grid, map, state.get().tokens);
+    const imagePath = spec.imageFile ? await uploadTokenImage(spec.imageFile) : null;
+    try {
+      const token = await api.placeOwnToken(map.id, position.x, position.y, spec.color, imagePath);
+      handleTokenRow(token);
+      return token;
+    } catch (error) {
+      if (imagePath) api.discardUpload(imagePath).catch(() => {}); // klappt nur beim Meister – sonst bleibt es liegen
       throw error;
     }
   }
@@ -517,12 +583,15 @@ export function createMapController({
       uploadMap,
       showMap,
       selectMap,
+      openMap,
+      closeMapTab,
       renameMap,
       removeMap,
       updateGrid,
       flushGrid,
       addTokens,
       addHeroes,
+      placeOwnToken,
       editToken,
       removeToken,
       removeTokens,

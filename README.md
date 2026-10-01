@@ -22,6 +22,7 @@ alles live für alle synchronisiert.
 | 7     | Optolith-Import, Mehrfachauswahl und Werte-Panel auf der Karte         | ✅ fertig |
 | 8     | Ohne Meister-PIN, LeP für Gegner, Proben und Werte auf der Karte       | ✅ fertig |
 | 9     | Lebensbalken: Helden genau, Gegner in Vierteln                         | ✅ fertig |
+| 10    | Spielbildschirm (Werte/Proben), eigene Figur, Karten-Tabs des Meisters | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -221,8 +222,11 @@ auf dem Server gespeichert und für den Meister sichtbar.
    Große Bilder verkleinert die App automatisch (längste Seite 3000 Punkte, höchstens 5 MB).
    Handyfotos im HEIC-Format bitte vorher als JPG speichern.
 2. Eine neue Karte sieht zunächst **nur der Meister** („Vorbereitung“) – in Ruhe Figuren aufstellen,
-   dann **Allen zeigen**. Unter **Karten** lassen sich mehrere Karten verwalten: ansehen, allen zeigen,
-   ausblenden, umbenennen, löschen (mit allen Figuren darauf).
+   dann **Allen zeigen**. **Mehrere Karten offen:** Über der Karte stehen Tabs – die gezeigte Karte mit
+   Auge 👁, daneben die Karten, die du gerade vorbereitest. Ein Tipp wechselt hin und her, × schließt
+   den Tab (die Karte bleibt), **+ Karte** öffnet eine weitere oder lädt eine neue hoch. Während du eine
+   andere Karte bearbeitest, sehen die Spieler weiter die gezeigte. Unter **Karten** lassen sich alle
+   Karten verwalten: öffnen, allen zeigen, ausblenden, umbenennen, löschen (mit allen Figuren darauf).
 3. **Raster:** an/aus, Feldgröße (oder „Felder in der Breite“), Versatz und Linienfarbe. Hat das Bild
    schon Kästchen, die Werte so einstellen, dass die Linien übereinander liegen. Bei sichtbarem
    Raster rasten Figuren beim Ablegen in die Felder ein (große Figuren mit 2 × 2 Feldern auf die Linien).
@@ -253,16 +257,24 @@ auf dem Server gespeichert und für den Meister sichtbar.
    - Tastatur: Pfeiltasten bewegen alle markierten um ein Feld, **Entf** entfernt sie (mit Rückfrage),
      **Esc** hebt die Auswahl auf, **Enter** auf einer Figur öffnet „Figur bearbeiten“.
 
-**Alle**
+**Spieler**
 
-- **Probe & Werte:** Wer einen Helden geöffnet hat, sieht unter der Karte eine Leiste mit Name, LeP und
-  AsP. Aufgeklappt (Knopf **Probe & Werte** oder Tipp auf die eigene Figur):
-  - LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder eintippen – wie im Heldenbogen.
-  - **Probe suchen:** ein paar Buchstaben tippen („sinn“, „körper“, „igni“) und die Probe antippen –
-    Talente, Zauber, Liturgien, Eigenschaften, Waffen (AT/PA/FK), Kampftechniken, Ausweichen,
-    Initiative. Es öffnet sich derselbe Probendialog wie im Heldenbogen; der Wurf landet im Protokoll.
-  - Ohne Suchbegriff: die zuletzt gewürfelten Proben sowie Eigenschaften, Ausweichen, Initiative und
-    Waffen zum direkten Antippen.
+- **Meine Figur aufstellen:** Steht die eigene Figur noch nicht auf der gezeigten Karte, stellt man sie
+  selbst auf – mit Farbe und auf Wunsch eigenem Bild (sonst das Bild der letzten Figur). Danach ziehen.
+
+**Alle – der Spielbildschirm**
+
+Der Tab **Karte** ist der Spielbildschirm und öffnet sich beim Betreten des Raums (wer noch keinen
+Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort alles zum Spielen:
+
+- **Links „Werte“:** LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder eintippen, Zustände
+  (Schmerz, Betäubung …) hoch- und runtersetzen – wie im Heldenbogen, sofort für alle.
+- **Rechts „Proben“:** alle Proben zum Antippen – Eigenschaften, Kampf (Ausweichen, Initiative, Waffen),
+  alle Talente nach Gruppen, Zauber und Liturgien, Kampftechniken; ganz oben die zuletzt gewürfelten.
+  **Probe suchen:** ein paar Buchstaben tippen („sinn“, „körper“, „igni“). Es öffnet sich derselbe
+  Probendialog wie im Heldenbogen; der Wurf landet im Protokoll.
+- Am PC stehen beide Seiten neben der Karte. Am Handy kommen sie als Schublade: Knopf unten links (zeigt
+  LeP/AsP) bzw. **Proben** unten rechts; Tipp auf die eigene Figur öffnet die Werte, × oder Esc schließt.
 - **Lebensbalken** unter den Figuren:
   - **Helden:** genauer Balken für alle – so sieht die Gruppe, wie es um jeden steht.
   - **Gegner und NSC** (wenn der Meister LeP eingetragen hat): Balken aus vier Vierteln. Spieler sehen
@@ -393,7 +405,7 @@ js/ui/combat-view.js     Kampfkarte: Initiative-Reihenfolge, wer ist am Zug
 js/ui/map-view.js        Tab „Karte“: Werkzeugleiste, Hinweise, Raster einstellen
 js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren auswählen und ziehen
 js/ui/map-inspector.js   Meister: Panel für ausgewählte Figuren (LeP, AsP, Zustände, verbergen …)
-js/ui/hero-bar.js        Karte: Leiste „Probe & Werte“ für den geöffneten Helden
+js/ui/play-panels.js     Spielbildschirm: Seiten „Werte“ (links) und „Proben“ (rechts)
 js/ui/schema-help.js     Anleitung „Datenbank aktualisieren“ (Skript kopieren, SQL Editor öffnen)
 js/check-search.js       Proben suchen (Talente, Zauber, Eigenschaften, Kampf), zuletzt gewürfelt
 js/ui/map-dialogs.js     Meister: Karten verwalten, Figuren aufstellen und bearbeiten

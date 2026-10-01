@@ -97,6 +97,15 @@ export async function deleteToken(tokenId) {
 }
 
 /** Figur bewegen (Meister jede, Spieler die eigene) – der Server prüft und begrenzt. */
+/** Spieler: Figur des eigenen Helden auf die gezeigte Karte stellen (Prüfung auf dem Server). */
+export async function placeOwnToken(mapId, x, y, color, imagePath) {
+  const client = await getClient();
+  const rows = await unwrap(
+    client.rpc('place_own_token', { p_map_id: mapId, p_x: x, p_y: y, p_color: color, p_image_path: imagePath }),
+  );
+  return Array.isArray(rows) ? rows[0] : rows;
+}
+
 export async function moveToken(tokenId, x, y) {
   const client = await getClient();
   await unwrap(client.rpc('move_token', { p_token_id: tokenId, p_x: x, p_y: y }));
