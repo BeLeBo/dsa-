@@ -404,6 +404,20 @@ export function panBy(view, dx, dy) {
 }
 
 /**
+ * Liegt der Punkt außerhalb oder näher als `margin` am Rand, die Ansicht (gleicher Zoom),
+ * in der er in der Mitte steht – sonst null (ist schon gut zu sehen).
+ */
+export function viewToReveal(view, point, viewport, margin) {
+  const screen = mapToScreen(view, point);
+  const visible =
+    screen.x >= margin &&
+    screen.x <= viewport.width - margin &&
+    screen.y >= margin &&
+    screen.y <= viewport.height - margin;
+  return visible ? null : panBy(view, viewport.width / 2 - screen.x, viewport.height / 2 - screen.y);
+}
+
+/**
  * Zwei-Finger-Geste: Ausgangsansicht, Abstand und Mitte der Finger vorher und jetzt.
  * Der Kartenpunkt unter der alten Mitte folgt der neuen Mitte.
  */
@@ -411,4 +425,26 @@ export function pinchView(startView, start, now, limits) {
   const factor = start.distance > 0 ? now.distance / start.distance : 1;
   const zoomed = zoomAt(startView, factor, start.center, limits);
   return panBy(zoomed, now.center.x - start.center.x, now.center.y - start.center.y);
+}
+
+// -----------------------------------------------------------------------------
+// Ping: Der Meister markiert eine Stelle, alle sehen sie kurz aufleuchten.
+// -----------------------------------------------------------------------------
+
+/** So lange leuchtet ein Ping auf der Karte. */
+export const PING_DURATION_MS = 5000;
+
+/** Neuer Ping an einer Stelle der Karte (ganze Bildpunkte, auf der Karte). */
+export function createPing(map, point, id) {
+  const { x, y } = clampToMap(point, map);
+  return { id, map_id: map.id, x: Math.round(x), y: Math.round(y) };
+}
+
+/** Ping vom Server prüfen – null, wenn keiner da oder er unbrauchbar ist. */
+export function normalizePing(value) {
+  if (!value || typeof value !== 'object') return null;
+  const { id, map_id: mapId, x, y } = value;
+  const valid =
+    typeof id === 'string' && id !== '' && typeof mapId === 'string' && Number.isFinite(x) && Number.isFinite(y);
+  return valid ? { id, map_id: mapId, x, y } : null;
 }

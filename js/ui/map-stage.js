@@ -5,6 +5,8 @@
  *  - Rahmen aufziehen (Maus: linke Taste auf freier Fläche, Handy: Knopf „Auswählen“).
  *  - Ausgewählte Figuren ziehen: alle wandern mit, die Formation bleibt.
  *  - Karte verschieben: Finger, rechte/mittlere Maustaste oder Leertaste + Maus.
+ *  - Stelle markieren (Ping): lange drücken, Alt + Klick oder Knopf „Stelle markieren“ und tippen.
+ *    Ein Ping leuchtet ein paar Sekunden; liegt er außerhalb des Ausschnitts, rückt die Karte nach.
  *
  * Kartenbild und Raster werden mit der Karte skaliert; die Figuren liegen in einer eigenen
  * Ebene in Bildschirmgröße darüber – so bleiben Namen, Kürzel und Bilder bei jedem Zoom scharf.
@@ -26,6 +28,8 @@ import {
   normalizeRect,
   tokensInRect,
   moveGroup,
+  viewToReveal,
+  PING_DURATION_MS,
   TOKEN_COLORS,
 } from '../map.js';
 
@@ -38,6 +42,11 @@ const COMPACT_CELL_PX = 26;
 /** Zu Beginn wird so weit vergrößert, dass die eigene Figur gut zu sehen ist. */
 const READABLE_CELL_PX = 36;
 const SVG_NS = 'http://www.w3.org/2000/svg';
+/** So lange gedrückt halten (ohne zu ziehen) setzt einen Ping. */
+const LONG_PRESS_MS = 550;
+/** Ein Ping so nah am Rand (Bildschirmpunkte) holt die Karte ins Bild. */
+const PING_MARGIN_PX = 48;
+const PAN_ANIMATION_MS = 350;
 const ARROW_STEPS = Object.freeze({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] });
 
 function svg(tag, attributes = {}) {
@@ -102,6 +111,8 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
  * @param {(token: object) => void} options.onTap         Figur angetippt, ohne Auswahl (Spieler)
  * @param {(token: object) => void} options.onActivate    Enter auf einer Figur (Tastatur)
  * @param {(ids: string[]) => void} options.onDeleteSelection  Entf-Taste bei Auswahl
+ * @param {() => boolean} options.canPing                Stellen markieren erlaubt (Meister, gezeigte Karte)?
+ * @param {(point: {x, y}) => void} options.onPing        Stelle markiert (Kartenpunkte)
  * @param {(path: string) => Promise<string>} options.loadImage  Bildadresse zu einem Speicherpfad
  */
 export function createMapStage({
@@ -114,19 +125,38 @@ export function createMapStage({
   onTap = () => {},
   onActivate = () => {},
   onDeleteSelection = () => {},
+  canPing = () => false,
+  onPing = () => {},
   loadImage,
 }) {
   const image = h('img', { class: 'map-image', alt: '', draggable: 'false' });
   const grid = createGridLayer();
   const stage = h('div', { class: 'map-stage' }, image, grid.element);
   const tokenLayer = h('div', { class: 'map-tokens' });
+  const pingLayer = h('div', { class: 'map-pings', 'aria-hidden': 'true' });
   const marquee = h('div', { class: 'map-marquee', hidden: true });
   const status = h('div', { class: 'map-status', role: 'status' });
-  const viewport = h('div', { class: 'map-viewport', tabindex: '-1' }, stage, tokenLayer, marquee, status);
+  const pingHint = h('div', { class: 'map-hint', hidden: true }, 'Tippe auf die Stelle, die alle sehen sollen.');
+  const announcer = h('div', { class: 'visually-hidden', role: 'status' });
+  const viewport = h(
+    'div',
+    { class: 'map-viewport', tabindex: '-1' },
+    stage,
+    tokenLayer,
+    pingLayer,
+    marquee,
+    status,
+    pingHint,
+    announcer,
+  );
 
   const controlButton = (label, path, onclick, extra = {}) =>
     h('button', { type: 'button', class: 'map-control', 'aria-label': label, onclick, ...extra }, icon(path));
   const selectButton = controlButton('Auswählen (Rahmen ziehen)', ICONS.select, toggleSelectMode, {
+    'aria-pressed': 'false',
+    hidden: true,
+  });
+  const pingButton = controlButton('Stelle markieren (Ping)', ICONS.ping, () => setPingMode(!pingMode), {
     'aria-pressed': 'false',
     hidden: true,
   });
@@ -138,6 +168,7 @@ export function createMapStage({
     controlButton('Verkleinern', ICONS.minus, () => zoomBy(1 / BUTTON_ZOOM_FACTOR)),
     controlButton('Ganze Karte zeigen', ICONS.fit, () => fit()),
     selectButton,
+    pingButton,
     fullscreenButton,
   );
   const element = h('div', { class: 'map-frame' }, viewport, controls);
@@ -152,6 +183,12 @@ export function createMapStage({
   let highlighted = new Set();
   let selected = new Set();
   let selectMode = false;
+  let pingMode = false;
+  let pressTimer = null;
+  /** Leuchtende Pings { element, point } und ein Ping, der auf eine sichtbare Karte wartet. */
+  const pings = new Set();
+  let waitingPing = null;
+  let panAnimation = 0;
   let spaceDown = false;
   let gesture = null;
   const pointers = new Map();
@@ -173,6 +210,7 @@ export function createMapStage({
     stage.style.setProperty('--inverse-scale', String(1 / view.scale));
     tokenLayer.classList.toggle('is-compact', Boolean(gridValues) && gridValues.size * view.scale < COMPACT_CELL_PX);
     for (const entry of tokenViews.values()) placeToken(entry);
+    for (const entry of pings) placePing(entry);
   }
 
   /** Ganze Karte zeigen (Knopf). */
@@ -225,6 +263,12 @@ export function createMapStage({
     lastSize = size;
     applyView();
     if (shrunk) revealSelection(); // z. B. das Panel des Meisters ist unter der Karte aufgegangen
+    if (waitingPing) {
+      // Die Karte war verdeckt (anderer Tab), als der Ping kam – jetzt zeigen, falls noch aktuell.
+      const { point, until } = waitingPing;
+      waitingPing = null;
+      if (Date.now() < until) showPing(point, { reveal: true, duration: until - Date.now() });
+    }
   }
 
   /** Schiebt die Karte so, dass die ausgewählten Figuren (samt Namen) zu sehen sind. */
@@ -269,6 +313,105 @@ export function createMapStage({
     fullscreenButton.setAttribute('aria-pressed', String(active));
     fullscreenButton.setAttribute('aria-label', active ? 'Vollbild beenden' : 'Vollbild');
     document.body.classList.toggle('map-fullscreen-open', active);
+  }
+
+  /** Knopf „Stelle markieren“: Der nächste Tipp auf die Karte setzt einen Ping. */
+  function setPingMode(active) {
+    pingMode = active;
+    pingButton.setAttribute('aria-pressed', String(active));
+    viewport.classList.toggle('is-ping-mode', active);
+    pingHint.hidden = !active;
+  }
+
+  // -------------------------------------------------------------------------
+  // Ping
+  // -------------------------------------------------------------------------
+
+  function placePing(entry) {
+    const center = mapToScreen(view, entry.point);
+    entry.element.style.transform = `translate(${center.x}px, ${center.y}px)`;
+  }
+
+  /** Schiebt die Karte sanft so, dass der Punkt in der Mitte steht (nur wenn er am Rand oder draußen liegt). */
+  function reveal(point) {
+    const size = viewportSize();
+    const target = viewToReveal(view, point, size, Math.min(PING_MARGIN_PX, size.width / 4, size.height / 4));
+    if (!target) return;
+    const from = view;
+    const to = clampView(target, size, map);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    cancelAnimationFrame(panAnimation);
+    if (reduced) {
+      view = to;
+      applyView();
+      return;
+    }
+    const start = performance.now();
+    const step = (now) => {
+      if (gesture) return; // Wer selbst schiebt oder zoomt, hat Vorrang.
+      const t = Math.min(1, (now - start) / PAN_ANIMATION_MS);
+      const eased = 1 - (1 - t) ** 3;
+      view = { scale: from.scale, x: from.x + (to.x - from.x) * eased, y: from.y + (to.y - from.y) * eased };
+      applyView();
+      if (t < 1) panAnimation = requestAnimationFrame(step);
+    };
+    panAnimation = requestAnimationFrame(step);
+  }
+
+  /**
+   * Ping zeigen: pulsierende Ringe an der Stelle (Kartenpunkte), ein paar Sekunden lang.
+   * Ist die Karte gerade nicht zu sehen (anderer Tab), wird er beim Erscheinen nachgeholt.
+   */
+  function showPing(point, { reveal: shouldReveal = true, duration = PING_DURATION_MS } = {}) {
+    if (!map) return;
+    if (!hasSize()) {
+      waitingPing = { point, until: Date.now() + duration };
+      return;
+    }
+    if (shouldReveal) reveal(point);
+    const marker = h(
+      'div',
+      { class: 'map-ping' },
+      h('span', { class: 'map-ping-ring' }),
+      h('span', { class: 'map-ping-ring' }),
+      h('span', { class: 'map-ping-dot' }),
+    );
+    marker.style.setProperty('--ping-duration', `${duration}ms`);
+    const entry = { element: marker, point };
+    pings.add(entry);
+    pingLayer.append(marker);
+    placePing(entry);
+    announcer.textContent = '';
+    announcer.textContent = 'Eine Stelle auf der Karte ist markiert.';
+    setTimeout(() => {
+      marker.remove();
+      pings.delete(entry);
+    }, duration);
+  }
+
+  function ping(point) {
+    if (!map || !canPing()) return;
+    setPingMode(false);
+    onPing(clampToMap(screenToMap(view, point), map));
+  }
+
+  function cancelLongPress() {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+
+  /** Lange drücken (ohne zu ziehen) setzt einen Ping – auch am Handy, ohne den Knopf. */
+  function startLongPress(point) {
+    cancelLongPress();
+    if (!canPing()) return;
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      if (!gesture || gesture.moved || pointers.size !== 1) return;
+      if (gesture.kind === 'token' && gesture.group.length) return;
+      gesture.pinged = true;
+      marquee.hidden = true;
+      ping(point);
+    }, LONG_PRESS_MS);
   }
 
   /** Handy/Tablet: Ein Finger zieht dann einen Auswahlrahmen statt die Karte zu verschieben. */
@@ -434,6 +577,10 @@ export function createMapStage({
   function startGesture(event, point) {
     const isMouse = event.pointerType === 'mouse';
     const panButton = isMouse && (event.button === 1 || event.button === 2 || spaceDown);
+    if (pingMode && !panButton) {
+      gesture = { kind: 'pan', start: point, last: point, moved: false, ping: true };
+      return;
+    }
     const additive = event.shiftKey || event.ctrlKey || event.metaKey || selectMode;
     const tokenElement = panButton ? null : event.target.closest('.map-token');
     const token = tokenElement ? tokenById(tokenElement.dataset.tokenId) : null;
@@ -532,9 +679,18 @@ export function createMapStage({
     const point = localPoint(viewport, event);
     pointers.set(event.pointerId, point);
     userMoved = true;
+    cancelAnimationFrame(panAnimation);
+    if (pointers.size === 1 && event.altKey && event.button === 0 && canPing()) {
+      // Alt + Klick: sofort ein Ping, sonst nichts
+      pointers.delete(event.pointerId);
+      ping(point);
+      return;
+    }
     if (pointers.size === 1) {
       startGesture(event, point);
+      if (!gesture.ping) startLongPress(point);
     } else if (pointers.size === 2) {
+      cancelLongPress();
       if (gesture?.kind === 'token' && gesture.moved) cancelTokenDrag();
       marquee.hidden = true;
       gesture = { kind: 'pinch', startView: view, start: pinchInfo([...pointers.values()]) };
@@ -556,7 +712,9 @@ export function createMapStage({
       applyView();
       return;
     }
+    if (gesture.pinged) return;
     if (!gesture.moved && distance(point, gesture.start) < DRAG_THRESHOLD_PX) return;
+    cancelLongPress();
     const firstMove = !gesture.moved;
     gesture.moved = true;
     if (gesture.kind === 'pan') {
@@ -590,7 +748,16 @@ export function createMapStage({
     }
     if (pointers.size > 0) return;
     gesture = null;
+    cancelLongPress();
     const cancelled = event.type === 'pointercancel';
+    if (finished.pinged) {
+      if (finished.kind === 'token') endDragVisuals(finished.group);
+      return; // Lang gedrückt: Ping ist gesetzt, kein Antippen
+    }
+    if (finished.ping) {
+      if (!finished.moved && !cancelled) ping(finished.start);
+      return;
+    }
     if (finished.kind === 'marquee') {
       if (!cancelled) finishMarquee(finished);
       else marquee.hidden = true;
@@ -627,6 +794,12 @@ export function createMapStage({
     if (!map || isTyping(event.target)) return;
     const tokenElement = event.target.closest?.('.map-token');
     const entry = tokenElement && tokenViews.get(tokenElement.dataset.tokenId);
+    if (event.key === 'Escape' && pingMode) {
+      event.preventDefault();
+      event.stopPropagation();
+      setPingMode(false);
+      return;
+    }
     if (event.key === 'Escape' && selected.size) {
       event.preventDefault();
       event.stopPropagation(); // erst die Auswahl aufheben, beim nächsten Esc das Vollbild beenden
@@ -725,6 +898,8 @@ export function createMapStage({
       image.height = map.height;
       grid.update(map, gridValues);
       selectButton.hidden = !selectable();
+      pingButton.hidden = !canPing();
+      if (pingMode && !canPing()) setPingMode(false);
       if (changedImage) {
         fitted = false;
         userMoved = false;
@@ -752,6 +927,8 @@ export function createMapStage({
         entry.element.classList.toggle('is-turn', highlighted.has(entry.token.id));
       }
     },
+    /** Ping an einer Stelle der Karte zeigen; reveal: Karte rückt nach, wenn er nicht im Bild ist. */
+    showPing,
     /** Auswahl von außen setzen (z. B. „Auswahl aufheben“ im Panel). */
     setSelection,
     selection: () => [...selected],

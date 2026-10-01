@@ -6,8 +6,8 @@
 --
 -- Rollen:
 --   Meister  – sieht und bearbeitet alle Helden des Raums, sieht alle Würfe,
---              führt den Kampf (Initiative), kann das Protokoll leeren und
---              verwaltet Karten und Figuren.
+--              führt den Kampf (Initiative), kann das Protokoll leeren,
+--              verwaltet Karten und Figuren und markiert Stellen auf der Karte (Ping).
 --   Spieler  – sieht und bearbeitet nur den eigenen Helden, sieht öffentliche Würfe
 --              und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
 --              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie.
@@ -39,6 +39,10 @@ alter table public.rooms add column if not exists combat jsonb
   check (combat is null or (jsonb_typeof(combat) = 'object' and pg_column_size(combat) < 200000));
 -- Zeitpunkt, zu dem der Meister das Protokoll zuletzt geleert hat (für alle Geräte).
 alter table public.rooms add column if not exists log_cleared_at timestamptz;
+-- Zuletzt markierte Stelle auf der Karte (Ping des Meisters): { id, map_id, x, y }.
+-- Geht live an alle Geräte; nur neue Pings werden dort kurz angezeigt.
+alter table public.rooms add column if not exists ping jsonb
+  check (ping is null or (jsonb_typeof(ping) = 'object' and pg_column_size(ping) < 1000));
 
 -- Frühere Versionen hatten eine Meister-PIN – die gespeicherten PINs werden nicht mehr gebraucht.
 drop table if exists private.pin_attempts;
@@ -653,7 +657,7 @@ create policy "Mitglieder sehen ihren Raum" on public.rooms
   for select to authenticated
   using (public.is_room_member(id));
 
--- Der Meister führt den Kampf (Spalte combat, siehe Rechte unten).
+-- Der Meister führt den Kampf, zeigt Karten und markiert Stellen (Spalten siehe Rechte unten).
 drop policy if exists "Meister führt den Kampf" on public.rooms;
 create policy "Meister führt den Kampf" on public.rooms
   for update to authenticated
@@ -801,7 +805,7 @@ revoke all on public.rooms, public.room_members, public.characters, public.rolls
 revoke all on public.maps, public.tokens from anon, authenticated;
 
 grant select on public.rooms to authenticated;
-grant update (combat, active_map_id) on public.rooms to authenticated;
+grant update (combat, active_map_id, ping) on public.rooms to authenticated;
 grant select, delete on public.maps to authenticated;
 grant insert (id, room_id, name, image_path, width, height, grid) on public.maps to authenticated;
 grant update (name, grid) on public.maps to authenticated;
@@ -901,7 +905,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 2;
+  select 3;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

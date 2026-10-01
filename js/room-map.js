@@ -5,12 +5,13 @@
  *
  * Der Meister kann eine Karte vorbereiten, ohne dass die Spieler sie sehen: `viewMapId`
  * ist die Karte, die auf diesem Gerät angezeigt wird, `activeMapId` die für alle gezeigte.
+ * Auf der gezeigten Karte kann er Stellen markieren (Ping) – alle sehen sie kurz aufleuchten.
  */
 import * as serverApi from './map-api.js';
 import { prepareMapImage, prepareTokenImage } from './image.js';
 import { createObservable } from './store.js';
 import { readJson, writeJson } from './storage.js';
-import { isOlderTimestamp } from './util.js';
+import { isOlderTimestamp, newId } from './util.js';
 import { normalizeHero, heroName } from './sheet.js';
 import {
   defaultGrid,
@@ -21,6 +22,8 @@ import {
   clampToMap,
   parseLife,
   lifeAfterMaxChange,
+  createPing,
+  normalizePing,
   MAX_TOKEN_NAME_LENGTH,
   MAX_MAP_NAME_LENGTH,
 } from './map.js';
@@ -35,7 +38,6 @@ function upsertById(list, row) {
 
 const withoutId = (list, id) => list.filter((entry) => entry.id !== id);
 
-/** Welche Karte zeigt dieses Gerät? Spieler: die gezeigte. Meister: gewählte, sonst gezeigte, sonst erste. */
 /**
  * Karten-Tabs des Meisters: die gezeigte Karte zuerst, dann die geöffneten (in der Reihenfolge
  * des Öffnens) und die gerade angesehene. Gelöschte Karten fallen heraus.
@@ -54,6 +56,7 @@ export function mapTabs({ maps, openIds = [], activeMapId = null, viewMapId = nu
     }));
 }
 
+/** Welche Karte zeigt dieses Gerät? Spieler: die gezeigte. Meister: gewählte, sonst gezeigte, sonst erste. */
 export function chooseViewMap({ maps, activeMapId, preferredMapId, isMaster }) {
   const exists = (id) => id && maps.some((map) => map.id === id);
   if (!isMaster) return exists(activeMapId) ? activeMapId : null;
@@ -68,6 +71,7 @@ export function chooseViewMap({ maps, activeMapId, preferredMapId, isMaster }) {
  * @param {() => boolean} options.isMaster
  * @param {() => object[]} options.characters  sichtbare Helden (Zeilen vom Server)
  * @param {(map: object) => void} options.onShown  Meister zeigt eine neue Karte (für Spieler)
+ * @param {(ping: object) => void} options.onPing  neuer Ping eines anderen Geräts auf der angezeigten Karte
  * @param {(error: Error) => void} options.onError Fehler beim Speichern im Hintergrund
  * @param {object} [options.api]  Serverfunktionen (für Tests austauschbar)
  * @param {object} [options.images] { prepareMapImage, prepareTokenImage } (für Tests austauschbar)
@@ -77,6 +81,7 @@ export function createMapController({
   isMaster,
   characters,
   onShown = () => {},
+  onPing = () => {},
   onError = () => {},
   api = serverApi,
   images = { prepareMapImage, prepareTokenImage },
@@ -93,8 +98,11 @@ export function createMapController({
     activeMapId: null,
     viewMapId: null,
     tokens: [],
+    ping: null, // zuletzt markierte Stelle { id, map_id, x, y, own, receivedAt }
   });
   let gridTimer = null;
+  /** ID des zuletzt gesehenen Pings; undefined, solange die Datenbank keine Pings kennt. */
+  let pingSeen;
   let pendingGrid = null;
 
   const viewMap = () => state.get().maps.find((map) => map.id === state.get().viewMapId) ?? null;
@@ -143,8 +151,28 @@ export function createMapController({
     if (state.get().status !== 'ready') state.update({ status: 'offline' });
   }
 
-  /** Raumzeile (Start oder live): Welche Karte ist für alle gezeigt? */
-  function handleRoomRow(row) {
+  /**
+   * Ping aus der Raumzeile. Beim Laden und Wiederverbinden ist der letzte Ping alt: Er wird nur
+   * gemerkt. Live gezeigt wird nur ein neuer – der eigene steht schon (siehe ping()).
+   */
+  function receivePing(value, live) {
+    const received = normalizePing(value);
+    const id = received?.id ?? null;
+    const known = pingSeen !== undefined;
+    if (id === pingSeen) return;
+    pingSeen = id;
+    if (!live || !known || !received) return;
+    state.update({ ping: { ...received, own: false, receivedAt: Date.now() } });
+    if (received.map_id === state.get().viewMapId) onPing(received);
+  }
+
+  /**
+   * Raumzeile (Start oder live): Welche Karte ist für alle gezeigt? Neuer Ping?
+   * @param {object} row
+   * @param {{ live?: boolean }} [options]  live: Änderung kam gerade über die Live-Verbindung
+   */
+  function handleRoomRow(row, { live = false } = {}) {
+    if (row && Object.hasOwn(row, 'ping')) receivePing(row.ping, live);
     if (!row || !Object.hasOwn(row, 'active_map_id') || row.active_map_id === state.get().activeMapId) return;
     state.update({ activeMapId: row.active_map_id });
     if (state.get().status === 'idle') return; // noch nicht geladen – load() folgt
@@ -557,6 +585,16 @@ export function createMapController({
     for (const row of saved) handleTokenRow(row);
   }
 
+  /** Meister: Stelle auf der gezeigten Karte markieren – leuchtet hier sofort, bei allen live. */
+  async function ping(point) {
+    const map = viewMap();
+    if (!isMaster() || !map || map.id !== state.get().activeMapId) return;
+    const next = createPing(map, point, newId());
+    pingSeen = next.id; // eigenes Echo von der Live-Verbindung nicht noch einmal zeigen
+    state.update({ ping: { ...next, own: true, receivedAt: Date.now() } });
+    await api.sendPing(roomId, next);
+  }
+
   /** Meister: mehrere Figuren entfernen (Bilder, die niemand mehr nutzt, werden aufgeräumt). */
   async function removeTokens(tokenIds) {
     const tokens = state.get().tokens.filter((token) => tokenIds.includes(token.id));
@@ -600,6 +638,7 @@ export function createMapController({
       adjustTokenLife,
       moveToken,
       moveTokens,
+      ping,
     },
   };
 }

@@ -23,6 +23,7 @@ import {
   gridSizeFromCells,
   cellsAcross,
   tokensForTurn,
+  PING_DURATION_MS,
   tokenLifeBar,
   GRID_COLORS,
   MIN_GRID_SIZE,
@@ -183,6 +184,7 @@ export function createMapView(
     showProtocol,
   },
 ) {
+  const isShownMap = (map) => map.id === controller.state.get().activeMapId;
   const canMove = (token) => isMaster() || (Boolean(token.character_id) && token.character_id === myCharacterId());
   const editToken = (token) =>
     openTokenDialog({ controller, token, characters: room.get().characters, center: stage.visibleCenter });
@@ -209,6 +211,9 @@ export function createMapView(
     },
     onActivate: editToken,
     onDeleteSelection: removeTokens,
+    // Ping: nur auf der Karte, die alle sehen.
+    canPing: () => isMaster() && Boolean(controller.viewMap()) && isShownMap(controller.viewMap()),
+    onPing: (point) => controller.actions.ping(point).catch((error) => showError(error, 'Ping nicht gesendet')),
     loadImage: imageUrl,
   });
   const inspector = createMapInspector({
@@ -488,7 +493,7 @@ export function createMapView(
                 'details',
                 { class: 'map-tips' },
                 h('summary', {}, 'Tipps'),
-                ' Figur antippen: Werte ändern, bearbeiten. Mehrere markieren: Rahmen ziehen (Maus) oder Knopf „Auswählen“ – dann gemeinsam ziehen. Karte verschieben mit der rechten Maustaste.',
+                ' Figur antippen: Werte ändern, bearbeiten. Mehrere markieren: Rahmen ziehen (Maus) oder Knopf „Auswählen“ – dann gemeinsam ziehen. Karte verschieben mit der rechten Maustaste. Stelle für alle markieren (Ping): lange drücken, Alt + Klick oder Knopf 📍.',
               ),
             )
           : h(
@@ -580,6 +585,17 @@ export function createMapView(
     );
   }
 
+  /** Neuer Ping auf der angezeigten Karte: leuchten lassen (fremde Pings holt die Karte ins Bild). */
+  let shownPingId = null;
+  function renderPing(state, map) {
+    const ping = state.ping;
+    if (!ping || ping.id === shownPingId || ping.map_id !== map.id) return;
+    const left = PING_DURATION_MS - (Date.now() - ping.receivedAt);
+    if (left <= 0) return;
+    shownPingId = ping.id;
+    stage.showPing({ x: ping.x, y: ping.y }, { reveal: !ping.own, duration: left });
+  }
+
   function updateHighlight() {
     stage.setHighlight(tokensForTurn(controller.state.get().tokens, currentEntry(room.get().combat)));
   }
@@ -607,6 +623,7 @@ export function createMapView(
       stage.setMap(map, normalizeGrid(map.grid, map));
       stage.setTokens(state.tokens);
       updateHighlight();
+      renderPing(state, map);
       gridPanel.refresh();
     }
     renderPanels();

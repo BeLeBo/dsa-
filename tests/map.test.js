@@ -31,6 +31,9 @@ import {
   lifeAfterMaxChange,
   lifeBar,
   tokenLifeBar,
+  viewToReveal,
+  createPing,
+  normalizePing,
   MIN_GRID_SIZE,
   MAX_GRID_SIZE,
   MAX_ZOOM,
@@ -387,6 +390,7 @@ function fakeApi(overrides = {}) {
     uploadImage: async () => 'raum/neu.webp',
     discardUpload: async (path) => calls.push(['discardUpload', path]),
     removeUnusedImages: async (roomId, paths) => calls.push(['removeUnusedImages', paths]),
+    sendPing: async (roomId, ping) => calls.push(['sendPing', ping]),
     ...overrides,
   };
   return api;
@@ -402,6 +406,7 @@ function mapController({
   api = fakeApi(),
   characters = [],
   onShown = () => {},
+  onPing = () => {},
   onError = () => {},
 } = {}) {
   roomCounter += 1;
@@ -411,6 +416,7 @@ function mapController({
     isMaster: () => master,
     characters: () => characters,
     onShown,
+    onPing,
     onError,
     api,
     images: fakeImages,
@@ -439,6 +445,38 @@ function addMap(api, id, extra = {}) {
     ...extra,
   });
 }
+
+test('Karte: Ping', 'Ping: auf der Karte, ganze Bildpunkte; Unbrauchbares vom Server fällt weg', () => {
+  assertEqual(createPing({ id: 'm1', ...MAP }, { x: 1200.4, y: 99.6 }, 'p1'), {
+    id: 'p1',
+    map_id: 'm1',
+    x: 1000,
+    y: 100,
+  });
+  assertEqual(normalizePing({ id: 'p1', map_id: 'm1', x: 5, y: 6, extra: 1 }), { id: 'p1', map_id: 'm1', x: 5, y: 6 });
+  for (const value of [
+    null,
+    'p1',
+    [],
+    { id: '', map_id: 'm1', x: 1, y: 1 },
+    { id: 'p1', x: 1, y: 1 },
+    { id: 'p1', map_id: 'm1', x: '1', y: 1 },
+  ]) {
+    assertEqual(normalizePing(value), null, JSON.stringify(value));
+  }
+});
+
+test('Karte: Ping', 'Ping im Bild bleibt, wo er ist; am Rand oder draußen rückt er in die Mitte', () => {
+  const view = { x: 0, y: 0, scale: 1 };
+  const viewport = { width: 400, height: 300 };
+  assertEqual(viewToReveal(view, { x: 200, y: 150 }, viewport, 40), null, 'mitten im Bild');
+  assertEqual(viewToReveal(view, { x: 380, y: 150 }, viewport, 40), { x: -180, y: 0, scale: 1 }, 'zu nah am Rand');
+  assertEqual(
+    viewToReveal({ x: -100, y: 0, scale: 2 }, { x: 700, y: 75 }, viewport, 40),
+    { x: -1200, y: 0, scale: 2 },
+    'draußen, gezoomt',
+  );
+});
 
 test(CONTROLLER, 'Welche Karte wird angezeigt?', () => {
   const maps = [{ id: 'a' }, { id: 'b' }];
@@ -854,5 +892,67 @@ test(CONTROLLER, 'Meister: Figur entfernen räumt ihr Bild auf; Raster wird gesa
   const saves = api.calls.filter((call) => call[0] === 'updateMap');
   assertEqual(saves.length, 1, 'eine Speicherung');
   assertEqual([saves[0][2].grid.show, saves[0][2].grid.size], [true, 42]);
+  cleanup();
+});
+
+test(
+  CONTROLLER,
+  'Ping: Meister markiert eine Stelle der gezeigten Karte – sofort hier, für alle über den Server',
+  async () => {
+    const { controller, api, cleanup } = mapController();
+    addMap(api, 'm1');
+    addMap(api, 'm2');
+    controller.handleRoomRow({ active_map_id: 'm1', ping: null });
+    await controller.load();
+    await controller.actions.ping({ x: 120.4, y: 900 });
+    const sent = api.calls.filter((call) => call[0] === 'sendPing');
+    assertEqual(sent.length, 1, 'gesendet');
+    assertEqual([sent[0][1].map_id, sent[0][1].x, sent[0][1].y], ['m1', 120, 800], 'auf der Karte, gerundet');
+    const ping = controller.state.get().ping;
+    assertEqual([ping.id, ping.own], [sent[0][1].id, true], 'sofort hier (eigener Ping)');
+    controller.handleRoomRow({ active_map_id: 'm1', ping: sent[0][1] }, { live: true });
+    assertEqual(controller.state.get().ping.own, true, 'das eigene Echo zählt nicht als neuer Ping');
+    controller.actions.selectMap('m2');
+    await wait(0);
+    await controller.actions.ping({ x: 1, y: 1 });
+    assertEqual(api.calls.filter((call) => call[0] === 'sendPing').length, 1, 'nicht auf einer vorbereiteten Karte');
+    cleanup();
+  },
+);
+
+test(CONTROLLER, 'Ping: Spieler sehen nur neue Pings – nicht den alten beim Laden oder Wiederverbinden', async () => {
+  const pinged = [];
+  const { controller, api, cleanup } = mapController({ master: false, onPing: (ping) => pinged.push(ping.id) });
+  addMap(api, 'm1');
+  const old = { id: 'alt', map_id: 'm1', x: 1, y: 2 };
+  controller.handleRoomRow({ active_map_id: 'm1', ping: old });
+  await controller.load();
+  assertEqual(controller.state.get().ping, null, 'alter Ping beim Laden: nicht zeigen');
+  controller.handleRoomRow({ active_map_id: 'm1', ping: old }, { live: true });
+  assertEqual(pinged, [], 'Raumzeile mit demselben Ping (z. B. Kampf geändert): nichts');
+  controller.handleRoomRow({ active_map_id: 'm1', ping: { id: 'neu', map_id: 'm1', x: 30, y: 40 } }, { live: true });
+  assertEqual(pinged, ['neu'], 'neuer Ping live: zeigen');
+  assertEqual([controller.state.get().ping.x, controller.state.get().ping.own], [30, false]);
+  controller.handleRoomRow({ active_map_id: 'm1', ping: { id: 'wieder', map_id: 'm1', x: 0, y: 0 } });
+  assertEqual(pinged, ['neu'], 'Wiederverbinden: verpasster Ping ist alt');
+  controller.handleRoomRow({ active_map_id: 'm1', ping: { id: 'anders', map_id: 'm9', x: 0, y: 0 } }, { live: true });
+  assertEqual(pinged, ['neu'], 'Ping auf einer anderen Karte: keine Meldung');
+  controller.handleRoomRow({ active_map_id: 'm1', ping: { id: 'kaputt' } }, { live: true });
+  assertEqual(controller.state.get().ping.id, 'anders', 'unbrauchbarer Ping wird ignoriert');
+  await controller.actions.ping({ x: 1, y: 1 });
+  assertEqual(api.calls.filter((call) => call[0] === 'sendPing').length, 0, 'Spieler pingen nicht');
+  cleanup();
+});
+
+test(CONTROLLER, 'Ping: Datenbank ohne Pings – erste Live-Zeile legt nur den Stand fest', async () => {
+  const pinged = [];
+  const { controller, api, cleanup } = mapController({ master: false, onPing: (ping) => pinged.push(ping.id) });
+  addMap(api, 'm1');
+  controller.handleRoomRow({ active_map_id: 'm1' });
+  await controller.load();
+  controller.handleRoomRow({ active_map_id: 'm1', ping: { id: 'p1', map_id: 'm1', x: 1, y: 1 } }, { live: true });
+  assertEqual(pinged, [], 'ohne bekannten Stand: nicht zeigen');
+  controller.handleRoomRow({ active_map_id: 'm1', ping: { id: 'p2', map_id: 'm1', x: 1, y: 1 } }, { live: true });
+  assertEqual(pinged, ['p2']);
   cleanup();
 });

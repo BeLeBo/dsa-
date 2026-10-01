@@ -171,6 +171,15 @@ export function startRoomMode(initialSession, { onLeave }) {
         action: { label: 'Ansehen', onClick: () => shell.selectTab(TABS.map.id) },
       });
     },
+    // Ping des Meisters: kurz vibrieren; wer gerade nicht auf der Karte ist, bekommt eine Meldung.
+    onPing: () => {
+      navigator.vibrate?.(80);
+      if (!shell.panel(TABS.map.id).hidden) return;
+      shell.notifyTab(TABS.map.id);
+      showToast('📍 Der Meister markiert eine Stelle auf der Karte.', {
+        action: { label: 'Ansehen', onClick: () => shell.selectTab(TABS.map.id) },
+      });
+    },
     onError: (error) => showError(error, 'Karte'),
   });
 
@@ -282,10 +291,10 @@ export function startRoomMode(initialSession, { onLeave }) {
     return roster;
   }
 
-  /** Raum geändert (Kampf, Protokoll geleert, andere Karte gezeigt). */
+  /** Raum geändert (Kampf, Protokoll geleert, andere Karte gezeigt, Ping). */
   function handleRoomRow(row) {
     combat.handleRoomRow(row);
-    mapController.handleRoomRow(row);
+    mapController.handleRoomRow(row, { live: true });
     if (Object.hasOwn(row, 'log_cleared_at') && row.log_cleared_at !== logClearedAt) {
       logClearedAt = row.log_cleared_at;
       log.load().catch(() => {});

@@ -24,6 +24,7 @@ alles live für alle synchronisiert.
 | 9     | Lebensbalken: Helden genau, Gegner in Vierteln                         | ✅ fertig |
 | 10    | Spielbildschirm (Werte/Proben), eigene Figur, Karten-Tabs des Meisters | ✅ fertig |
 | 11    | Kampf und letzte Würfe im Spielbildschirm, Favoriten                   | ✅ fertig |
+| 12    | Ping: Meister markiert Stellen auf der Karte                           | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -52,7 +53,7 @@ Die App meldet jedes Gerät anonym an – niemand braucht eine E-Mail-Adresse.
 2. Den kompletten Inhalt von [`supabase/schema.sql`](supabase/schema.sql) einfügen.
 3. **Run** klicken. Erwartet: „Success. No rows returned“.
 
-Das Skript legt die Tabellen `rooms` (inkl. laufendem Kampf und gezeigter Karte), `room_members`,
+Das Skript legt die Tabellen `rooms` (inkl. laufendem Kampf, gezeigter Karte und letztem Ping), `room_members`,
 `characters` (Held als `jsonb`), `rolls` (Würfelprotokoll), `maps` und `tokens` (Karten und Figuren)
 an, dazu den nicht öffentlichen Bildspeicher `karten` (Supabase Storage), die Zugriffsregeln
 (Row Level Security), die Funktionen zum Erstellen/Beitreten und die Realtime-Freigaben. Es darf jederzeit erneut
@@ -257,6 +258,12 @@ auf dem Server gespeichert und für den Meister sichtbar.
      verbergen, zeigen oder entfernen.
    - Tastatur: Pfeiltasten bewegen alle markierten um ein Feld, **Entf** entfernt sie (mit Rückfrage),
      **Esc** hebt die Auswahl auf, **Enter** auf einer Figur öffnet „Figur bearbeiten“.
+8. **Stelle markieren (Ping)** – „Hier ist die Tür!“: Auf der gezeigten Karte eine Stelle **lange
+   drücken** (Finger oder Maus, ohne zu ziehen), **Alt + Klick** oder Knopf **📍** (rechts an der Karte)
+   und dann auf die Stelle tippen. Alle sehen dort ein paar Sekunden lang pulsierende Ringe. Liegt die
+   Stelle bei jemandem außerhalb des Ausschnitts, gleitet seine Karte dorthin; wer gerade in einem
+   anderen Tab ist, bekommt eine Meldung mit **Ansehen**. Auf einer vorbereiteten Karte (nur der
+   Meister sieht sie) gibt es keinen Ping.
 
 **Spieler**
 
@@ -338,7 +345,7 @@ Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort a
 Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite prüft
 Regeln, Würfel, Heldenmodell, Proben, Zusammenführen gleichzeitiger Änderungen, den Abgleich,
 das gemeinsame Protokoll, die Kampfreihenfolge sowie Raster, Einrasten, Zoom, Auswahlrahmen,
-gemeinsames Bewegen und die Karten-Steuerung
+gemeinsames Bewegen, Ping und die Karten-Steuerung
 (mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests
 erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle stehen ganz oben.
 
@@ -391,7 +398,7 @@ js/config.js             Supabase-URL und öffentlicher anon-Key
 js/app.js                Start: Startseite, Raum oder „Ohne Raum“
 js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, Gruppe, Karte
 js/room-map.js           Karte im Raum: laden, live aktuell halten, Aktionen (Meister/Spieler)
-js/map.js                Karte als reine Funktionen: Raster, Einrasten, Aufstellen, Zoom, Auswahl
+js/map.js                Karte als reine Funktionen: Raster, Einrasten, Aufstellen, Zoom, Auswahl, Ping
 js/map-api.js            Karte auf dem Server: Karten, Figuren, Bilder (Storage), Realtime
 js/image.js              Bilder vor dem Hochladen verkleinern bzw. zuschneiden
 js/room-log.js           Gemeinsames Würfelprotokoll (Server, Warteschlange für offline)
@@ -422,7 +429,7 @@ js/ui/home-view.js       Startseite (Raum beitreten/erstellen, ohne Raum)
 js/ui/group-view.js      Tab „Gruppe“ (Meister-Übersicht)
 js/ui/combat-view.js     Kampfkarte: Initiative-Reihenfolge, wer ist am Zug
 js/ui/map-view.js        Tab „Karte“: Werkzeugleiste, Hinweise, Raster einstellen
-js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren auswählen und ziehen
+js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren auswählen und ziehen, Ping
 js/ui/map-inspector.js   Meister: Panel für ausgewählte Figuren (LeP, AsP, Zustände, verbergen …)
 js/ui/play-panels.js     Spielbildschirm: Seiten „Werte“ (links) und „Proben“ (rechts, mit Favoriten)
 js/ui/play-combat.js     Spielbildschirm: Kampfleiste, Initiative, Gegner von der Karte

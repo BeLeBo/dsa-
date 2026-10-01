@@ -57,6 +57,13 @@ export async function setActiveMap(roomId, mapId) {
   requireRows(rows, 'Nur der Meister kann Karten zeigen.');
 }
 
+/** Meister: Stelle markieren (Ping) – steht in der Raumzeile und geht so live an alle Geräte. */
+export async function sendPing(roomId, ping) {
+  const client = await getClient();
+  const rows = await unwrap(client.from('rooms').update({ ping }).eq('id', roomId).select('id'));
+  requireRows(rows, 'Nur der Meister kann Stellen auf der Karte markieren.');
+}
+
 // ---------------------------------------------------------------------------
 // Figuren
 // ---------------------------------------------------------------------------

@@ -12,7 +12,8 @@ export const ROLE_NAMES = Object.freeze({ master: 'Meister', player: 'Spieler' }
 export const ROOM_CODE_LENGTH = 6;
 const MAX_NAME_LENGTH = 40;
 const SESSION_KEY = 'dsa5.raum';
-const ROOM_COLUMNS = 'id, code, name, combat, log_cleared_at, active_map_id';
+// Alle Spalten: So lädt der Raum auch mit einer Datenbank, der neuere Spalten (z. B. ping) noch fehlen.
+const ROOM_COLUMNS = '*';
 
 // ---------------------------------------------------------------------------
 // Eingaben prüfen (rein, ohne Server)
