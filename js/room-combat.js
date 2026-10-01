@@ -44,20 +44,35 @@ export function createCombatController({
   onError,
   save = updateCombat,
 }) {
-  let writesInFlight = 0;
+  /** Laufende Speicherung (Promise) und ob danach noch ein neuerer Stand zu speichern ist. */
+  let saving = null;
+  let pending = false;
   const combat = () => room.get().combat ?? null;
 
-  /** Zeigt den neuen Stand sofort und speichert ihn für alle. */
-  async function saveCombat(next) {
-    room.update({ combat: next });
-    writesInFlight += 1;
-    try {
-      await save(roomId, next);
-    } catch (error) {
-      onError(error);
-    } finally {
-      writesInFlight -= 1;
+  /**
+   * Speichert nacheinander, nie gleichzeitig – sonst könnte eine langsame ältere Speicherung eine
+   * neuere auf dem Server überholen und z. B. gerade hinzugefügte Gegner wieder löschen.
+   * Was während einer Speicherung dazukommt, geht danach in einem Rutsch (immer der neueste Stand).
+   */
+  async function flush() {
+    while (pending) {
+      pending = false;
+      try {
+        await save(roomId, combat());
+      } catch (error) {
+        onError(error);
+      }
     }
+  }
+
+  /** Zeigt den neuen Stand sofort und speichert ihn für alle. */
+  function saveCombat(next) {
+    room.update({ combat: next });
+    pending = true;
+    saving ??= flush().finally(() => {
+      saving = null;
+    });
+    return saving;
   }
 
   function notifyTurn(before, after) {
@@ -69,7 +84,7 @@ export function createCombatController({
 
   /** Neuer Stand des Raums per Realtime; eigene, noch laufende Speichervorgänge haben Vorrang. */
   function handleRoomRow(row) {
-    if (!Object.hasOwn(row, 'combat') || writesInFlight > 0) return;
+    if (!Object.hasOwn(row, 'combat') || saving) return;
     const before = combat();
     room.update({ combat: row.combat });
     if (row.combat) notifyTurn(before, row.combat);

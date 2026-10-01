@@ -269,7 +269,7 @@ test(LOG, 'Laden: neueste zuerst, nur Meister darf leeren', async () => {
 
 const CONTROL = 'Kampf-Steuerung im Raum (room-combat.js, mit Attrappen)';
 
-function controller({ isMaster = true, myCharacterId = null } = {}) {
+function controller({ isMaster = true, myCharacterId = null, save = null } = {}) {
   const room = createObservable({ combat: null, characters: [{ id: 'a', data: createHero() }] });
   const saved = [];
   const turns = [];
@@ -286,7 +286,7 @@ function controller({ isMaster = true, myCharacterId = null } = {}) {
     onError: (error) => {
       throw error;
     },
-    save: async (_roomId, combat) => saved.push(combat),
+    save: save ?? (async (_roomId, combat) => saved.push(combat)),
   });
   return { room, saved, turns, added, control };
 }
@@ -299,7 +299,33 @@ test(CONTROL, 'Meister: Kampf starten, Initiative-Wurf übernehmen, weiter', asy
   await wait(0);
   assertEqual(room.get().combat.entries.length, 1);
   assertEqual(currentEntry(room.get().combat).name, 'Alrik');
-  assertEqual(saved.length, 3, 'jede Änderung gespeichert');
+  assertEqual(saved.at(-1), room.get().combat, 'der neueste Stand ist gespeichert');
+});
+
+test(CONTROL, 'Schnelle Änderungen hintereinander: auf dem Server landet immer der neueste Stand', async () => {
+  // Server-Attrappe: übernimmt Speichervorgänge in der Reihenfolge, in der sie ankommen –
+  // der erste ist langsam (z. B. schlechtes Netz), ein zweiter könnte ihn sonst überholen.
+  let server = null;
+  let running = 0;
+  let overlapped = false;
+  let calls = 0;
+  const save = async (_roomId, combat) => {
+    calls += 1;
+    running += 1;
+    if (running > 1) overlapped = true;
+    await wait(calls === 1 ? 30 : 0);
+    server = combat;
+    running -= 1;
+  };
+  const { room, control } = controller({ save });
+  control.actions.start();
+  control.handleRecord(initiativeRecord('Alrik', 12, 5, 'a')); // läuft, während der Start noch gespeichert wird
+  control.actions.addNpc({ name: 'Ork', base: 10, count: 2 });
+  await wait(80);
+  assertEqual(room.get().combat.entries.length, 3, 'hier: Alrik und zwei Orks');
+  assertEqual(server, room.get().combat, 'auf dem Server: derselbe, neueste Stand (Orks nicht verloren)');
+  assertTrue(!overlapped, 'Speichervorgänge laufen nacheinander, nie gleichzeitig');
+  assertTrue(calls <= 3, `Zwischenstände werden zusammengefasst (${calls} Speichervorgänge)`);
 });
 
 test(CONTROL, 'Spieler übernehmen keine Würfe in den Kampf', () => {
