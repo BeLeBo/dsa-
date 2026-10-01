@@ -29,6 +29,8 @@ import { TALENTS, COMBAT_TECHNIQUES, DEFAULT_KTW, SPELL_TYPES } from './data/tal
 import { newId, isPlainObject } from './util.js';
 
 export const HERO_SCHEMA_VERSION = 1;
+/** Höchstens so viele Lieblingsproben je Held. */
+export const MAX_FAVORITES = 30;
 export const EXPORT_FORMAT = 'dsa5-held';
 
 /** Listen mit einfachen Texteinträgen { id, text }. */
@@ -95,6 +97,7 @@ export function createHero() {
     conditions: Object.fromEntries(CONDITIONS.map(({ id }) => [id, 0])),
     conditionsOff: Object.fromEntries(CONDITIONS.map(({ id }) => [id, false])),
     autoPain: false,
+    favorites: [], // Lieblingsproben (Schlüssel wie in check-search.js), z. B. die Angriffe für den Kampf
   };
 }
 
@@ -259,6 +262,12 @@ export function normalizeHero(raw) {
     hero.conditionsOff[id] = conditionsOff[id] === true;
   }
   hero.autoPain = source.autoPain === true;
+  hero.favorites = Array.isArray(source.favorites)
+    ? [...new Set(source.favorites.filter((key) => typeof key === 'string' && key.length <= 80))].slice(
+        0,
+        MAX_FAVORITES,
+      )
+    : [];
 
   return hero;
 }

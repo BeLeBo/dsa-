@@ -44,6 +44,8 @@ import {
 import { normalizeHero, heroName } from './sheet.js';
 import { isPlainObject, isOlderTimestamp } from './util.js';
 import { toInt, clampConditionLevel } from './rules.js';
+import { toggleKey } from './check-search.js';
+import { heroEntryId } from './combat.js';
 import { readLocalHero } from './mode-local.js';
 
 /** Wartezeit bis zum nächsten Verbindungsversuch, wenn der Server nicht erreichbar ist. */
@@ -507,6 +509,15 @@ export function startRoomMode(initialSession, { onLeave }) {
       changeHero(characterId, (hero) => {
         hero.conditions[id] = clampConditionLevel(level);
       }),
+    /** Probe als Favorit merken/vergessen – gleich als Zielzustand, damit doppeltes Anwenden nichts ändert. */
+    toggleFavorite: (characterId, key) => {
+      const shown = heroFor(characterId);
+      if (!shown) return;
+      const target = toggleKey(shown.favorites, key);
+      changeHero(characterId, (hero) => {
+        hero.favorites = target;
+      });
+    },
     open: (id) =>
       run('Öffnen fehlgeschlagen', async () => {
         const row = room.get().characters.find((character) => character.id === id);
@@ -541,6 +552,24 @@ export function startRoomMode(initialSession, { onLeave }) {
     store,
     openHeroId: () => sync?.id ?? null,
     openCheck: shell.openCheck,
+    log,
+    combatActions: combat.actions,
+    showProtocol: () => shell.selectTab(TABS.log.id),
+  });
+
+  // Kampf beginnt: Spieler mit Held sollen ihre Initiative würfeln – auch aus einem anderen Tab.
+  let combatRunning = Boolean(room.get().combat);
+  room.subscribe(() => {
+    const current = room.get().combat;
+    const started = Boolean(current) && !combatRunning;
+    combatRunning = Boolean(current);
+    if (!started || isMaster() || !sync) return;
+    if (current.entries.some((entry) => entry.id === heroEntryId(sync.id))) return;
+    showToast('⚔ Kampf! Würfle deine Initiative.', {
+      duration: 20000,
+      action: { label: 'Würfeln', onClick: () => shell.openCheck({ kind: 'initiative' }) },
+    });
+    navigator.vibrate?.([100, 60, 100]);
   });
 
   createGroupView(shell.panel(TABS.group.id), {

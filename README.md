@@ -23,6 +23,7 @@ alles live für alle synchronisiert.
 | 8     | Ohne Meister-PIN, LeP für Gegner, Proben und Werte auf der Karte       | ✅ fertig |
 | 9     | Lebensbalken: Helden genau, Gegner in Vierteln                         | ✅ fertig |
 | 10    | Spielbildschirm (Werte/Proben), eigene Figur, Karten-Tabs des Meisters | ✅ fertig |
+| 11    | Kampf und letzte Würfe im Spielbildschirm, Favoriten                   | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -275,6 +276,24 @@ Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort a
   Probendialog wie im Heldenbogen; der Wurf landet im Protokoll.
 - Am PC stehen beide Seiten neben der Karte. Am Handy kommen sie als Schublade: Knopf unten links (zeigt
   LeP/AsP) bzw. **Proben** unten rechts; Tipp auf die eigene Figur öffnet die Werte, × oder Esc schließt.
+- **Favoriten ☆:** Neben jeder Probe ein Stern – gemerkte Proben (z. B. Angriff und Parade der Waffe,
+  Ausweichen) stehen oben unter „★ Favoriten“ und im Kampf als Schnellknöpfe. Sie werden im Helden
+  gespeichert, gelten also auf jedem Gerät.
+- **Letzte Würfe** über der Karte, live für alle (gleiche Sichtbarkeit wie im Protokoll): am Handy der
+  neueste („mehr“ zeigt fünf), am PC drei; **Protokoll ›** führt zum ganzen Protokoll.
+
+**Kampf auf dem Spielbildschirm**
+
+1. Der Meister tippt **⚔ Kampf** – der Kampf läuft sofort, über der Karte erscheint die Kampfleiste.
+2. Alle Spieler bekommen die Meldung „Kampf! Würfle deine Initiative“ (mit Knopf **Würfeln**) und in der
+   Kampfleiste den großen Knopf **Initiative würfeln**. Der Meister sieht, wer noch fehlt, und kann
+   für sie würfeln.
+3. **+ Gegner:** Gegner von der Karte mit einem Tipp übernehmen – INI-Basis je Art eintragen (wird für den
+   nächsten Kampf gemerkt), jede Figur behält ihren Namen (Ork 1, Ork 3 …); weitere Gegner von Hand.
+4. **Start ▶ / Weiter ▶** – wer dran ist, ist hervorgehoben; wer selbst dran ist, sieht „Du bist am Zug!“
+   und hat seine Favoriten (Angriffe …) direkt in der Leiste. **Ende** beendet den Kampf für alle.
+   (Werte anpassen und Einträge entfernen geht weiterhin im Tab **Gruppe**.)
+
 - **Lebensbalken** unter den Figuren:
   - **Helden:** genauer Balken für alle – so sieht die Gruppe, wie es um jeden steht.
   - **Gegner und NSC** (wenn der Meister LeP eingetragen hat): Balken aus vier Vierteln. Spieler sehen
@@ -405,7 +424,9 @@ js/ui/combat-view.js     Kampfkarte: Initiative-Reihenfolge, wer ist am Zug
 js/ui/map-view.js        Tab „Karte“: Werkzeugleiste, Hinweise, Raster einstellen
 js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren auswählen und ziehen
 js/ui/map-inspector.js   Meister: Panel für ausgewählte Figuren (LeP, AsP, Zustände, verbergen …)
-js/ui/play-panels.js     Spielbildschirm: Seiten „Werte“ (links) und „Proben“ (rechts)
+js/ui/play-panels.js     Spielbildschirm: Seiten „Werte“ (links) und „Proben“ (rechts, mit Favoriten)
+js/ui/play-combat.js     Spielbildschirm: Kampfleiste, Initiative, Gegner von der Karte
+js/ui/play-log.js        Spielbildschirm: letzte Würfe
 js/ui/schema-help.js     Anleitung „Datenbank aktualisieren“ (Skript kopieren, SQL Editor öffnen)
 js/check-search.js       Proben suchen (Talente, Zauber, Eigenschaften, Kampf), zuletzt gewürfelt
 js/ui/map-dialogs.js     Meister: Karten verwalten, Figuren aufstellen und bearbeiten

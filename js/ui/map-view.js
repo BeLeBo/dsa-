@@ -13,6 +13,8 @@ import { mapTabs } from '../room-map.js';
 import { heroName } from '../sheet.js';
 import { createMapInspector } from './map-inspector.js';
 import { createVitalsPanel, createChecksPanel, poolSummary } from './play-panels.js';
+import { createRecentRolls } from './play-log.js';
+import { createCombatStrip } from './play-combat.js';
 import { confirmDialog } from './dialog.js';
 import { imageUrl } from '../map-api.js';
 import { currentEntry } from '../combat.js';
@@ -159,10 +161,27 @@ function createGridPanel(controller, onToggle) {
  * @param {object} options.store          Store mit dem geöffneten Helden (Leiste „Probe & Werte“)
  * @param {() => string|null} options.openHeroId  ID des auf diesem Gerät geöffneten Helden
  * @param {(spec: object) => void} options.openCheck  Probendialog öffnen
+ * @param {object} options.log            Raumprotokoll (letzte Würfe)
+ * @param {object} options.combatActions  Kampf (room-combat.js)
+ * @param {() => void} options.showProtocol  zum Tab „Protokoll“
  */
 export function createMapView(
   panel,
-  { controller, room, isMaster, myCharacterId, heroFor, heroActions, subscribeHero, store, openHeroId, openCheck },
+  {
+    controller,
+    room,
+    isMaster,
+    myCharacterId,
+    heroFor,
+    heroActions,
+    subscribeHero,
+    store,
+    openHeroId,
+    openCheck,
+    log,
+    combatActions,
+    showProtocol,
+  },
 ) {
   const canMove = (token) => isMaster() || (Boolean(token.character_id) && token.character_id === myCharacterId());
   const editToken = (token) =>
@@ -216,7 +235,22 @@ export function createMapView(
   // Spielbildschirm: links die Werte, in der Mitte die Karte, rechts die Proben.
   // Breit stehen die Seiten neben der Karte, am Handy kommen sie als Schublade (Knöpfe unten).
   const vitals = createVitalsPanel({ store, heroId: openHeroId, heroActions, onClose: () => openDrawer(null) });
-  const checks = createChecksPanel({ store, openCheck, onClose: () => openDrawer(null) });
+  const checks = createChecksPanel({
+    store,
+    openCheck,
+    onToggleFavorite: (key) => heroActions.toggleFavorite(openHeroId(), key),
+    onClose: () => openDrawer(null),
+  });
+  const recentRolls = createRecentRolls({ log, onOpenProtocol: showProtocol });
+  const combatStrip = createCombatStrip({
+    room,
+    isMaster,
+    openHeroId,
+    openHero: () => (openHeroId() ? store.hero : null),
+    actions: combatActions,
+    openCheck,
+    mapTokens: () => controller.state.get().tokens,
+  });
   const vitalsToggle = h('button', {
     type: 'button',
     class: 'play-toggle play-toggle-left',
@@ -268,9 +302,9 @@ export function createMapView(
     renderToolbar(controller.viewMap());
     layout();
   });
-  const center = h('div', { class: 'map-center' }, stage.element, message);
+  const center = h('div', { class: 'map-center' }, recentRolls.element, stage.element, message);
   const game = h('div', { class: 'map-game' }, vitals.element, center, checks.element, vitalsToggle, checksToggle);
-  panel.append(tabStrip, toolbar, notice, gridPanel.element, game);
+  panel.append(tabStrip, toolbar, notice, combatStrip.element, gridPanel.element, game);
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && drawer && !document.querySelector('dialog[open]')) openDrawer(null);
   });
@@ -337,9 +371,20 @@ export function createMapView(
   function renderToolbar(map) {
     const hasHeroes = room.get().characters.length > 0;
     const canPlace = canPlaceOwnToken(map);
-    if (!changed('toolbar', map?.id, map?.name, isMaster(), gridPanel.isOpen(), hasHeroes, canPlace)) return;
+    const combatRunning = Boolean(room.get().combat);
+    if (!changed('toolbar', map?.id, map?.name, isMaster(), gridPanel.isOpen(), hasHeroes, canPlace, combatRunning))
+      return;
+    // Meister: Kampf mit einem Knopf – auch ohne Karte.
+    const combatButton =
+      isMaster() && !combatRunning
+        ? h(
+            'button',
+            { type: 'button', class: 'btn btn-primary map-combat-start', onclick: () => combatActions.start() },
+            '⚔ Kampf',
+          )
+        : null;
     if (!map) {
-      setChildren(toolbar);
+      setChildren(toolbar, combatButton);
       return;
     }
     if (!isMaster()) {
@@ -362,6 +407,7 @@ export function createMapView(
         openTokenDialog({ controller, token: null, characters: room.get().characters, center: stage.visibleCenter }),
       ),
       hasHeroes ? toolButton('Helden', addHeroes) : null,
+      combatButton,
     );
   }
 
@@ -437,7 +483,13 @@ export function createMapView(
           ? h(
               'p',
               { class: 'section-hint' },
-              `„${map.name || 'Karte'}“ – alle sehen diese Karte. Figur antippen: Werte ändern, bearbeiten. Mehrere markieren: Rahmen ziehen (Maus) oder Knopf „Auswählen“ – dann gemeinsam ziehen.`,
+              `„${map.name || 'Karte'}“ – alle sehen diese Karte. `,
+              h(
+                'details',
+                { class: 'map-tips' },
+                h('summary', {}, 'Tipps'),
+                ' Figur antippen: Werte ändern, bearbeiten. Mehrere markieren: Rahmen ziehen (Maus) oder Knopf „Auswählen“ – dann gemeinsam ziehen. Karte verschieben mit der rechten Maustaste.',
+              ),
             )
           : h(
               'div',
@@ -549,6 +601,7 @@ export function createMapView(
     renderToolbar(map);
     renderNotice(state, map);
     renderMessage(state, map);
+    combatStrip.render();
     stage.element.hidden = !map;
     if (map) {
       stage.setMap(map, normalizeGrid(map.grid, map));
@@ -564,11 +617,13 @@ export function createMapView(
   room.subscribe(() => {
     updateHighlight();
     renderToolbar(controller.viewMap());
+    combatStrip.render();
     renderPanels();
     stage.refresh(); // Lebensbalken der Helden
   });
   subscribeHero(() => {
     renderToolbar(controller.viewMap()); // „Meine Figur aufstellen“ erst mit Held
+    combatStrip.render(); // Favoriten
     renderNotice(controller.state.get(), controller.viewMap());
     renderPanels();
     stage.refresh();

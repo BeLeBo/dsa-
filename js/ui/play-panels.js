@@ -9,7 +9,15 @@
 import { h, icon, ICONS, setChildren } from './dom.js';
 import { CONDITIONS, MAX_CONDITION_LEVEL, ROMAN_LEVELS } from '../rules.js';
 import { heroName, describeConditions } from '../sheet.js';
-import { checkChoices, checkSections, searchChecks, recentChoices, rememberRecent } from '../check-search.js';
+import {
+  checkChoices,
+  checkSections,
+  searchChecks,
+  recentChoices,
+  rememberRecent,
+  choicesByKeys,
+  specKey,
+} from '../check-search.js';
 import { readJson, writeJson } from '../storage.js';
 
 /** Zuletzt gewürfelte Proben – je Gerät gemerkt. */
@@ -149,9 +157,10 @@ export function createVitalsPanel({ store, heroId, heroActions, onClose }) {
  * @param {object} options
  * @param {object} options.store                       Store mit dem geöffneten Helden
  * @param {(spec: object) => void} options.openCheck   Probendialog öffnen
+ * @param {(key: string) => void} options.onToggleFavorite  Probe als Favorit merken/vergessen (im Helden)
  * @param {() => void} options.onClose                 Schublade schließen (Handy)
  */
-export function createChecksPanel({ store, openCheck, onClose }) {
+export function createChecksPanel({ store, openCheck, onToggleFavorite, onClose }) {
   let query = '';
   let recent = readJson(RECENT_KEY, []);
   if (!Array.isArray(recent)) recent = [];
@@ -187,19 +196,39 @@ export function createChecksPanel({ store, openCheck, onClose }) {
     render();
   }
 
-  const choiceRow = (choice) =>
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'play-check',
-        'aria-label': `Probe: ${choice.name}`,
-        title: choice.sub,
-        onclick: () => roll(choice.spec),
-      },
-      h('span', { class: 'play-check-name' }, choice.name),
-      h('span', { class: 'play-check-value' }, choice.value ?? ''),
+  /** Eine Probe zum Antippen, daneben der Stern: Favorit (z. B. die Angriffe für den Kampf). */
+  function choiceRow(choice) {
+    const key = specKey(choice.spec);
+    const favorite = (store.hero?.favorites ?? []).includes(key);
+    return h(
+      'div',
+      { class: 'play-check-row' },
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'play-check',
+          'aria-label': `Probe: ${choice.name}`,
+          title: choice.sub,
+          onclick: () => roll(choice.spec),
+        },
+        h('span', { class: 'play-check-name' }, choice.name),
+        h('span', { class: 'play-check-value' }, choice.value ?? ''),
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: `play-favorite ${favorite ? 'is-favorite' : ''}`.trim(),
+          'aria-label': `${choice.name} als Favorit`,
+          'aria-pressed': String(favorite),
+          title: favorite ? 'Aus den Favoriten nehmen' : 'Als Favorit merken (steht dann oben und im Kampf)',
+          onclick: () => onToggleFavorite(key),
+        },
+        favorite ? '★' : '☆',
+      ),
     );
+  }
 
   function section(id, title, choices) {
     return h(
@@ -227,6 +256,7 @@ export function createChecksPanel({ store, openCheck, onClose }) {
       hero.combatTechniques,
       hero.base.aw,
       hero.base.ini,
+      hero.favorites,
     ]);
     if (key === renderedKey) return;
     renderedKey = key;
@@ -240,9 +270,18 @@ export function createChecksPanel({ store, openCheck, onClose }) {
       );
       return;
     }
-    const last = recentChoices(checkChoices(hero), recent);
+    const all = checkChoices(hero);
+    const favorites = choicesByKeys(all, hero.favorites);
+    const last = recentChoices(all, recent);
     setChildren(
       results,
+      favorites.length
+        ? section('favoriten', '★ Favoriten', favorites)
+        : h(
+            'p',
+            { class: 'section-hint' },
+            'Tipp: Mit ☆ merkst du dir Proben und Angriffe – sie stehen dann oben und im Kampf.',
+          ),
       last.length ? section('zuletzt', 'Zuletzt gewürfelt', last) : null,
       checkSections(hero).map((entry) => section(entry.id, entry.title, entry.choices)),
     );

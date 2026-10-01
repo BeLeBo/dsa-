@@ -100,6 +100,13 @@ export function createCombatController({
     adjust: (id, delta) => change((current) => adjustEntry(current, id, delta)),
     remove: (id) => change((current) => removeEntry(current, id)),
     addNpc: (npc) => change((current) => createNpcEntries(npc, rollDie).reduce(upsertEntry, current)),
+    /** Mehrere einzelne Gegner mit festem Namen (z. B. „Ork 1“, „Ork 3“ von der Karte). */
+    addNpcs: (npcs) =>
+      change((current) =>
+        npcs
+          .flatMap(({ name, base }) => createNpcEntries({ name, base, count: 1 }, rollDie))
+          .reduce(upsertEntry, current),
+      ),
     rollHero,
     rollAllHeroes: () => {
       const current = combat();

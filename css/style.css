@@ -1920,16 +1920,28 @@ input.num::-webkit-inner-spin-button {
 
 .map-toolbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  overflow-x: auto; /* eine Zeile – am Handy seitlich wischen statt mehrerer Zeilen */
+  scrollbar-width: thin;
 }
 
 .map-toolbar .btn {
-  flex: 1 1 70px;
-  padding-inline: 8px;
+  flex: 1 0 auto;
+  padding-inline: 10px;
   white-space: nowrap;
+}
+
+.map-tips {
+  display: inline;
+}
+
+.map-tips > summary {
+  display: inline;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .map-title {
@@ -2837,6 +2849,30 @@ a.btn {
   border-color: var(--focus);
 }
 
+.play-check-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 4px;
+}
+
+.play-favorite {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: none;
+  color: var(--muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.play-favorite.is-favorite {
+  color: #c98a00;
+}
+
+.play-favorite:hover {
+  border-color: var(--border);
+}
+
 .play-check-name {
   min-width: 0;
   overflow: hidden;
@@ -2926,4 +2962,300 @@ a.btn {
   .play-toggle {
     display: none;
   }
+}
+
+/* Letzte Würfe über der Karte (Handy: nur der neueste, aufklappbar; PC: die letzten drei) */
+.play-log {
+  margin-bottom: 8px;
+  padding: 4px 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.play-log-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.play-log-title {
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.play-log-toggle,
+.play-log-all {
+  min-height: 32px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.play-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.play-log-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  padding: 2px 0;
+}
+
+.play-log-row:not(:first-child) {
+  display: none;
+  border-top: 1px solid var(--border);
+}
+
+.play-log.is-expanded .play-log-row {
+  display: flex;
+}
+
+.play-log-row.is-new {
+  animation: play-log-flash 1.2s ease;
+}
+
+@keyframes play-log-flash {
+  from {
+    background: rgb(201 138 0 / 0.25);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.play-log-time {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.play-log-label {
+  min-width: 0;
+}
+
+.play-log-outcome {
+  margin-left: auto;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+@media (min-width: 1000px) {
+  .play-log-row:nth-child(-n + 3) {
+    display: flex;
+  }
+}
+
+/* Handy: nur eine Zeile (neuester Wurf), Knöpfe daneben */
+@media (max-width: 999px) {
+  .play-log:not(.is-expanded) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .play-log:not(.is-expanded) .play-log-list {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .play-log:not(.is-expanded) .play-log-head {
+    order: 2;
+  }
+
+  .play-log:not(.is-expanded) .play-log-title,
+  .play-log:not(.is-expanded) .play-log-time {
+    display: none;
+  }
+
+  .play-log:not(.is-expanded) .play-log-row {
+    flex-wrap: nowrap;
+  }
+
+  .play-log:not(.is-expanded) .play-log-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Kampf über dem Spielbildschirm */
+.play-combat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.play-combat.is-my-turn {
+  box-shadow: 0 0 0 4px rgb(201 138 0 / 0.45);
+}
+
+.play-combat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.play-combat-current {
+  font-weight: 800;
+}
+
+.play-combat.is-my-turn .play-combat-current {
+  color: var(--accent);
+}
+
+.play-combat-order {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.play-combat-entry {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+
+.play-combat-entry.is-current {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.play-combat-entry.is-mine:not(.is-current) {
+  border-color: var(--focus);
+}
+
+.play-combat-name {
+  font-weight: 700;
+}
+
+.play-combat-total {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.play-combat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.play-combat-missing {
+  margin: 0;
+  color: var(--muted);
+}
+
+.play-combat-initiative {
+  width: 100%;
+}
+
+.play-combat-favorites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.play-combat-favorites .section-hint {
+  margin: 0;
+}
+
+.play-combat-favorite {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: var(--touch);
+  font-weight: 700;
+}
+
+/* Handy: Kampfleiste kompakt, damit die Karte Platz behält – Knöpfe in einer Zeile */
+@media (max-width: 999px) {
+  .play-combat {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+
+  .play-combat-actions,
+  .play-combat-favorites {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .play-combat-actions .btn,
+  .play-combat-favorite {
+    flex: none;
+  }
+
+  .play-combat-missing {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+  }
+
+  .play-combat-missing .btn {
+    flex: none;
+  }
+}
+
+/* Dialog „Gegner in den Kampf“ */
+.enemy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.enemy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5em auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.enemy-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.enemy-free {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.5em 4em auto;
+  gap: 6px;
 }

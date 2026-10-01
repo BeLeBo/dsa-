@@ -10,6 +10,8 @@ import {
   recentChoices,
   rememberRecent,
   checkSections,
+  choicesByKeys,
+  toggleKey,
   MAX_RECENT,
 } from '../js/check-search.js';
 import { createHero, createWeapon, createSpell } from '../js/sheet.js';
@@ -122,4 +124,18 @@ test(GROUP, 'Vollständige Liste: Eigenschaften, Kampf, alle Talente nach Gruppe
   assertEqual(sections[0].choices[0].value, 'MU 14');
   const ohneZauber = checkSections({ ...testHero(), spells: [] }).map((section) => section.id);
   assertTrue(!ohneZauber.includes('magie'), 'ohne Zauber kein leerer Abschnitt');
+});
+
+test(GROUP, 'Favoriten: an- und abwählen, in gemerkter Reihenfolge, Unbekanntes fällt weg', () => {
+  let favorites = [];
+  favorites = toggleKey(favorites, 'weapon:w1:at');
+  favorites = toggleKey(favorites, 'dodge::');
+  favorites = toggleKey(favorites, 'spell:weg:');
+  assertEqual(favorites, ['weapon:w1:at', 'dodge::', 'spell:weg:']);
+  assertEqual(toggleKey(favorites, 'dodge::'), ['weapon:w1:at', 'spell:weg:'], 'nochmal = abwählen');
+  assertEqual(toggleKey(undefined, 'dodge::'), ['dodge::']);
+  assertEqual(
+    choicesByKeys(checkChoices(testHero()), favorites).map((choice) => choice.name),
+    ['Langschwert AT', 'Ausweichen'],
+  );
 });

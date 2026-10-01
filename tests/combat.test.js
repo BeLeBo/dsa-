@@ -24,6 +24,7 @@ import { createCombatController } from '../js/room-combat.js';
 import { createObservable } from '../js/store.js';
 import { createHero } from '../js/sheet.js';
 import { ServerError } from '../js/supabase.js';
+import { enemyGroup, enemiesFromTokens } from '../js/ui/play-combat.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -326,4 +327,42 @@ test(CONTROL, 'Spieler bekommt „Du bist am Zug!“', () => {
   assertTrue(turns[0].includes('Du bist am Zug'), turns[0]);
   control.handleRoomRow({ combat: advanceTurn(combat) });
   assertEqual(turns.length, 1, 'nicht doppelt');
+});
+
+test(CONTROL, 'Meister: Gegner von der Karte – jede Figur mit ihrem Namen, gleiche INI-Basis je Art', async () => {
+  const { room, control } = controller();
+  control.actions.start();
+  control.actions.addNpcs([
+    { name: 'Ork 1', base: 10 },
+    { name: 'Ork 3', base: 10 },
+  ]);
+  await wait(0);
+  const entries = room.get().combat.entries;
+  assertEqual(
+    entries.map((entry) => [entry.name, entry.base]).sort(),
+    [
+      ['Ork 1', 10],
+      ['Ork 3', 10],
+    ],
+    'Namen wie auf der Karte (Lebensbalken/„am Zug“ passen)',
+  );
+});
+
+test(CONTROL, 'Gegner von der Karte: nach Art gruppiert, Helden und schon Kämpfende ausgenommen', () => {
+  assertEqual(enemyGroup('Ork 12'), 'Ork');
+  assertEqual(enemyGroup('Wache'), 'Wache');
+  assertEqual(enemyGroup(' '), 'Gegner');
+  const tokens = [
+    { name: 'Ork 1', character_id: null },
+    { name: 'Ork 2', character_id: null },
+    { name: 'Alrik', character_id: 'c1' },
+    { name: 'Wache', character_id: null },
+    { name: 'Ork 3', character_id: null },
+  ];
+  const combat = { entries: [{ name: 'Ork 2' }] };
+  assertEqual(enemiesFromTokens(tokens, combat), [
+    { group: 'Ork', names: ['Ork 1', 'Ork 3'] },
+    { group: 'Wache', names: ['Wache'] },
+  ]);
+  assertEqual(enemiesFromTokens([], null), []);
 });

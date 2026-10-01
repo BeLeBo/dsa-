@@ -181,10 +181,21 @@ export function searchChecks(choices, query, limit = MAX_RESULTS) {
     .map(({ choice }) => choice);
 }
 
+/** Proben zu gemerkten Schlüsseln, die es beim Helden (noch) gibt – in der Reihenfolge der Schlüssel. */
+export function choicesByKeys(choices, keys) {
+  const byKey = new Map(choices.map((choice) => [specKey(choice.spec), choice]));
+  return (keys ?? []).map((key) => byKey.get(key)).filter(Boolean);
+}
+
 /** Zuletzt gewürfelte Proben, die es beim Helden (noch) gibt – neueste zuerst. */
 export function recentChoices(choices, recentKeys) {
-  const byKey = new Map(choices.map((choice) => [specKey(choice.spec), choice]));
-  return recentKeys.map((key) => byKey.get(key)).filter(Boolean);
+  return choicesByKeys(choices, recentKeys);
+}
+
+/** Favorit an- bzw. abwählen (neue Favoriten hinten). */
+export function toggleKey(keys, key) {
+  const list = keys ?? [];
+  return list.includes(key) ? list.filter((entry) => entry !== key) : [...list, key];
 }
 
 /** Merkt sich eine gewürfelte Probe (vorne, ohne Doppelte, höchstens MAX_RECENT). */

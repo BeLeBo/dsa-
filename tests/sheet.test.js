@@ -358,3 +358,13 @@ test(FORMAT, 'Ergebnistexte', () => {
   const botch = rollSkill(hero, entry, { label: 'X', roll: fixedRolls([20, 20, 5]) });
   assertEqual(describeOutcome(botch.result), { text: 'Patzer', tone: 'botch' });
 });
+
+test(MODEL, 'Favoriten bleiben im Helden: Texte, ohne Doppelte, höchstens 30', () => {
+  assertEqual(createHero().favorites, []);
+  const hero = normalizeHero({ favorites: ['weapon:w1:at', 'dodge::', 'weapon:w1:at', 7, null, 'x'.repeat(200)] });
+  assertEqual(hero.favorites, ['weapon:w1:at', 'dodge::']);
+  assertEqual(normalizeHero({ favorites: 'kaputt' }).favorites, []);
+  const many = Array.from({ length: 40 }, (_, index) => `talent:t${index}:`);
+  assertEqual(normalizeHero({ favorites: many }).favorites.length, 30);
+  assertEqual(importHero(exportHero({ ...createHero(), favorites: ['dodge::'] })).favorites, ['dodge::'], 'Sicherung');
+});
