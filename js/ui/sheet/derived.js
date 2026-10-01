@@ -88,7 +88,6 @@ const DERIVED = {
     return `${RESOURCE_NAMES[resource]} ${pool.current}/${pool.max}`;
   },
 
-  weight: (hero, group) => `${formatDecimal(groupWeights(hero).byLocation[group] ?? 0)} Stein`,
   'weight-total': (hero) => `${formatDecimal(groupWeights(hero).total)} Stein`,
   'inventory-group': (hero, group) => {
     const count = hero.inventory.filter((item) => item.location === group).length;
