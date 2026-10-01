@@ -8,7 +8,8 @@
 import { showError } from './ui/toast.js';
 import { applyTheme } from './ui/theme.js';
 import { renderHome } from './ui/home-view.js';
-import { isServerConfigured } from './supabase.js';
+import { isServerConfigured, checkSchemaVersion } from './supabase.js';
+import { showSchemaProblem } from './ui/schema-help.js';
 import { loadRoomSession, saveRoomSession, normalizeRoomCode, createRoom, joinRoom } from './room.js';
 import { startRoomMode } from './mode-room.js';
 import { startLocalMode } from './mode-local.js';
@@ -68,16 +69,26 @@ function showHome(prefillCode) {
   });
 }
 
+/**
+ * Passen App und Datenbank zusammen? Sonst gleich sagen, was zu tun ist (Skript ausführen bzw.
+ * Seite neu laden). Nur wenn der Server gebraucht wird – nicht im Modus „Ohne Raum“.
+ */
+function checkServer() {
+  if (isServerConfigured()) checkSchemaVersion().then(showSchemaProblem);
+}
+
 function start() {
   applyTheme();
   const invite = takeInviteCode();
   const session = loadRoomSession();
   if (session && isServerConfigured() && (!invite || invite === session.code)) {
     startRoomMode(session, { onLeave: returnToHome });
+    checkServer();
   } else if (!invite && readJson(MODE_KEY, null) === 'lokal') {
     startLocalMode({ onLeave: returnToHome });
   } else {
     showHome(invite);
+    checkServer();
   }
 }
 

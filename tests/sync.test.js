@@ -5,7 +5,14 @@
 import { test, assertEqual, assertTrue } from './harness.js';
 import { mergeJson } from '../js/merge.js';
 import { normalizeRoomCode, validateJoin, validateCreate, inviteLink } from '../js/room.js';
-import { toServerError, ServerError, projectUrl } from '../js/supabase.js';
+import {
+  toServerError,
+  ServerError,
+  projectUrl,
+  describeMissing,
+  sqlEditorUrl,
+  SCHEMA_VERSION,
+} from '../js/supabase.js';
 import { createCharacterSync, readCachedCharacter } from '../js/sync.js';
 import { createHeroStore, REMOTE } from '../js/store.js';
 import { createHero, createWeapon } from '../js/sheet.js';
@@ -406,4 +413,38 @@ test('Hilfsfunktionen (util.js)', 'Zeitstempel vom Server: ISO und Postgres-Schr
   assertTrue(isOlderTimestamp('2026-09-30T20:19:04+00:00', '2026-09-30 20:19:05+00'), 'älter');
   assertTrue(!isOlderTimestamp('2026-09-30T20:19:05+00:00', '2026-09-30T20:19:04+00:00'), 'neuer');
   assertTrue(!isOlderTimestamp(undefined, '2026-09-30T20:19:04+00:00'), 'ohne Zeitstempel nie älter');
+});
+
+test(ERRORS, 'Datenbank älter als die App: genau sagen, was fehlt, und Hilfe anbieten', () => {
+  const missingFunction = toServerError({
+    code: 'PGRST202',
+    message: 'Could not find the function public.join_room(p_as_master, p_code, p_display_name) in the schema cache',
+  });
+  assertTrue(missingFunction.schema, 'als Schema-Problem markiert (Knopf „So geht’s“)');
+  assertTrue(missingFunction.message.includes('„join_room“'), missingFunction.message);
+  assertTrue(missingFunction.message.includes('schema.sql'), 'sagt, was zu tun ist');
+  assertEqual(
+    describeMissing("Could not find the 'le_max' column of 'tokens' in the schema cache"),
+    'die Spalte „le_max“ in „tokens“',
+  );
+  assertEqual(describeMissing('column tokens.le_current does not exist'), 'die Spalte „le_current“ in „tokens“');
+  assertEqual(describeMissing('relation "public.maps" does not exist'), 'die Tabelle „maps“');
+  assertEqual(describeMissing('function public.schema_version() does not exist'), 'die Funktion „schema_version“');
+  assertEqual(describeMissing('irgendwas'), '');
+  assertTrue(!toServerError({ code: '42501', message: 'permission denied' }).schema, 'andere Fehler nicht');
+});
+
+test(ERRORS, 'Link in den SQL Editor des eigenen Projekts', () => {
+  assertEqual(
+    sqlEditorUrl('https://krqskhgqwdovgmwwgjso.supabase.co/rest/v1/'),
+    'https://supabase.com/dashboard/project/krqskhgqwdovgmwwgjso/sql/new',
+  );
+  assertEqual(sqlEditorUrl('http://localhost:54321'), 'https://supabase.com/dashboard', 'eigener Server: Dashboard');
+});
+
+test(ERRORS, 'Stand der App passt zum Stand von supabase/schema.sql', async () => {
+  const sql = await (await fetch('../supabase/schema.sql', { cache: 'no-store' })).text();
+  const match = /function public\.schema_version\(\)[\s\S]*?select (\d+);/.exec(sql);
+  assertTrue(match, 'schema_version() in schema.sql gefunden');
+  assertEqual(Number(match[1]), SCHEMA_VERSION, 'SCHEMA_VERSION in js/supabase.js');
 });

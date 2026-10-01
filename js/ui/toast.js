@@ -2,6 +2,7 @@
  * toast.js – Kurze Meldungen am unteren Bildschirmrand, optional mit Aktion („Rückgängig“).
  */
 import { h } from './dom.js';
+import { openSchemaHelp } from './schema-help.js';
 
 const DEFAULT_DURATION_MS = 5000;
 
@@ -54,5 +55,7 @@ export function showToast(message, { tone = 'info', action = null, duration = DE
 export function showError(error, context = '') {
   const message = error?.message || String(error);
   console.error(context || 'Fehler', error);
-  showToast(context ? `${context}: ${message}` : message, { tone: 'error' });
+  // Datenbank älter als die App: gleich die Anleitung anbieten.
+  const action = error?.schema ? { label: 'So geht’s', onClick: openSchemaHelp } : null;
+  showToast(context ? `${context}: ${message}` : message, { tone: 'error', action });
 }

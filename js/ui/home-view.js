@@ -3,6 +3,7 @@
  */
 import { h, setChildren } from './dom.js';
 import { ROOM_CODE_LENGTH } from '../room.js';
+import { openSchemaHelp } from './schema-help.js';
 
 function textField(label, { name, value = '', type = 'text', placeholder = '', autocomplete = 'off', maxlength }) {
   return h(
@@ -35,7 +36,17 @@ function actionForm({ title, intro, fields, submitLabel, busyLabel, onSubmit, ex
         try {
           await onSubmit(values);
         } catch (problem) {
-          error.textContent = problem.message;
+          setChildren(
+            error,
+            problem.message,
+            problem.schema
+              ? h(
+                  'button',
+                  { type: 'button', class: 'btn btn-small schema-help-button', onclick: openSchemaHelp },
+                  'So geht’s',
+                )
+              : null,
+          );
           error.hidden = false;
         } finally {
           submit.disabled = false;

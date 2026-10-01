@@ -292,7 +292,8 @@ auf dem Server gespeichert und für den Meister sichtbar.
 | ----------------------------------------------------------- | -------------------------------------------------------------------- |
 | „Server noch nicht eingerichtet“                            | `js/config.js` ausfüllen (Schritt 4).                                |
 | „Anonyme Anmeldung ist im Supabase-Projekt ausgeschaltet …“ | Schritt 2 nachholen.                                                 |
-| „Das Datenbankschema fehlt oder ist veraltet …“             | `supabase/schema.sql` im SQL Editor ausführen (Schritt 3).           |
+| „Die Datenbank in Supabase ist älter als die App …“         | Knopf **So geht’s**: Skript kopieren, im SQL Editor einfügen, Run.   |
+| „Die App ist älter als eure Datenbank“                      | Seite neu laden (am Handy notfalls zweimal).                         |
 | „Der Supabase-Schlüssel in js/config.js ist ungültig.“      | URL und anon-Key erneut kopieren.                                    |
 | „Keine Verbindung zum Server …“                             | Internet prüfen; ist das Projekt pausiert, im Dashboard **Restore**. |
 | „Kein Raum mit diesem Code gefunden.“                       | Code prüfen (Groß-/Kleinschreibung ist egal).                        |
@@ -328,8 +329,10 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
 - **Updates:** Geänderte Dateien auf GitHub Pages (auch `js/config.js`) gelten beim nächsten Öffnen
   der App. Ändert sich `sw.js`, lädt sich die geöffnete App nach wenigen Sekunden einmal selbst neu.
   Hat sich `supabase/schema.sql` geändert, das Skript einmal erneut im SQL Editor ausführen (es darf
-  mehrfach laufen, Räume, Helden und Karten bleiben erhalten) – sonst meldet die App „Das
-  Datenbankschema fehlt oder ist veraltet“.
+  mehrfach laufen, Räume, Helden und Karten bleiben erhalten). Die App prüft beim Start, ob ihr Stand
+  zur Datenbank passt (`schema_version()` in `schema.sql` und `SCHEMA_VERSION` in `js/supabase.js` –
+  bei jeder Schemaänderung beide hochzählen), und bietet sonst den Knopf **So geht’s** an: Skript
+  kopieren, SQL Editor des eigenen Projekts öffnen, einfügen, Run.
   Bei größeren Updates am besten in `sw.js` die Versionsnummer in `CACHE_NAME` erhöhen
   (z. B. `'dsa5-app-v4'` → `'dsa5-app-v5'`): Dann wird der alte Speicher vollständig gelöscht.
 - **Kartenbilder** liegen im nicht öffentlichen Supabase-Speicher `karten` unter `<Raum-ID>/…`:
@@ -391,6 +394,7 @@ js/ui/map-view.js        Tab „Karte“: Werkzeugleiste, Hinweise, Raster einst
 js/ui/map-stage.js       Karte zum Anfassen: verschieben, zoomen, Figuren auswählen und ziehen
 js/ui/map-inspector.js   Meister: Panel für ausgewählte Figuren (LeP, AsP, Zustände, verbergen …)
 js/ui/hero-bar.js        Karte: Leiste „Probe & Werte“ für den geöffneten Helden
+js/ui/schema-help.js     Anleitung „Datenbank aktualisieren“ (Skript kopieren, SQL Editor öffnen)
 js/check-search.js       Proben suchen (Talente, Zauber, Eigenschaften, Kampf), zuletzt gewürfelt
 js/ui/map-dialogs.js     Meister: Karten verwalten, Figuren aufstellen und bearbeiten
 js/ui/visibility-control.js  Auswahl „Öffentlich / Nur Meister / Verdeckt“

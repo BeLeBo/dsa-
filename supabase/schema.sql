@@ -821,6 +821,20 @@ begin
 end;
 $$;
 
+-- Stand dieses Skripts. Die App prüft ihn beim Start und sagt genau, was zu tun ist (Skript
+-- erneut ausführen bzw. Seite neu laden). Bei jeder Änderung am Schema hochzählen – zusammen
+-- mit SCHEMA_VERSION in js/supabase.js.
+create or replace function public.schema_version()
+returns table (version integer)
+language sql
+stable
+set search_path = ''
+as $$
+  select 1;
+$$;
+revoke all on function public.schema_version() from public;
+grant execute on function public.schema_version() to anon, authenticated;
+
 -- Die Supabase-API (PostgREST) soll neue Funktionen und Spalten sofort kennen – nicht erst,
 -- wenn sie ihren Zwischenspeicher von selbst erneuert.
 notify pgrst, 'reload schema';
