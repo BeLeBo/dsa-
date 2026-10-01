@@ -237,8 +237,8 @@ export function createMapView(
   });
   stage.element.append(inspector.element);
 
-  // Spielbildschirm: links die Werte, in der Mitte die Karte, rechts die Proben.
-  // Breit stehen die Seiten neben der Karte, am Handy kommen sie als Schublade (Knöpfe unten).
+  // Spielbildschirm: Karte so groß wie möglich, Werte und Proben rechts am Rand übereinander.
+  // Am Handy kommen sie als Schublade von links bzw. rechts (Knöpfe unten).
   const vitals = createVitalsPanel({ store, heroId: openHeroId, heroActions, onClose: () => openDrawer(null) });
   const checks = createChecksPanel({
     store,

@@ -3,7 +3,8 @@
  *  - links „Werte“: LeP, AsP, KaP, Schicksalspunkte und Zustände schnell ändern,
  *  - rechts „Proben“: suchen oder aus der vollständigen Liste antippen – Eigenschaften, Kampf,
  *    alle Talente nach Gruppen, Zauber/Liturgien, Kampftechniken; zuletzt gewürfelte oben.
- * Breit stehen beide neben der Karte, am Handy kommen sie als Schublade von links bzw. rechts.
+ * Breit stehen beide rechts am Rand übereinander (Werte oben, Proben darunter), damit die Karte
+ * möglichst viel Platz hat; am Handy kommen sie als Schublade von links bzw. rechts.
  * Proben laufen über denselben Probendialog wie im Heldenbogen (inkl. Protokoll).
  */
 import { h, icon, ICONS, setChildren } from './dom.js';
@@ -22,6 +23,9 @@ import { readJson, writeJson } from '../storage.js';
 
 /** Zuletzt gewürfelte Proben – je Gerät gemerkt. */
 const RECENT_KEY = 'dsa5.karte.proben';
+/** Zustände auf- oder zugeklappt – je Gerät gemerkt (sonst: am PC zu, am Handy offen). */
+const CONDITIONS_OPEN_KEY = 'dsa5.karte.zustaende-offen';
+const WIDE_QUERY = '(min-width: 1000px)';
 
 const POOLS = Object.freeze([
   { key: 'le', label: 'LeP', always: true },
@@ -71,17 +75,27 @@ function sideHeader(title, onClose) {
 export function createVitalsPanel({ store, heroId, heroActions, onClose }) {
   const name = h('p', { class: 'play-hero-name' });
   const pools = h('div', { class: 'play-pools' });
-  const conditionSummary = h('p', { class: 'section-hint play-condition-summary' });
-  const conditions = h('div', { class: 'play-conditions' });
+  const conditionSummary = h('span', { class: 'play-condition-summary' });
+  const conditions = h('div', { class: 'play-condition-list' });
+  // Zustände zum Aufklappen: Die Kopfzeile zeigt die aktiven, die Proben darunter behalten Platz.
+  const storedOpen = readJson(CONDITIONS_OPEN_KEY, null);
+  const conditionBox = h(
+    'details',
+    {
+      class: 'play-conditions',
+      open: typeof storedOpen === 'boolean' ? storedOpen : !window.matchMedia?.(WIDE_QUERY).matches,
+      ontoggle: (event) => writeJson(CONDITIONS_OPEN_KEY, event.target.open),
+    },
+    h('summary', {}, h('span', { class: 'play-section-title' }, 'Zustände'), conditionSummary),
+    conditions,
+  );
   const element = h(
     'aside',
     { class: 'play-side play-side-left', 'aria-label': 'Werte' },
     sideHeader('Werte', onClose),
     name,
     pools,
-    h('h3', { class: 'play-section-title' }, 'Zustände'),
-    conditionSummary,
-    conditions,
+    conditionBox,
   );
   let renderedKey = '';
 

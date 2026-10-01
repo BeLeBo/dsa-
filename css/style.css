@@ -2880,9 +2880,16 @@ a.btn {
 }
 
 /* ---------------------------------------------------------------------------
-   Spielbildschirm (Tab „Karte“): links Werte, Mitte Karte, rechts Proben.
-   Breit nebeneinander, am Handy als Schubladen über der Karte.
+   Spielbildschirm (Tab „Karte“): Karte so groß wie möglich, Werte und Proben rechts am Rand
+   übereinander. Am Handy kommen beide als Schubladen über die Karte.
    --------------------------------------------------------------------------- */
+
+/* Auf der Karte: volle Bildschirmbreite und nur schmaler Rand */
+.app-main:has(> #tab-karte:not([hidden])) {
+  max-width: none;
+  padding-left: 8px;
+  padding-right: 8px;
+}
 .map-game {
   position: relative;
   display: grid;
@@ -2964,19 +2971,50 @@ a.btn {
 }
 
 .play-section-title {
-  margin: 8px 0 0;
   color: var(--muted);
   font-size: 0.8rem;
+  font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
+/* Zustände: aufklappbar, die Kopfzeile nennt die aktiven */
+.play-conditions {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.play-conditions > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-height: var(--touch);
+  padding: 10px 0 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.play-conditions > summary::-webkit-details-marker {
+  display: none;
+}
+
+.play-conditions > summary::before {
+  content: '▸';
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.play-conditions[open] > summary::before {
+  transform: rotate(90deg);
+}
+
 .play-condition-summary {
-  margin: 0;
+  font-weight: 700;
 }
 
 .play-pools,
-.play-conditions {
+.play-condition-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -3107,10 +3145,32 @@ a.btn {
   white-space: nowrap;
 }
 
-/* Breit: Werte und Proben stehen fest neben der Karte */
+/* Breit: Werte (oben) und Proben (darunter) stehen fest rechts neben der Karte, am Rand */
 @media (min-width: 1000px) {
   .map-game.has-hero {
-    grid-template-columns: 290px minmax(0, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: fit-content(55%) minmax(0, 1fr);
+    grid-template-areas:
+      'karte werte'
+      'karte proben';
+    gap: 8px;
+  }
+
+  .map-game.has-hero > .map-center {
+    grid-area: karte;
+  }
+
+  .map-game.has-hero > .play-side-left {
+    grid-area: werte;
+  }
+
+  .map-game.has-hero > .play-side-right {
+    grid-area: proben;
+  }
+
+  /* Bei voller Breite die Knöpfe nicht über die ganze Zeile ziehen */
+  .map-toolbar .btn {
+    flex: 0 0 auto;
   }
 
   .play-side .inspector-pool {
@@ -3137,7 +3197,8 @@ a.btn {
     transition: none;
   }
 
-  .play-side-close,
+  /* Überschriften mit ×-Knopf braucht nur die Schublade am Handy – hier zählt jeder Pixel Höhe */
+  .play-side-head,
   .play-toggle {
     display: none;
   }

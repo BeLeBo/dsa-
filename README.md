@@ -282,13 +282,16 @@ auf dem Server gespeichert und für den Meister sichtbar.
 Der Tab **Karte** ist der Spielbildschirm und öffnet sich beim Betreten des Raums (wer noch keinen
 Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort alles zum Spielen:
 
-- **Links „Werte“:** LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder eintippen, Zustände
-  (Schmerz, Betäubung …) hoch- und runtersetzen – wie im Heldenbogen, sofort für alle.
-- **Rechts „Proben“:** alle Proben zum Antippen – Eigenschaften, Kampf (Ausweichen, Initiative, Waffen),
+- **„Werte“:** LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder eintippen, Zustände
+  (Schmerz, Betäubung …) hoch- und runtersetzen – wie im Heldenbogen, sofort für alle. Die Zustände
+  lassen sich zuklappen; die Zeile „Zustände“ nennt dann die aktiven (z. B. „Schmerz II“).
+- **„Proben“:** alle Proben zum Antippen – Eigenschaften, Kampf (Ausweichen, Initiative, Waffen),
   alle Talente nach Gruppen, Zauber und Liturgien, Kampftechniken; ganz oben die zuletzt gewürfelten.
   **Probe suchen:** ein paar Buchstaben tippen („sinn“, „körper“, „igni“). Es öffnet sich derselbe
   Probendialog wie im Heldenbogen; der Wurf landet im Protokoll.
-- Am PC stehen beide Seiten neben der Karte. Am Handy kommen sie als Schublade: Knopf unten links (zeigt
+- Am PC nimmt die Karte die ganze Breite ein (nur schmaler Rand); Werte und darunter Proben stehen
+  rechts am Rand. Die Zustände sind dort zunächst zugeklappt, damit die Proben Platz haben (das Gerät
+  merkt sich, ob man sie offen lässt). Am Handy kommen beide als Schublade: Knopf unten links (zeigt
   LeP/AsP) bzw. **Proben** unten rechts; Tipp auf die eigene Figur öffnet die Werte, × oder Esc schließt.
 - **Favoriten ☆:** Neben jeder Probe ein Stern – gemerkte Proben (z. B. Angriff und Parade der Waffe,
   Ausweichen) stehen oben unter „★ Favoriten“ und im Kampf als Schnellknöpfe. Sie werden im Helden
