@@ -5,7 +5,7 @@
  * Aufbau eines Helden (alle Felder JSON-fähig):
  *   general, attributes, base, talents, combatTechniques, weapons, armor,
  *   spells, cantrips, advantages, disadvantages, specialAbilities, languages,
- *   tradeSecrets, inventory, money, conditions, conditionsOff, autoPain
+ *   tradeSecrets, inventoryGroups, inventory, money, conditions, conditionsOff, autoPain, favorites
  */
 import {
   ATTRIBUTES,
@@ -92,6 +92,7 @@ export function createHero() {
     spells: [],
     cantrips: [],
     ...Object.fromEntries(TEXT_LISTS.map(({ key }) => [key, []])),
+    inventoryGroups: defaultInventoryGroups(), // eigene Gruppen; Gegenstände verweisen per location darauf
     inventory: [],
     money: Object.fromEntries(COINS.map(({ id }) => [id, 0])),
     conditions: Object.fromEntries(CONDITIONS.map(({ id }) => [id, 0])),
@@ -124,8 +125,22 @@ export function createTextEntry() {
   return { id: newId(), text: '' };
 }
 
-export function createItem() {
-  return { id: newId(), name: '', count: 1, weight: 0, location: INVENTORY_LOCATIONS[0].id, note: '' };
+/** Neuer Gegenstand – in der angegebenen Inventar-Gruppe. */
+export function createItem(location = INVENTORY_LOCATIONS[0].id) {
+  return { id: newId(), name: '', count: 1, weight: 0, location, note: '' };
+}
+
+/** So viele Inventar-Gruppen hat ein Held höchstens; so lang darf ein Gruppenname sein. */
+export const MAX_INVENTORY_GROUPS = 20;
+export const MAX_GROUP_NAME_LENGTH = 40;
+
+/** Startgruppen: Am Körper, Rucksack, Wagen, Packtier (IDs wie die früheren festen Orte). */
+export function defaultInventoryGroups() {
+  return INVENTORY_LOCATIONS.map(({ id, name }) => ({ id, name }));
+}
+
+export function createInventoryGroup(name = 'Neue Gruppe') {
+  return { id: newId(), name };
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +188,6 @@ function mergeById(stored, defaults, mergeEntry) {
 
 const TECHNIQUE_IDS = COMBAT_TECHNIQUES.map(({ id }) => id);
 const SPELL_TYPE_IDS = SPELL_TYPES.map(({ id }) => id);
-const LOCATION_IDS = INVENTORY_LOCATIONS.map(({ id }) => id);
 const EXPERIENCE_NAMES = EXPERIENCE_LEVELS.map(({ name }) => name);
 
 /**
@@ -244,11 +258,17 @@ export function normalizeHero(raw) {
   hero.cantrips = normalizeList(source.cantrips, textEntry);
   for (const { key } of TEXT_LISTS) hero[key] = normalizeList(source[key], textEntry);
 
+  // Ältere Helden kennen nur die festen Orte – sie bekommen die Startgruppen mit denselben IDs.
+  const groups = normalizeList(source.inventoryGroups, (group) => ({
+    name: text(group.name).trim().slice(0, MAX_GROUP_NAME_LENGTH),
+  })).slice(0, MAX_INVENTORY_GROUPS);
+  hero.inventoryGroups = groups.length ? groups : defaultInventoryGroups();
+  const groupIds = hero.inventoryGroups.map(({ id }) => id);
   hero.inventory = normalizeList(source.inventory, (item) => ({
     name: text(item.name),
     count: toNumber(item.count, 1),
     weight: toNumber(item.weight),
-    location: oneOf(item.location, LOCATION_IDS, LOCATION_IDS[0]),
+    location: oneOf(item.location, groupIds, groupIds[0]), // Gruppe weg → erste Gruppe
     note: text(item.note),
   }));
 
@@ -401,7 +421,14 @@ export function describeConditions(hero) {
 }
 
 /** Listen mit Einträgen, die im Bogen als eigene Zeilen erscheinen. */
-const ENTRY_LISTS = ['weapons', 'spells', 'cantrips', ...TEXT_LISTS.map(({ key }) => key), 'inventory'];
+const ENTRY_LISTS = [
+  'weapons',
+  'spells',
+  'cantrips',
+  ...TEXT_LISTS.map(({ key }) => key),
+  'inventoryGroups',
+  'inventory',
+];
 
 /**
  * Kennung des Aufbaus: welche Einträge es gibt und welche Waffen Nah- bzw. Fernkampf sind.
@@ -412,6 +439,9 @@ export function structureSignature(hero) {
   return JSON.stringify([
     ...ENTRY_LISTS.map((key) => hero[key].map((entry) => entry.id)),
     hero.weapons.map((weapon) => weapon.technique),
+    // Inventar ist nach Gruppen geordnet: Umsortieren und Umbenennen bauen es neu auf.
+    hero.inventory.map((item) => item.location),
+    hero.inventoryGroups.map((group) => group.name),
   ]);
 }
 

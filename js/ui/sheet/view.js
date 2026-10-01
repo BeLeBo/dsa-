@@ -12,8 +12,17 @@ import { renderGeneral, renderAttributes, renderBase, renderConditions } from '.
 import { renderTalents } from './talents.js';
 import { renderCombat } from './combat.js';
 import { renderMagic } from './magic.js';
-import { renderAbilities, renderInventory } from './lists.js';
-import { createWeapon, createSpell, createTextEntry, createItem, TEXT_LISTS } from '../../sheet.js';
+import { renderAbilities, renderInventory, showGroupName } from './lists.js';
+import {
+  createWeapon,
+  createSpell,
+  createTextEntry,
+  createItem,
+  createInventoryGroup,
+  TEXT_LISTS,
+  MAX_INVENTORY_GROUPS,
+  MAX_GROUP_NAME_LENGTH,
+} from '../../sheet.js';
 import { moneyToKreuzer, kreuzerToMoney } from '../../rules.js';
 
 /** Neue Einträge je Liste; Listen mit Bearbeiten-Bereich öffnen ihn gleich. */
@@ -102,6 +111,80 @@ export function createSheetView(root, store, { openCheck, renderEmpty }) {
     });
   }
 
+  // -------------------------------------------------------------------------
+  // Inventar-Gruppen
+  // -------------------------------------------------------------------------
+
+  function addItem(groupId) {
+    store.hero.inventory.push(createItem(groupId));
+    store.changed('structure', root);
+    focusEntry('inventory', store.hero.inventory.length - 1);
+  }
+
+  function addGroup() {
+    if (store.hero.inventoryGroups.length >= MAX_INVENTORY_GROUPS) return;
+    const group = createInventoryGroup();
+    store.hero.inventoryGroups.push(group);
+    store.changed('structure', root);
+    const input = root.querySelector(`[data-group-name="${group.id}"]`);
+    input?.focus();
+    input?.select();
+  }
+
+  function moveGroup(arg) {
+    const [id, step] = arg.split(':');
+    const groups = store.hero.inventoryGroups;
+    const index = groups.findIndex((group) => group.id === id);
+    const target = index + Number(step);
+    if (index === -1 || target < 0 || target >= groups.length) return;
+    [groups[index], groups[target]] = [groups[target], groups[index]];
+    store.changed('structure', root);
+    // Fokus bleibt beim Knopf; ist die Gruppe nun ganz oben/unten, beim anderen Pfeil.
+    (
+      root.querySelector(`[data-action="move-group"][data-arg="${arg}"]:not(:disabled)`) ??
+      root.querySelector(`[data-action="move-group"][data-arg^="${id}:"]:not(:disabled)`)
+    )?.focus();
+  }
+
+  /** Gruppe löschen: Ihre Gegenstände kommen in die erste übrige Gruppe (Rückgängig möglich). */
+  function removeGroup(id) {
+    const groups = store.hero.inventoryGroups;
+    const index = groups.findIndex((group) => group.id === id);
+    if (index === -1 || groups.length <= 1) return;
+    const [removed] = groups.splice(index, 1);
+    const target = groups[0];
+    const moved = store.hero.inventory.filter((item) => item.location === id).map((item) => item.id);
+    for (const item of store.hero.inventory) if (item.location === id) item.location = target.id;
+    store.changed('structure', root);
+    const name = removed.name || 'Gruppe ohne Namen';
+    showToast(
+      moved.length
+        ? `Gruppe „${name}“ gelöscht – ${moved.length === 1 ? 'der Gegenstand liegt' : `die ${moved.length} Gegenstände liegen`} jetzt in „${target.name || 'Gruppe ohne Namen'}“.`
+        : `Gruppe „${name}“ gelöscht.`,
+      {
+        action: {
+          label: 'Rückgängig',
+          onClick: () => {
+            const list = store.hero.inventoryGroups;
+            if (!list.some((group) => group.id === removed.id)) list.splice(Math.min(index, list.length), 0, removed);
+            for (const item of store.hero.inventory) if (moved.includes(item.id)) item.location = removed.id;
+            store.changed('structure', root);
+          },
+        },
+      },
+    );
+  }
+
+  /** Gruppenname: beim Verlassen des Felds (oder Enter) übernehmen und überall anzeigen. */
+  root.addEventListener('change', (event) => {
+    const id = event.target.dataset?.groupName;
+    const group = id && store.hero?.inventoryGroups.find((entry) => entry.id === id);
+    if (!group) return;
+    group.name = event.target.value.trim().slice(0, MAX_GROUP_NAME_LENGTH);
+    showGroupName(root, group);
+    store.changed('value', event.target);
+  });
+
   const ACTIONS = {
     'toggle-editor': (key) => {
       if (ui.openEditors.has(key)) ui.openEditors.delete(key);
@@ -110,6 +193,10 @@ export function createSheetView(root, store, { openCheck, renderEmpty }) {
     },
     'add-entry': addEntry,
     'remove-entry': removeEntry,
+    'add-item': addItem,
+    'add-group': addGroup,
+    'move-group': moveGroup,
+    'remove-group': removeGroup,
     'exchange-money': () => {
       store.hero.money = kreuzerToMoney(moneyToKreuzer(store.hero.money));
       store.changed('value', null);

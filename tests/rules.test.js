@@ -338,6 +338,19 @@ test(MISC, 'Gewicht je Ort und gesamt (inkl. Komma-Eingabe)', () => {
   assertEqual(total, 16.3);
 });
 
+test(MISC, 'Gewicht je eigener Inventar-Gruppe; unbekannte Gruppe zählt zur ersten', () => {
+  const { byLocation, total } = weightByLocation(
+    [
+      { weight: 1, count: 2, location: 'tasche' },
+      { weight: 5, count: 1, location: 'truhe' },
+      { weight: 0.5, count: 1, location: 'weg' },
+    ],
+    ['tasche', 'truhe', 'leer'],
+  );
+  assertEqual(byLocation, { tasche: 2.5, truhe: 5, leer: 0 });
+  assertEqual(total, 7.5);
+});
+
 test(MISC, 'Zahlen aus Eingaben', () => {
   assertEqual(toInt('12'), 12);
   assertEqual(toInt('abc', 7), 7);

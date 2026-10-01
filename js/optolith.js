@@ -143,7 +143,7 @@ const REACH = Object.freeze({ 1: 'kurz', 2: 'mittel', 3: 'lang' });
 const ROMAN = Object.freeze(['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']);
 const MOTHER_TONGUE_LEVEL = 4;
 
-/** Optoliths Gegenstandsgruppen → Aufbewahrungsort (Rest: am Körper). */
+/** Optoliths Gegenstandsgruppen → Inventar-Gruppe (Rest: am Körper). */
 const LOCATION_BY_GROUP = Object.freeze({ 25: 'packtier', 26: 'packtier', 27: 'wagen' });
 
 /** Die vier Listen übernatürlicher Fertigkeiten im Token und ihre Art in dieser App. */
@@ -664,8 +664,8 @@ function applyEquipment(hero, { json, token }, report) {
   if (hero.inventory.length) {
     report.todo.push(
       items.length
-        ? 'Aufbewahrungsorte im Inventar bitte anpassen – Tiere und Wagen sind schon einsortiert, der Rest steht unter „Am Körper“.'
-        : 'Aufbewahrungsorte im Inventar bitte anpassen – alles steht unter „Am Körper“ (mit der .json-Datei dazu werden Tiere und Wagen einsortiert).',
+        ? 'Inventar bitte in Gruppen einsortieren (auch eigene wie „Gürteltasche“) – Tiere und Wagen sind schon einsortiert, der Rest steht unter „Am Körper“.'
+        : 'Inventar bitte in Gruppen einsortieren (auch eigene wie „Gürteltasche“) – alles steht unter „Am Körper“ (mit der .json-Datei dazu werden Tiere und Wagen einsortiert).',
     );
   }
 

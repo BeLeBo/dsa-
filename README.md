@@ -25,6 +25,7 @@ alles live für alle synchronisiert.
 | 10    | Spielbildschirm (Werte/Proben), eigene Figur, Karten-Tabs des Meisters | ✅ fertig |
 | 11    | Kampf und letzte Würfe im Spielbildschirm, Favoriten                   | ✅ fertig |
 | 12    | Ping: Meister markiert Stellen auf der Karte                           | ✅ fertig |
+| 13    | Inventar in eigenen Gruppen                                            | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -175,6 +176,12 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
   „Schaden würfeln“, bei kritischem Treffer verdoppelt.
 - **Stift-Symbol:** öffnet die Bearbeitung eines Eintrags (Probeneigenschaften, Spezialisierung, Waffendaten …).
 - **Leere Felder bei AW, INI und Kampfwerten** bedeuten „automatisch berechnen“; ein eingetragener Wert hat Vorrang.
+- **Inventar in Gruppen:** Gegenstände stehen in aufklappbaren Gruppen – anfangs Am Körper, Rucksack,
+  Wagen und Packtier, dazu beliebig eigene (**Gruppe hinzufügen**, z. B. „Gürteltasche“ oder „Truhe in
+  Gareth“, bis zu 20). Jede Gruppe zeigt Anzahl und Gewicht in der Kopfzeile; **Gegenstand hinzufügen**
+  legt ihn direkt in der Gruppe an, das Feld **Gruppe** am Gegenstand sortiert um. Unten in jeder Gruppe:
+  Name ändern, mit ↑ ↓ verschieben, löschen – ihre Gegenstände kommen dann in die erste Gruppe
+  („Rückgängig“ holt alles zurück). Zugeklappte Gruppen merkt sich das Gerät.
 - **Würfeln:** freie Ausdrücke wie `2W6+3`, `1W20`, `3W20` sowie Schnellzugriff auf Eigenschaften und Waffen.
 - **Protokoll:** alle Würfe mit Heldennamen und Uhrzeit, zum Aufklappen mit allen Einzelwürfeln.
   Im Raum gemeinsam für alle (je nach Sichtbarkeit), ohne Raum nur auf diesem Gerät.
@@ -343,7 +350,7 @@ Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort a
 ## Tests
 
 Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite prüft
-Regeln, Würfel, Heldenmodell, Proben, Zusammenführen gleichzeitiger Änderungen, den Abgleich,
+Regeln, Würfel, Heldenmodell (inkl. Inventar-Gruppen), Proben, Zusammenführen gleichzeitiger Änderungen, den Abgleich,
 das gemeinsame Protokoll, die Kampfreihenfolge sowie Raster, Einrasten, Zoom, Auswahlrahmen,
 gemeinsames Bewegen, Ping und die Karten-Steuerung
 (mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests

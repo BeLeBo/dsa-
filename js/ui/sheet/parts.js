@@ -8,19 +8,29 @@ import { getPath } from '../../util.js';
 const SECTION_STATE_KEY = 'dsa5.ui.bereiche';
 const sectionState = readJson(SECTION_STATE_KEY, {}) ?? {};
 
-/** Einklappbarer Bereich; der Auf-/Zu-Zustand wird pro Gerät gemerkt. */
-export function section(id, title, content, { defaultOpen = true, className = '', badge = null } = {}) {
+/** Auf- und zuklappbar; der Zustand wird pro Gerät unter `id` gemerkt. */
+export function collapsible(id, summary, body, { defaultOpen = true, className = '', dataset = {} } = {}) {
   const details = h(
     'details',
-    { class: `section ${className}`.trim(), open: sectionState[id] ?? defaultOpen, dataset: { section: id } },
-    h('summary', {}, h('span', { class: 'section-title' }, title), badge),
-    h('div', { class: 'section-body' }, content),
+    { class: className, open: sectionState[id] ?? defaultOpen, dataset },
+    h('summary', {}, summary),
+    body,
   );
   details.addEventListener('toggle', () => {
     sectionState[id] = details.open;
     writeJson(SECTION_STATE_KEY, sectionState);
   });
   return details;
+}
+
+/** Einklappbarer Bereich des Heldenbogens. */
+export function section(id, title, content, { defaultOpen = true, className = '', badge = null } = {}) {
+  return collapsible(
+    id,
+    [h('span', { class: 'section-title' }, title), badge],
+    h('div', { class: 'section-body' }, content),
+    { defaultOpen, className: `section ${className}`.trim(), dataset: { section: id } },
+  );
 }
 
 /** Knopf, der eine Aktion des Heldenbogens auslöst (siehe view.js). */

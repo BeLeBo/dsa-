@@ -1018,10 +1018,82 @@ input.num::-webkit-inner-spin-button {
   flex: 0 1 140px;
 }
 
-.weights {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
+/* Inventar-Gruppen: aufklappbar, mit Anzahl und Gewicht in der Kopfzeile */
+.inventory-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.inventory-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.inventory-group > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-height: var(--touch);
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.inventory-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inventory-group > summary::before {
+  content: '▸';
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.inventory-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.inventory-group-name {
+  font-weight: 800;
+}
+
+.inventory-group-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.inventory-group-body > .btn-add {
+  align-self: flex-start;
+}
+
+.inventory-group-settings {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.inventory-group-settings .grow {
+  flex: 1;
+}
+
+.inventory-group-settings .icon-button:disabled {
+  opacity: 0.35;
 }
 
 .weight {
@@ -1504,14 +1576,6 @@ input.num::-webkit-inner-spin-button {
 @media (min-width: 720px) {
   .attributes {
     grid-template-columns: repeat(8, minmax(0, 1fr));
-  }
-
-  .weights {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-
-  .weight {
-    flex-direction: column;
   }
 }
 

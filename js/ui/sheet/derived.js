@@ -30,6 +30,13 @@ import { formatDecimal } from '../../util.js';
 const byId = (list, id) => list.find((entry) => entry.id === id);
 const valueText = (value) => (value === null || value === undefined ? '–' : String(value));
 
+/** Gewicht je Inventar-Gruppe des Helden. */
+const groupWeights = (hero) =>
+  weightByLocation(
+    hero.inventory,
+    hero.inventoryGroups.map(({ id }) => id),
+  );
+
 const DERIVED = {
   'ap-remaining': (hero) => String(apRemaining(hero.general.apTotal, hero.general.apSpent)),
   'ap-level': (hero) => `Laut AP: ${experienceLevel(hero.general.apTotal)}`,
@@ -81,8 +88,13 @@ const DERIVED = {
     return `${RESOURCE_NAMES[resource]} ${pool.current}/${pool.max}`;
   },
 
-  weight: (hero, location) => `${formatDecimal(weightByLocation(hero.inventory).byLocation[location])} Stein`,
-  'weight-total': (hero) => `${formatDecimal(weightByLocation(hero.inventory).total)} Stein`,
+  weight: (hero, group) => `${formatDecimal(groupWeights(hero).byLocation[group] ?? 0)} Stein`,
+  'weight-total': (hero) => `${formatDecimal(groupWeights(hero).total)} Stein`,
+  'inventory-group': (hero, group) => {
+    const count = hero.inventory.filter((item) => item.location === group).length;
+    const weight = formatDecimal(groupWeights(hero).byLocation[group] ?? 0);
+    return `${count} ${count === 1 ? 'Gegenstand' : 'Gegenstände'} · ${weight} Stein`;
+  },
   'money-total': (hero) => {
     const kreuzer = moneyToKreuzer(hero.money);
     return `Gesamt: ${formatMoney(kreuzerToMoney(kreuzer))} (= ${kreuzer.toLocaleString('de-DE')} K)`;

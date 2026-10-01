@@ -82,6 +82,7 @@ export const COINS = Object.freeze([
 ]);
 
 /** Aufbewahrungsorte im Inventar. Der erste Ort ist der Standard. */
+/** Inventar-Gruppen eines neuen Helden – eigene lassen sich hinzufügen, umbenennen und löschen. */
 export const INVENTORY_LOCATIONS = Object.freeze([
   { id: 'koerper', name: 'Am Körper' },
   { id: 'rucksack', name: 'Rucksack' },
@@ -442,13 +443,14 @@ export function formatMoney(money = {}) {
 }
 
 /**
- * Gewicht (Stein) je Aufbewahrungsort und insgesamt.
- * Gegenstände: { weight, count, location }; unbekannter Ort zählt als „Am Körper“.
+ * Gewicht (Stein) je Inventar-Gruppe und insgesamt.
+ * Gegenstände: { weight, count, location }; eine unbekannte Gruppe zählt zur ersten.
+ * @param {string[]} [groupIds]  IDs der Gruppen des Helden (Standard: die vier Startgruppen)
  */
-export function weightByLocation(items = []) {
-  const byLocation = Object.fromEntries(INVENTORY_LOCATIONS.map(({ id }) => [id, 0]));
+export function weightByLocation(items = [], groupIds = INVENTORY_LOCATIONS.map(({ id }) => id)) {
+  const byLocation = Object.fromEntries(groupIds.map((id) => [id, 0]));
   for (const item of items) {
-    const location = Object.hasOwn(byLocation, item.location) ? item.location : INVENTORY_LOCATIONS[0].id;
+    const location = Object.hasOwn(byLocation, item.location) ? item.location : groupIds[0];
     byLocation[location] += toNumber(item.weight) * toNumber(item.count ?? 1);
   }
   for (const id of Object.keys(byLocation)) byLocation[id] = roundTo(byLocation[id], 3);

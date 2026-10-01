@@ -22,6 +22,9 @@ import {
   payEnergy,
   refundEnergy,
   spendFatePoint,
+  structureSignature,
+  createInventoryGroup,
+  MAX_INVENTORY_GROUPS,
 } from '../js/sheet.js';
 import {
   ROLL_TYPES,
@@ -367,4 +370,69 @@ test(MODEL, 'Favoriten bleiben im Helden: Texte, ohne Doppelte, höchstens 30', 
   const many = Array.from({ length: 40 }, (_, index) => `talent:t${index}:`);
   assertEqual(normalizeHero({ favorites: many }).favorites.length, 30);
   assertEqual(importHero(exportHero({ ...createHero(), favorites: ['dodge::'] })).favorites, ['dodge::'], 'Sicherung');
+});
+
+test(
+  MODEL,
+  'Inventar-Gruppen: ältere Helden bekommen die vier Standardgruppen, Gegenstände bleiben, wo sie waren',
+  () => {
+    const hero = normalizeHero({ inventory: [{ name: 'Zelt', location: 'packtier' }] });
+    assertEqual(
+      hero.inventoryGroups.map(({ id, name }) => [id, name]),
+      [
+        ['koerper', 'Am Körper'],
+        ['rucksack', 'Rucksack'],
+        ['wagen', 'Wagen'],
+        ['packtier', 'Packtier'],
+      ],
+    );
+    assertEqual(hero.inventory[0].location, 'packtier');
+    assertEqual(createHero().inventoryGroups.length, 4, 'neuer Held: Standardgruppen');
+  },
+);
+
+test(MODEL, 'Inventar-Gruppen: eigene Gruppen bleiben, Gegenstände ohne Gruppe landen in der ersten', () => {
+  const hero = normalizeHero({
+    inventoryGroups: [
+      { id: 'g1', name: '  Gürteltasche  ' },
+      { id: 'g2', name: 'Truhe in Gareth'.repeat(5) },
+      { id: 'g1', name: 'doppelt' },
+      'Müll',
+    ],
+    inventory: [
+      { name: 'Dietrich', location: 'g1' },
+      { name: 'Seil', location: 'rucksack' },
+      { name: 'Buch', location: 'g2' },
+    ],
+  });
+  assertEqual(hero.inventoryGroups.length, 3, 'nur Objekte, doppelte ID neu vergeben');
+  assertEqual(hero.inventoryGroups[0], { id: 'g1', name: 'Gürteltasche' });
+  assertEqual(hero.inventoryGroups[1].name.length, 40, 'Name höchstens 40 Zeichen');
+  assertTrue(hero.inventoryGroups[2].id !== 'g1');
+  assertEqual(
+    hero.inventory.map((item) => item.location),
+    ['g1', 'g1', 'g2'],
+    'Rucksack gibt es hier nicht mehr → erste Gruppe',
+  );
+  const many = normalizeHero({
+    inventoryGroups: Array.from({ length: 30 }, (_, i) => ({ id: `g${i}`, name: `G${i}` })),
+  });
+  assertEqual(many.inventoryGroups.length, MAX_INVENTORY_GROUPS);
+  assertEqual(normalizeHero({ inventoryGroups: [] }).inventoryGroups.length, 4, 'leer → Standardgruppen');
+  const group = createInventoryGroup();
+  assertTrue(typeof group.id === 'string' && group.id.length > 0 && group.name === 'Neue Gruppe');
+});
+
+test(MODEL, 'Inventar-Gruppen: Umsortieren und Umbenennen bauen den Bogen neu auf, Gewicht nicht', () => {
+  const hero = testHero();
+  hero.inventory.push({ id: 'i1', name: 'Seil', count: 1, weight: 1.5, location: 'rucksack', note: '' });
+  const before = structureSignature(hero);
+  hero.inventory[0].weight = 3;
+  assertEqual(structureSignature(hero), before, 'Gewicht: nur Werte');
+  hero.inventory[0].location = 'wagen';
+  assertTrue(structureSignature(hero) !== before, 'anderer Gruppe zugeordnet');
+  const moved = structureSignature(hero);
+  hero.inventoryGroups[1].name = 'Tornister';
+  assertTrue(structureSignature(hero) !== moved, 'Gruppe umbenannt');
+  assertEqual(importHero(exportHero(hero)), hero, 'Gruppen überstehen Export und Import');
 });
