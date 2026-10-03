@@ -34,6 +34,9 @@ import {
   viewToReveal,
   createPing,
   normalizePing,
+  baseTokenName,
+  parseIniBase,
+  sortTemplates,
   MIN_GRID_SIZE,
   MAX_GRID_SIZE,
   MAX_ZOOM,
@@ -342,7 +345,7 @@ let roomCounter = 0;
 /** Attrappe der Serverfunktionen (map-api.js) mit einer kleinen Datenbank im Speicher. */
 function fakeApi(overrides = {}) {
   const calls = [];
-  const db = { maps: [], tokens: [] };
+  const db = { maps: [], tokens: [], templates: [] };
   let counter = 0;
   const api = {
     calls,
@@ -391,6 +394,18 @@ function fakeApi(overrides = {}) {
     discardUpload: async (path) => calls.push(['discardUpload', path]),
     removeUnusedImages: async (roomId, paths) => calls.push(['removeUnusedImages', paths]),
     sendPing: async (roomId, ping) => calls.push(['sendPing', ping]),
+    fetchTemplates: async () => db.templates.map((template) => ({ ...template })),
+    saveTemplate: async (roomId, template) => {
+      calls.push(['saveTemplate', template]);
+      const existing = db.templates.find((entry) => entry.name.toLowerCase() === template.name.toLowerCase());
+      const saved = { ...(existing ?? { id: `v${(counter += 1)}`, room_id: roomId }), ...template };
+      db.templates = [...db.templates.filter((entry) => entry.id !== saved.id), saved];
+      return { ...saved };
+    },
+    deleteTemplate: async (templateId) => {
+      calls.push(['deleteTemplate', templateId]);
+      db.templates = db.templates.filter((entry) => entry.id !== templateId);
+    },
     ...overrides,
   };
   return api;
@@ -954,5 +969,115 @@ test(CONTROLLER, 'Ping: Datenbank ohne Pings – erste Live-Zeile legt nur den S
   assertEqual(pinged, [], 'ohne bekannten Stand: nicht zeigen');
   controller.handleRoomRow({ active_map_id: 'm1', ping: { id: 'p2', map_id: 'm1', x: 1, y: 1 } }, { live: true });
   assertEqual(pinged, ['p2']);
+  cleanup();
+});
+
+test('Karte: Gespeicherte Figuren', 'Name ohne Nummer, INI-Basis aus Eingaben, Sortierung', () => {
+  assertEqual(baseTokenName('Ork 12'), 'Ork');
+  assertEqual(baseTokenName(' Riesenspinne '), 'Riesenspinne');
+  assertEqual(baseTokenName('Wache 2 3'), 'Wache 2');
+  for (const [input, expected] of [
+    ['', null],
+    ['  ', null],
+    ['12', 12],
+    ['7,4', 7],
+    ['-3', 0],
+    ['150', 99],
+    ['abc', null],
+  ]) {
+    assertEqual(parseIniBase(input), expected, JSON.stringify(input));
+  }
+  assertEqual(
+    sortTemplates([{ name: 'ork' }, { name: 'Äffchen' }, { name: 'Bandit' }]).map((t) => t.name),
+    ['Äffchen', 'Bandit', 'ork'],
+  );
+});
+
+test(
+  CONTROLLER,
+  'Gespeicherte Figuren: speichern (mit Bild), gleicher Name ersetzt, altes Bild wird aufgeräumt',
+  async () => {
+    const { controller, api, cleanup } = mapController();
+    await controller.actions.loadTemplates();
+    const first = await controller.actions.saveTemplate({
+      name: ' Ork-Krieger ',
+      color: 'gruen',
+      size: '1',
+      leMax: '30',
+      iniBase: '12',
+      imageFile: new Blob(['x'], { type: 'image/png' }),
+    });
+    assertEqual([first.name, first.le_max, first.ini_base, first.image_path], ['Ork-Krieger', 30, 12, 'raum/neu.webp']);
+    assertEqual(controller.state.get().templates.length, 1);
+    const second = await controller.actions.saveTemplate({
+      name: 'ork-krieger',
+      color: 'rot',
+      size: 2,
+      leMax: '',
+      iniBase: '',
+    });
+    assertEqual(second.id, first.id, 'dieselbe Figur');
+    assertEqual([second.le_max, second.ini_base, second.image_path], [null, null, null]);
+    assertEqual(controller.state.get().templates.length, 1, 'keine doppelte Figur');
+    assertEqual(api.calls.at(-1), ['removeUnusedImages', ['raum/neu.webp']], 'altes Bild aufräumen');
+    await controller.actions.saveTemplate({ name: 'Bandit', color: 'grau', size: 1, imagePath: 'raum/bandit.webp' });
+    assertEqual(
+      controller.state.get().templates.map((t) => t.name),
+      ['Bandit', 'ork-krieger'],
+      'nach Namen sortiert',
+    );
+    await controller.actions.removeTemplate(controller.state.get().templates[0].id);
+    assertEqual(api.calls.at(-1), ['removeUnusedImages', ['raum/bandit.webp']], 'Bild der gelöschten Figur aufräumen');
+    assertEqual(controller.state.get().templates.length, 1);
+    cleanup();
+  },
+);
+
+test(CONTROLLER, 'Gespeicherte Figur aufstellen: ihr Bild wird benutzt und bei einem Fehler nie gelöscht', async () => {
+  const api = fakeApi({
+    createTokens: async () => {
+      throw new Error('Netz weg');
+    },
+  });
+  const { controller, cleanup } = mapController({ api });
+  addMap(api, 'm1');
+  await controller.load();
+  let failed = false;
+  try {
+    await controller.actions.addTokens(
+      { name: 'Ork', count: 2, size: 1, color: 'rot', imagePath: 'raum/ork.webp' },
+      { x: 500, y: 400 },
+    );
+  } catch {
+    failed = true;
+  }
+  assertTrue(failed, 'Fehler kommt an');
+  assertTrue(!api.calls.some((call) => call[0] === 'discardUpload'), 'Bild der gespeicherten Figur bleibt');
+  cleanup();
+});
+
+test(CONTROLLER, 'Gespeicherte Figur aufstellen: Bild steht an allen Figuren', async () => {
+  const { controller, api, cleanup } = mapController();
+  addMap(api, 'm1');
+  await controller.load();
+  const created = await controller.actions.addTokens(
+    { name: 'Ork', count: 2, size: 1, color: 'rot', leMax: '30', imagePath: 'raum/ork.webp' },
+    { x: 500, y: 400 },
+  );
+  assertEqual(
+    created.map((token) => [token.name, token.image_path, token.le_current]),
+    [
+      ['Ork 1', 'raum/ork.webp', 30],
+      ['Ork 2', 'raum/ork.webp', 30],
+    ],
+  );
+  cleanup();
+});
+
+test(CONTROLLER, 'Gespeicherte Figuren: nur für den Meister', async () => {
+  const { controller, api, cleanup } = mapController({ master: false });
+  api.db.templates.push({ id: 'v1', name: 'Geheimer Boss' });
+  assertEqual(await controller.actions.loadTemplates(), []);
+  assertEqual(controller.state.get().templates, []);
   cleanup();
 });

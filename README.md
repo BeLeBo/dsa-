@@ -26,6 +26,7 @@ alles live für alle synchronisiert.
 | 11    | Kampf und letzte Würfe im Spielbildschirm, Favoriten                   | ✅ fertig |
 | 12    | Ping: Meister markiert Stellen auf der Karte                           | ✅ fertig |
 | 13    | Inventar in eigenen Gruppen                                            | ✅ fertig |
+| 14    | Gespeicherte Figuren des Meisters (Vorlagen)                           | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -55,8 +56,8 @@ Die App meldet jedes Gerät anonym an – niemand braucht eine E-Mail-Adresse.
 3. **Run** klicken. Erwartet: „Success. No rows returned“.
 
 Das Skript legt die Tabellen `rooms` (inkl. laufendem Kampf, gezeigter Karte und letztem Ping), `room_members`,
-`characters` (Held als `jsonb`), `rolls` (Würfelprotokoll), `maps` und `tokens` (Karten und Figuren)
-an, dazu den nicht öffentlichen Bildspeicher `karten` (Supabase Storage), die Zugriffsregeln
+`characters` (Held als `jsonb`), `rolls` (Würfelprotokoll), `maps` und `tokens` (Karten und Figuren),
+`figure_templates` (gespeicherte Figuren des Meisters) an, dazu den nicht öffentlichen Bildspeicher `karten` (Supabase Storage), die Zugriffsregeln
 (Row Level Security), die Funktionen zum Erstellen/Beitreten und die Realtime-Freigaben. Es darf jederzeit erneut
 ausgeführt werden – **nach jedem Update der App bitte einmal erneut ausführen**, damit neue
 Spalten und Regeln dazukommen (bestehende Daten bleiben erhalten).
@@ -247,6 +248,12 @@ auf dem Server gespeichert und für den Meister sichtbar.
    Farbe, optional ein Bild (wird quadratisch zugeschnitten) und **Verborgen** – verborgene Figuren
    sieht nur der Meister (z. B. für einen Hinterhalt). Gehört die Figur zu einem Helden, darf dessen
    Spieler sie bewegen; seine LeP stehen dann im Heldenbogen.
+   **Gespeicherte Figuren:** **Für später merken** speichert die eingetragene Figur (Name, LeP,
+   INI-Basis, Größe, Farbe, Bild) – auch aus **Figur bearbeiten** (dann ohne Nummer, z. B. „Ork“).
+   Beim nächsten **+ Figur** stehen sie oben: ein Tipp füllt alles aus, Anzahl wählen, **Aufstellen**.
+   Gleicher Name ersetzt die alte, × löscht. Sie gehören zum Raum (der Kampagne), liegen auf dem Server
+   und sind auf jedem Gerät des Meisters da; Spieler sehen sie nicht. Die **INI-Basis** steht im Kampf
+   bei **+ Gegner** schon drin.
 5. **Helden:** stellt alle Helden des Raums auf, die noch fehlen (mit ihrem Bild von einer früheren Karte).
 6. **Figur antippen** wählt sie aus; ihre Werte gleiten als Pop-up über die Karte (am Handy von unten,
    am PC unten rechts) – die Karte selbst bleibt, wo sie ist:

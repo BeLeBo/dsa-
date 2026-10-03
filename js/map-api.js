@@ -12,6 +12,7 @@ export const IMAGE_BUCKET = 'karten';
 const MAP_COLUMNS = 'id, room_id, name, image_path, width, height, grid, revision, created_at';
 const TOKEN_COLUMNS =
   'id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max, updated_at';
+const TEMPLATE_COLUMNS = 'id, room_id, name, image_path, color, size, le_max, ini_base, updated_at';
 const IMAGE_CACHE = 'dsa5-bilder';
 const IMAGE_CACHE_HOST = 'https://dsa5-bilder.invalid/';
 const MAX_CACHED_IMAGES = 60;
@@ -55,6 +56,39 @@ export async function setActiveMap(roomId, mapId) {
   const client = await getClient();
   const rows = await unwrap(client.from('rooms').update({ active_map_id: mapId }).eq('id', roomId).select('id'));
   requireRows(rows, 'Nur der Meister kann Karten zeigen.');
+}
+
+// ---------------------------------------------------------------------------
+// Gespeicherte Figuren (Vorlagen des Meisters)
+// ---------------------------------------------------------------------------
+
+/** Meister: gespeicherte Figuren des Raums. */
+export async function fetchTemplates(roomId) {
+  const client = await getClient();
+  return unwrap(client.from('figure_templates').select(TEMPLATE_COLUMNS).eq('room_id', roomId));
+}
+
+/** Meister: Figur für später speichern – gleicher Name (ohne Groß/klein) ersetzt die alte. */
+export async function saveTemplate(roomId, template) {
+  const client = await getClient();
+  const rows = await unwrap(
+    client.rpc('save_figure_template', {
+      p_room_id: roomId,
+      p_name: template.name,
+      p_color: template.color,
+      p_size: template.size,
+      p_le_max: template.le_max,
+      p_ini_base: template.ini_base,
+      p_image_path: template.image_path,
+    }),
+  );
+  return requireRows(rows, 'Nur der Meister kann Figuren speichern.')[0];
+}
+
+export async function deleteTemplate(templateId) {
+  const client = await getClient();
+  const rows = await unwrap(client.from('figure_templates').delete().eq('id', templateId).select('id'));
+  requireRows(rows, 'Nur der Meister kann gespeicherte Figuren löschen.');
 }
 
 /** Meister: Stelle markieren (Ping) – steht in der Raumzeile und geht so live an alle Geräte. */

@@ -1,6 +1,6 @@
 /**
  * map-dialogs.js – Dialoge des Meisters für die Karte: Karten verwalten (hochladen, zeigen,
- * umbenennen, löschen) und Figuren aufstellen oder bearbeiten.
+ * umbenennen, löschen) und Figuren aufstellen oder bearbeiten – auch aus gespeicherten Figuren.
  */
 import { h, setChildren } from './dom.js';
 import { openDialog, confirmDialog } from './dialog.js';
@@ -12,9 +12,15 @@ import {
   MAX_TOKEN_LIFE,
   MAX_TOKEN_NAME_LENGTH,
   MAX_MAP_NAME_LENGTH,
+  MAX_INI_BASE,
   mapNameFromFile,
+  initials,
+  baseTokenName,
+  parseIniBase,
 } from '../map.js';
 import { heroName, normalizeHero } from '../sheet.js';
+import { imageUrl } from '../map-api.js';
+import { enemyGroup, rememberedIni, rememberIni } from './play-combat.js';
 
 /** Knopf, der während einer Aktion gesperrt ist und „…“ zeigt. */
 function busyButton(label, busyLabel, action, className = 'btn') {
@@ -247,7 +253,16 @@ export function openMapsDialog(controller) {
 // Figur aufstellen / bearbeiten
 // ---------------------------------------------------------------------------
 
+/** Farbauswahl; select(id) setzt die Farbe von außen (z. B. aus einer gespeicherten Figur). */
 function colorPicker(value, onChange) {
+  function select(id) {
+    buttons.forEach((button, index) => {
+      const active = TOKEN_COLORS[index].id === id;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    onChange(id);
+  }
   const buttons = TOKEN_COLORS.map((color) =>
     h('button', {
       type: 'button',
@@ -255,17 +270,10 @@ function colorPicker(value, onChange) {
       style: `--swatch: ${color.value}`,
       'aria-label': color.name,
       'aria-pressed': String(color.id === value),
-      onclick: () => {
-        buttons.forEach((button, index) => {
-          const active = TOKEN_COLORS[index].id === color.id;
-          button.classList.toggle('active', active);
-          button.setAttribute('aria-pressed', String(active));
-        });
-        onChange(color.id);
-      },
+      onclick: () => select(color.id),
     }),
   );
-  return h('div', { class: 'swatches', role: 'group', 'aria-label': 'Farbe' }, buttons);
+  return { element: h('div', { class: 'swatches', role: 'group', 'aria-label': 'Farbe' }, buttons), select };
 }
 
 function heroOptions(characters, selectedId) {
@@ -281,8 +289,31 @@ function heroOptions(characters, selectedId) {
   ];
 }
 
+/** Kleines Bild einer gespeicherten Figur (sonst Kürzel in ihrer Farbe). */
+function templateFace(template) {
+  const color = TOKEN_COLORS.find((entry) => entry.id === template.color) ?? TOKEN_COLORS[0];
+  const face = h('span', { class: 'figure-template-face', style: `--swatch: ${color.value}` }, initials(template.name));
+  if (template.image_path) {
+    imageUrl(template.image_path)
+      .then((url) => face.replaceChildren(h('img', { src: url, alt: '' })))
+      .catch(() => {}); // Kürzel bleibt
+  }
+  return face;
+}
+
+function templateDetails(template) {
+  return [
+    template.le_max !== null ? `LeP ${template.le_max}` : null,
+    template.ini_base !== null ? `INI ${template.ini_base}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 /**
  * Meister: Figur aufstellen (token = null) oder bearbeiten.
+ * Beim Aufstellen stehen oben die gespeicherten Figuren: antippen füllt alles aus (Name, LeP,
+ * INI, Größe, Farbe, Bild). „Für später merken“ speichert die eingetragene Figur.
  * @param {object} options { controller, token, characters, center() }
  */
 export function openTokenDialog({ controller, token = null, characters, center }) {
@@ -291,6 +322,7 @@ export function openTokenDialog({ controller, token = null, characters, center }
   const values = {
     color: token?.color ?? TOKEN_COLORS[0].id,
     removeImage: false,
+    imagePath: null, // Bild einer gespeicherten Figur (beim Aufstellen)
   };
   const heroNameOf = (id) => {
     const character = characters.find((entry) => entry.id === id);
@@ -320,6 +352,7 @@ export function openTokenDialog({ controller, token = null, characters, center }
       h('option', { value: String(size.value), selected: size.value === (token?.size ?? 1) }, size.name),
     ),
   );
+  const colors = colorPicker(values.color, (id) => (values.color = id));
   const picker = imagePicker(
     isNew || !token.image_path ? 'Bild (optional)' : 'Neues Bild',
     'Wird quadratisch zugeschnitten.',
@@ -342,17 +375,166 @@ export function openTokenDialog({ controller, token = null, characters, center }
     lifeInput,
     isNew ? 'Für Gegner und NSC – jede Figur startet mit vollen LeP. Leer = ohne LeP.' : 'Maximum. Leer = ohne LeP.',
   );
+  const iniInput = h('input', {
+    type: 'number',
+    class: 'num',
+    inputmode: 'numeric',
+    min: 0,
+    max: MAX_INI_BASE,
+    value: token ? (rememberedIni(enemyGroup(token.name)) ?? '') : '',
+    placeholder: 'z. B. 12',
+    'aria-label': 'INI-Basis',
+  });
+  const iniField = field('INI-Basis (Kampf)', iniInput, 'Steht im Kampf bei „+ Gegner“ schon drin. Leer = später.');
+
+  // Bild einer gespeicherten Figur – gilt, solange keine neue Datei gewählt ist.
+  const templateImage = h('div', { class: 'figure-template-image', hidden: true });
+  function showTemplateImage(template) {
+    values.imagePath = template?.image_path ?? null;
+    templateImage.hidden = !values.imagePath;
+    if (!values.imagePath) return;
+    setChildren(
+      templateImage,
+      templateFace(template),
+      h('span', {}, `Bild von „${template.name}“`),
+      h('button', { type: 'button', class: 'btn btn-small', onclick: () => showTemplateImage(null) }, 'Ohne Bild'),
+    );
+  }
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) showTemplateImage(null); // die neue Datei gilt
+  });
 
   let previousHeroName = heroNameOf(heroSelect.value);
+  function updateHeroFields() {
+    const isHero = Boolean(heroSelect.value);
+    countField.hidden = !isNew || isHero;
+    lifeField.hidden = isHero; // Helden haben ihre LeP im Heldenbogen
+    iniField.hidden = isHero; // … und ihre INI im Bogen
+    rememberButton.hidden = isHero; // gespeichert werden Gegner und NSC
+  }
   heroSelect.addEventListener('change', () => {
     const name = heroNameOf(heroSelect.value);
     if (!nameInput.value.trim() || nameInput.value === previousHeroName) nameInput.value = name;
     previousHeroName = name;
-    countField.hidden = !isNew || Boolean(heroSelect.value);
-    lifeField.hidden = Boolean(heroSelect.value); // Helden haben ihre LeP im Heldenbogen
+    updateHeroFields();
   });
-  countField.hidden = !isNew || Boolean(heroSelect.value);
-  lifeField.hidden = Boolean(heroSelect.value);
+
+  // Gespeicherte Figuren (nur beim Aufstellen): antippen füllt die Felder aus.
+  const templateList = h('div', { class: 'figure-templates', hidden: true });
+  function applyTemplate(template) {
+    heroSelect.value = '';
+    previousHeroName = '';
+    nameInput.value = template.name;
+    lifeInput.value = template.le_max ?? '';
+    iniInput.value = template.ini_base ?? '';
+    sizeSelect.value = String(template.size);
+    colors.select(template.color);
+    fileInput.value = '';
+    fileInput.dispatchEvent(new Event('change'));
+    showTemplateImage(template);
+    updateHeroFields();
+    countInput.focus();
+    countInput.select();
+  }
+  function renderTemplates(templates) {
+    templateList.hidden = templates.length === 0;
+    setChildren(
+      templateList,
+      h('span', { class: 'field-label' }, 'Gespeicherte Figuren'),
+      h(
+        'div',
+        { class: 'figure-template-list' },
+        templates.map((template) =>
+          h(
+            'div',
+            { class: 'figure-template' },
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'figure-template-use',
+                'aria-label': `Gespeicherte Figur „${template.name}“ übernehmen`,
+                onclick: () => applyTemplate(template),
+              },
+              templateFace(template),
+              h(
+                'span',
+                { class: 'figure-template-text' },
+                h('strong', {}, template.name),
+                h('small', {}, templateDetails(template)),
+              ),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'icon-button figure-template-remove',
+                'aria-label': `Gespeicherte Figur „${template.name}“ löschen`,
+                onclick: async () => {
+                  if (
+                    !(await confirmDialog(`Gespeicherte Figur „${template.name}“ löschen?`, {
+                      confirmLabel: 'Löschen',
+                      danger: true,
+                    }))
+                  )
+                    return;
+                  try {
+                    await controller.actions.removeTemplate(template.id);
+                    renderTemplates(controller.state.get().templates);
+                  } catch (error) {
+                    showError(error, 'Nicht gelöscht');
+                  }
+                },
+              },
+              '×',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  if (isNew) {
+    renderTemplates(controller.state.get().templates);
+    controller.actions
+      .loadTemplates()
+      .then(renderTemplates)
+      .catch((error) => showError(error, 'Gespeicherte Figuren nicht geladen'));
+  }
+
+  /** Eingetragene Figur für später speichern (beim Bearbeiten: Name ohne Nummer, z. B. „Ork“). */
+  async function remember() {
+    const name = isNew ? nameInput.value.trim() : baseTokenName(nameInput.value);
+    if (!name) {
+      showToast('Bitte einen Namen eingeben.');
+      nameInput.focus();
+      return;
+    }
+    const file = fileInput.files[0] ?? null;
+    const keptImage = isNew ? values.imagePath : values.removeImage ? null : token.image_path;
+    try {
+      const saved = await controller.actions.saveTemplate({
+        name,
+        color: values.color,
+        size: sizeSelect.value,
+        leMax: lifeInput.value,
+        iniBase: iniInput.value,
+        imageFile: file,
+        imagePath: keptImage,
+      });
+      if (isNew) {
+        // Das Bild liegt jetzt auf dem Server – beim Aufstellen nicht noch einmal hochladen.
+        fileInput.value = '';
+        fileInput.dispatchEvent(new Event('change'));
+        showTemplateImage(saved);
+        renderTemplates(controller.state.get().templates);
+      }
+      showToast(`„${saved.name}“ gemerkt – beim Aufstellen oben unter „Gespeicherte Figuren“.`);
+    } catch (error) {
+      showError(error, 'Figur nicht gespeichert');
+    }
+  }
+  const rememberButton = busyButton('★ Für später merken', 'speichert …', remember, 'btn figure-remember');
 
   const removeImage =
     !isNew && token.image_path
@@ -366,18 +548,16 @@ export function openTokenDialog({ controller, token = null, characters, center }
 
   setChildren(
     dialog.body,
+    isNew ? templateList : null,
     field('Name', nameInput),
     characters.length ? field('Gehört zu Held', heroSelect, 'Der Spieler dieses Helden darf die Figur bewegen.') : null,
     isNew ? countField : null,
     lifeField,
+    iniField,
     field('Größe', sizeSelect),
-    h(
-      'div',
-      { class: 'field' },
-      h('span', { class: 'field-label' }, 'Farbe'),
-      colorPicker(values.color, (id) => (values.color = id)),
-    ),
+    h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Farbe'), colors.element),
     picker.element,
+    isNew ? templateImage : null,
     removeImage,
     h(
       'label',
@@ -385,7 +565,9 @@ export function openTokenDialog({ controller, token = null, characters, center }
       hiddenInput,
       h('span', {}, 'Verborgen – nur du siehst die Figur (z. B. Hinterhalt)'),
     ),
+    rememberButton,
   );
+  updateHeroFields();
 
   async function save() {
     const spec = {
@@ -401,10 +583,18 @@ export function openTokenDialog({ controller, token = null, characters, center }
       nameInput.focus();
       return;
     }
+    // INI-Basis gilt für die Art (z. B. „Ork“): im Kampf bei „+ Gegner“ schon eingetragen.
+    const ini = parseIniBase(iniInput.value);
+    if (!spec.characterId && ini !== null) rememberIni(enemyGroup(spec.name), ini);
     try {
       if (isNew) {
         const created = await controller.actions.addTokens(
-          { ...spec, count: spec.characterId ? 1 : countInput.value, imageFile: fileInput.files[0] ?? null },
+          {
+            ...spec,
+            count: spec.characterId ? 1 : countInput.value,
+            imageFile: fileInput.files[0] ?? null,
+            imagePath: values.imagePath,
+          },
           center(),
         );
         dialog.close(); // erst schließen: Meldungen in einem Dialog verschwinden mit ihm
@@ -478,7 +668,7 @@ export function openOwnTokenDialog({ controller, heroName: name, center }) {
       'div',
       { class: 'field' },
       h('span', { class: 'field-label' }, 'Farbe'),
-      colorPicker(values.color, (id) => (values.color = id)),
+      colorPicker(values.color, (id) => (values.color = id)).element,
     ),
     picker.element,
   );

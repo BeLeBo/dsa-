@@ -448,3 +448,29 @@ export function normalizePing(value) {
     typeof id === 'string' && id !== '' && typeof mapId === 'string' && Number.isFinite(x) && Number.isFinite(y);
   return valid ? { id, map_id: mapId, x, y } : null;
 }
+
+// -----------------------------------------------------------------------------
+// Gespeicherte Figuren (Vorlagen des Meisters)
+// -----------------------------------------------------------------------------
+
+export const MAX_INI_BASE = 99;
+
+/** „Ork 2“ → „Ork“: Name ohne die Nummer, die beim Aufstellen mehrerer Figuren angehängt wird. */
+export function baseTokenName(name) {
+  return String(name ?? '')
+    .replace(/\s+\d+$/, '')
+    .trim();
+}
+
+/** INI-Basis aus einer Eingabe: leer oder ungültig → null, sonst 0 bis 99. */
+export function parseIniBase(value) {
+  const text = String(value ?? '').trim();
+  if (text === '') return null;
+  const number = Math.round(Number(text.replace(',', '.')));
+  return Number.isFinite(number) ? clamp(number, 0, MAX_INI_BASE) : null;
+}
+
+/** Gespeicherte Figuren nach Namen (deutsch sortiert, ohne Groß/klein). */
+export function sortTemplates(templates) {
+  return [...templates].sort((a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' }));
+}

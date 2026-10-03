@@ -12,17 +12,26 @@ import { orderedEntries, currentEntry, heroEntryId } from '../combat.js';
 import { heroName, initiativeBaseOf, normalizeHero } from '../sheet.js';
 import { checkChoices, choicesByKeys } from '../check-search.js';
 import { readJson, writeJson } from '../storage.js';
+import { baseTokenName } from '../map.js';
 
 /** Zuletzt benutzte INI-Basis je Gegnerart (z. B. „Ork“) – für den nächsten Kampf. */
 const INI_KEY = 'dsa5.kampf.ini';
 
 /** „Ork 2“ → „Ork“: Gegner mit gleichem Namen (bis auf die Nummer) zusammenfassen. */
 export function enemyGroup(name) {
-  return (
-    String(name ?? '')
-      .replace(/\s+\d+$/, '')
-      .trim() || 'Gegner'
-  );
+  return baseTokenName(name) || 'Gegner';
+}
+
+/** INI-Basis, die dieses Gerät für eine Gegnerart (z. B. „Ork“) kennt – oder null. */
+export function rememberedIni(group) {
+  const value = (readJson(INI_KEY, {}) ?? {})[group];
+  return Number.isFinite(value) ? value : null;
+}
+
+/** INI-Basis für eine Gegnerart merken (z. B. aus einer gespeicherten Figur). */
+export function rememberIni(group, value) {
+  if (!Number.isFinite(value)) return;
+  writeJson(INI_KEY, { ...(readJson(INI_KEY, {}) ?? {}), [group]: value });
 }
 
 /**

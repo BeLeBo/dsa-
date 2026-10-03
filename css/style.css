@@ -2761,6 +2761,99 @@ body.map-fullscreen-open {
   box-shadow: 0 0 0 3px var(--text);
 }
 
+/* Gespeicherte Figuren im Dialog „Figur aufstellen“: antippen füllt die Felder aus */
+.figure-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.figure-template-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.figure-template {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+}
+
+.figure-template-use {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--touch);
+  padding: 4px 4px 4px 6px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.figure-template-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.figure-template-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.figure-template-text small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.figure-template-face {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--swatch);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.figure-template-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.figure-template-remove {
+  flex: none;
+  color: var(--muted);
+}
+
+.figure-template-image {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.figure-remember {
+  align-self: flex-start;
+}
+
 .file-picker {
   position: relative;
   display: flex;

@@ -7,7 +7,8 @@
 -- Rollen:
 --   Meister  – sieht und bearbeitet alle Helden des Raums, sieht alle Würfe,
 --              führt den Kampf (Initiative), kann das Protokoll leeren,
---              verwaltet Karten und Figuren und markiert Stellen auf der Karte (Ping).
+--              verwaltet Karten und Figuren, speichert Figuren als Vorlagen und markiert
+--              Stellen auf der Karte (Ping).
 --   Spieler  – sieht und bearbeitet nur den eigenen Helden, sieht öffentliche Würfe
 --              und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
 --              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie.
@@ -122,6 +123,22 @@ alter table public.tokens add column if not exists le_max integer
   check (le_max is null or le_max between 0 and 9999);
 create index if not exists tokens_map on public.tokens (map_id);
 create index if not exists tokens_room on public.tokens (room_id);
+
+-- Gespeicherte Figuren des Meisters (Vorlagen): einmal anlegen, später wieder aufstellen.
+-- Sie gehören zum Raum (der Kampagne); nur der Meister sieht sie – keine Vorschau auf Gegner.
+-- Der Name ist je Raum eindeutig (ohne Groß/klein): erneut speichern aktualisiert die Vorlage.
+create table if not exists public.figure_templates (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms (id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 40),
+  image_path text check (image_path is null or char_length(image_path) <= 200),
+  color text not null default 'rot' check (color in ('rot', 'blau', 'gruen', 'gelb', 'lila', 'grau')),
+  size real not null default 1 check (size in (0.5, 1, 2, 3, 4)),
+  le_max integer check (le_max is null or le_max between 0 and 9999),
+  ini_base integer check (ini_base is null or ini_base between 0 and 99),
+  updated_at timestamptz not null default now()
+);
+create unique index if not exists figure_templates_name on public.figure_templates (room_id, lower(name));
 
 -- -----------------------------------------------------------------------------
 -- Hilfsfunktionen für die Zugriffsregeln
@@ -638,7 +655,57 @@ begin
     from unnest(coalesce(p_paths, '{}'::text[])) as p (path)
     where public.room_of_path(p.path) = p_room_id
       and not exists (select 1 from public.maps m where m.image_path = p.path)
-      and not exists (select 1 from public.tokens t where t.image_path = p.path);
+      and not exists (select 1 from public.tokens t where t.image_path = p.path)
+      and not exists (select 1 from public.figure_templates f where f.image_path = p.path);
+end;
+$$;
+
+-- Meister: Figur als Vorlage speichern. Gibt es den Namen im Raum schon, wird sie aktualisiert.
+create or replace function public.save_figure_template(
+  p_room_id uuid,
+  p_name text,
+  p_color text default 'rot',
+  p_size real default 1,
+  p_le_max integer default null,
+  p_ini_base integer default null,
+  p_image_path text default null
+)
+returns setof public.figure_templates
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_name text := btrim(coalesce(p_name, ''));
+begin
+  perform private.require_user();
+  if not public.is_room_master(p_room_id) then
+    raise exception 'Nur der Meister kann Figuren speichern.' using errcode = '42501';
+  end if;
+  if v_name = '' then
+    raise exception 'Bitte einen Namen eingeben.' using errcode = '22023';
+  end if;
+  if p_image_path is not null and public.room_of_path(p_image_path) is distinct from p_room_id then
+    raise exception 'Das Bild gehört nicht zu diesem Raum.' using errcode = '42501';
+  end if;
+  if (select count(*) from public.figure_templates f where f.room_id = p_room_id) >= 200
+    and not exists (
+      select 1 from public.figure_templates f where f.room_id = p_room_id and lower(f.name) = lower(v_name)
+    ) then
+    raise exception 'Höchstens 200 gespeicherte Figuren je Raum – bitte alte löschen.' using errcode = '54000';
+  end if;
+  return query
+    insert into public.figure_templates as f (room_id, name, color, size, le_max, ini_base, image_path)
+    values (p_room_id, v_name, coalesce(p_color, 'rot'), coalesce(p_size, 1), p_le_max, p_ini_base, p_image_path)
+    on conflict (room_id, (lower(name))) do update
+      set name = excluded.name,
+          color = excluded.color,
+          size = excluded.size,
+          le_max = excluded.le_max,
+          ini_base = excluded.ini_base,
+          image_path = excluded.image_path,
+          updated_at = now()
+    returning f.*;
 end;
 $$;
 
@@ -731,6 +798,7 @@ create policy "Meister kann das Protokoll leeren" on public.rolls
 -- Karten: Meister alle (auch zur Vorbereitung), Spieler nur die gezeigte. Ändern nur der Meister.
 alter table public.maps enable row level security;
 alter table public.tokens enable row level security;
+alter table public.figure_templates enable row level security;
 
 drop policy if exists "Karten sehen" on public.maps;
 create policy "Karten sehen" on public.maps
@@ -797,12 +865,23 @@ create policy "Meister entfernt Figuren" on public.tokens
   for delete to authenticated
   using (public.is_room_master(room_id));
 
+-- Gespeicherte Figuren: nur der Meister (Anlegen und Ändern über save_figure_template()).
+drop policy if exists "Meister sieht gespeicherte Figuren" on public.figure_templates;
+create policy "Meister sieht gespeicherte Figuren" on public.figure_templates
+  for select to authenticated
+  using (public.is_room_master(room_id));
+
+drop policy if exists "Meister löscht gespeicherte Figuren" on public.figure_templates;
+create policy "Meister löscht gespeicherte Figuren" on public.figure_templates
+  for delete to authenticated
+  using (public.is_room_master(room_id));
+
 -- -----------------------------------------------------------------------------
 -- Rechte: nur angemeldete (auch anonyme) Nutzer, nur die nötigen Spalten.
 -- -----------------------------------------------------------------------------
 
 revoke all on public.rooms, public.room_members, public.characters, public.rolls from anon, authenticated;
-revoke all on public.maps, public.tokens from anon, authenticated;
+revoke all on public.maps, public.tokens, public.figure_templates from anon, authenticated;
 
 grant select on public.rooms to authenticated;
 grant update (combat, active_map_id, ping) on public.rooms to authenticated;
@@ -814,6 +893,7 @@ grant insert (id, room_id, map_id, character_id, name, image_path, color, size, 
   on public.tokens to authenticated;
 grant update (character_id, name, image_path, color, size, x, y, hidden, le_current, le_max)
   on public.tokens to authenticated;
+grant select, delete on public.figure_templates to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
@@ -832,6 +912,7 @@ revoke all on function public.room_of_path(text) from public, anon;
 revoke all on function public.move_token(uuid, double precision, double precision) from public, anon;
 revoke all on function public.unused_images(uuid, text[]) from public, anon;
 revoke all on function public.place_own_token(uuid, double precision, double precision, text, text) from public, anon;
+revoke all on function public.save_figure_template(uuid, text, text, real, integer, integer, text) from public, anon;
 
 grant execute on function public.is_room_member(uuid) to authenticated;
 grant execute on function public.is_room_master(uuid) to authenticated;
@@ -844,6 +925,7 @@ grant execute on function public.room_of_path(text) to authenticated;
 grant execute on function public.move_token(uuid, double precision, double precision) to authenticated;
 grant execute on function public.unused_images(uuid, text[]) to authenticated;
 grant execute on function public.place_own_token(uuid, double precision, double precision, text, text) to authenticated;
+grant execute on function public.save_figure_template(uuid, text, text, real, integer, integer, text) to authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Speicher für Kartenbilder und Figurenbilder (Supabase Storage, nicht öffentlich)
@@ -905,7 +987,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 3;
+  select 4;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

@@ -6,6 +6,7 @@
  * Der Meister kann eine Karte vorbereiten, ohne dass die Spieler sie sehen: `viewMapId`
  * ist die Karte, die auf diesem Gerät angezeigt wird, `activeMapId` die für alle gezeigte.
  * Auf der gezeigten Karte kann er Stellen markieren (Ping) – alle sehen sie kurz aufleuchten.
+ * Figuren kann er für später speichern (Vorlagen des Raums) und wieder aufstellen.
  */
 import * as serverApi from './map-api.js';
 import { prepareMapImage, prepareTokenImage } from './image.js';
@@ -24,6 +25,8 @@ import {
   lifeAfterMaxChange,
   createPing,
   normalizePing,
+  parseIniBase,
+  sortTemplates,
   MAX_TOKEN_NAME_LENGTH,
   MAX_MAP_NAME_LENGTH,
 } from './map.js';
@@ -99,6 +102,7 @@ export function createMapController({
     viewMapId: null,
     tokens: [],
     ping: null, // zuletzt markierte Stelle { id, map_id, x, y, own, receivedAt }
+    templates: [], // gespeicherte Figuren des Meisters (erst geladen, wenn er sie braucht)
   });
   let gridTimer = null;
   /** ID des zuletzt gesehenen Pings; undefined, solange die Datenbank keine Pings kennt. */
@@ -357,7 +361,8 @@ export function createMapController({
 
   /**
    * Meister: neue Figur(en) aufstellen.
-   * @param {object} spec  { name, count, characterId, size, color, hidden, imageFile }
+   * @param {object} spec  { name, count, characterId, size, color, hidden, imageFile, imagePath }
+   *                       imagePath: vorhandenes Bild (z. B. einer gespeicherten Figur), wenn keine Datei
    * @param {{ x: number, y: number }} center  Mitte des sichtbaren Kartenausschnitts
    */
   async function addTokens(spec, center) {
@@ -371,7 +376,8 @@ export function createMapController({
     );
     const size = Number(spec.size) || 1;
     const positions = placeTokens(names.length, clampToMap(center, map), size, grid, map, state.get().tokens);
-    const imagePath = spec.imageFile ? await uploadTokenImage(spec.imageFile) : null;
+    const uploaded = spec.imageFile ? await uploadTokenImage(spec.imageFile) : null;
+    const imagePath = uploaded ?? spec.imagePath ?? null;
     const leMax = spec.characterId ? null : parseLife(spec.leMax, 0); // Helden haben ihre LeP im Bogen
     const rows = names.map((name, index) => ({
       room_id: roomId,
@@ -392,9 +398,64 @@ export function createMapController({
       state.update({ tokens: created.reduce(upsertById, state.get().tokens) });
       return created;
     } catch (error) {
-      if (imagePath) api.discardUpload(imagePath).catch(() => {});
+      // Nur ein gerade hochgeladenes Bild wieder löschen – nie das einer gespeicherten Figur.
+      if (uploaded) api.discardUpload(uploaded).catch(() => {});
       throw error;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Gespeicherte Figuren (Vorlagen)
+  // -------------------------------------------------------------------------
+
+  /** Meister: gespeicherte Figuren des Raums laden (nach Namen sortiert). */
+  async function loadTemplates() {
+    if (!isMaster()) return [];
+    const templates = sortTemplates(await api.fetchTemplates(roomId));
+    state.update({ templates });
+    return templates;
+  }
+
+  /**
+   * Meister: Figur für später speichern. Gleicher Name ersetzt die alte; deren Bild wird
+   * aufgeräumt, wenn es nichts mehr benutzt.
+   * @param {object} spec  { name, color, size, leMax, iniBase, imageFile, imagePath }
+   * @returns {Promise<object>} die gespeicherte Figur
+   */
+  async function saveTemplate(spec) {
+    const name = String(spec.name ?? '').trim();
+    if (!name) throw new Error('Bitte einen Namen eingeben.');
+    const previous = state.get().templates.find((entry) => entry.name.toLowerCase() === name.toLowerCase());
+    const uploaded = spec.imageFile ? await uploadTokenImage(spec.imageFile) : null;
+    let saved;
+    try {
+      saved = await api.saveTemplate(roomId, {
+        name,
+        color: spec.color,
+        size: Number(spec.size) || 1,
+        le_max: parseLife(spec.leMax, 0),
+        ini_base: parseIniBase(spec.iniBase),
+        image_path: uploaded ?? spec.imagePath ?? null,
+      });
+    } catch (error) {
+      if (uploaded) api.discardUpload(uploaded).catch(() => {});
+      throw error;
+    }
+    state.update({
+      templates: sortTemplates([...state.get().templates.filter((entry) => entry.id !== saved.id), saved]),
+    });
+    if (previous?.image_path && previous.image_path !== saved.image_path) {
+      await api.removeUnusedImages(roomId, [previous.image_path]).catch(onError);
+    }
+    return saved;
+  }
+
+  /** Meister: gespeicherte Figur löschen (ihr Bild, wenn es nichts mehr benutzt). */
+  async function removeTemplate(templateId) {
+    const template = state.get().templates.find((entry) => entry.id === templateId);
+    await api.deleteTemplate(templateId);
+    state.update({ templates: withoutId(state.get().templates, templateId) });
+    if (template?.image_path) await api.removeUnusedImages(roomId, [template.image_path]).catch(onError);
   }
 
   /**
@@ -639,6 +700,9 @@ export function createMapController({
       moveToken,
       moveTokens,
       ping,
+      loadTemplates,
+      saveTemplate,
+      removeTemplate,
     },
   };
 }
