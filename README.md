@@ -245,7 +245,8 @@ auf dem Server gespeichert und für den Meister sichtbar.
    sieht nur der Meister (z. B. für einen Hinterhalt). Gehört die Figur zu einem Helden, darf dessen
    Spieler sie bewegen; seine LeP stehen dann im Heldenbogen.
 5. **Helden:** stellt alle Helden des Raums auf, die noch fehlen (mit ihrem Bild von einer früheren Karte).
-6. **Figur antippen** wählt sie aus; unter der Karte erscheint ein Panel:
+6. **Figur antippen** wählt sie aus; ihre Werte gleiten als Pop-up über die Karte (am Handy von unten,
+   am PC unten rechts) – die Karte selbst bleibt, wo sie ist:
    - **Held:** LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder direkt eintippen, Zustände
      (Schmerz, Belastung …) hoch- und runtersetzen. Die Änderung landet sofort im Heldenbogen des
      Spielers; trägt er gleichzeitig etwas anderes ein, bleibt beides erhalten. AsP und KaP stehen
@@ -293,11 +294,18 @@ Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort a
   rechts am Rand. Die Zustände sind dort zunächst zugeklappt, damit die Proben Platz haben (das Gerät
   merkt sich, ob man sie offen lässt). Am Handy kommen beide als Schublade: Knopf unten links (zeigt
   LeP/AsP) bzw. **Proben** unten rechts; Tipp auf die eigene Figur öffnet die Werte, × oder Esc schließt.
+- **Meister:** Oben in den Werten steht für jeden Helden im Raum ein Knopf mit Name und LeP – ein Tipp
+  wählt, wessen Werte und Proben dort stehen (derselbe Held wie im Tab **Held**; das Gerät merkt ihn sich).
+  Am Handy öffnen Knöpfe in der Werkzeugleiste (**Helden wählen** bzw. **Werte: Name** und **Proben**) die
+  Schubladen – so liegt über der Karte nichts, was Figuren verdeckt.
 - **Favoriten ☆:** Neben jeder Probe ein Stern – gemerkte Proben (z. B. Angriff und Parade der Waffe,
   Ausweichen) stehen oben unter „★ Favoriten“ und im Kampf als Schnellknöpfe. Sie werden im Helden
   gespeichert, gelten also auf jedem Gerät.
-- **Letzte Würfe** über der Karte, live für alle (gleiche Sichtbarkeit wie im Protokoll): am Handy der
-  neueste („mehr“ zeigt fünf), am PC drei; **Protokoll ›** führt zum ganzen Protokoll.
+- **Letzte Würfe** als Fenster links oben auf der Karte, live für alle (gleiche Sichtbarkeit wie im
+  Protokoll): die letzten acht, neueste oben; **Protokoll ›** führt zum ganzen Protokoll. Mit **×** klickt
+  man das Fenster weg – dann bleibt nur der Knopf **Würfe**, und jeder neue Wurf springt dort ein paar
+  Sekunden als Hinweis auf (Antippen öffnet das Fenster wieder). Anfangs ist das Fenster am PC offen und
+  am Handy zu; das Gerät merkt sich die Wahl. Auch im Vollbild der Karte zu sehen.
 
 **Kampf auf dem Spielbildschirm**
 

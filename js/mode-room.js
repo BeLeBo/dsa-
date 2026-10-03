@@ -534,6 +534,12 @@ export function startRoomMode(initialSession, { onLeave }) {
         await openCharacter(row);
         shell.selectTab(TABS.hero.id);
       }),
+    /** Meister: Held für Werte und Proben auf dem Spielbildschirm wählen (Tab bleibt). */
+    select: (id) =>
+      run('Öffnen fehlgeschlagen', async () => {
+        const row = room.get().characters.find((character) => character.id === id);
+        if (row) await openCharacter(row);
+      }),
   };
 
   function menuItems() {

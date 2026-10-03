@@ -5,6 +5,7 @@
  *    alle Talente nach Gruppen, Zauber/Liturgien, Kampftechniken; zuletzt gewürfelte oben.
  * Breit stehen beide rechts am Rand übereinander (Werte oben, Proben darunter), damit die Karte
  * möglichst viel Platz hat; am Handy kommen sie als Schublade von links bzw. rechts.
+ * Der Meister wählt oben in den Werten, welchen Helden er gerade vor sich hat.
  * Proben laufen über denselben Probendialog wie im Heldenbogen (inkl. Protokoll).
  */
 import { h, icon, ICONS, setChildren } from './dom.js';
@@ -65,15 +66,60 @@ function sideHeader(title, onClose) {
 }
 
 /**
+ * Meister: Welcher Held steht in Werte und Proben? Ein Knopf je Held mit Name und LeP.
+ * @param {object} options
+ * @param {() => {id: string, name: string, le: string}[]} options.heroes  Helden im Raum
+ * @param {() => string|null} options.selectedId      gerade gewählter Held
+ * @param {(id: string) => void} options.onSelect
+ */
+export function createHeroPicker({ heroes, selectedId, onSelect }) {
+  const element = h('div', { class: 'play-hero-picker', role: 'group', 'aria-label': 'Held für Werte und Proben' });
+  let renderedKey = '';
+
+  function render() {
+    const list = heroes();
+    const selected = selectedId();
+    const key = JSON.stringify([list, selected]);
+    if (key === renderedKey) return;
+    renderedKey = key;
+    element.hidden = list.length === 0;
+    setChildren(
+      element,
+      list.map((hero) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: `play-hero-choice ${hero.id === selected ? 'is-selected' : ''}`.trim(),
+            'aria-pressed': String(hero.id === selected),
+            onclick: () => hero.id !== selected && onSelect(hero.id),
+          },
+          h('span', { class: 'play-hero-choice-name' }, hero.name),
+          h('small', {}, `LeP ${hero.le}`),
+        ),
+      ),
+    );
+  }
+
+  return { element, render };
+}
+
+/**
  * Linke Seite: Werte des geöffneten Helden.
  * @param {object} options
  * @param {object} options.store                      Store mit dem geöffneten Helden
  * @param {() => string|null} options.heroId          ID des geöffneten Helden
  * @param {object} options.heroActions                { adjustPool, setPool, setCondition } – mode-room.js
  * @param {() => void} options.onClose                Schublade schließen (Handy)
+ * @param {object} [options.picker]                   Auswahl des Helden (createHeroPicker; nur beim Meister gefüllt)
  */
-export function createVitalsPanel({ store, heroId, heroActions, onClose }) {
+export function createVitalsPanel({ store, heroId, heroActions, onClose, picker = null }) {
   const name = h('p', { class: 'play-hero-name' });
+  const empty = h(
+    'p',
+    { class: 'section-hint', hidden: true },
+    'Wähle einen Helden – seine Werte und Proben stehen dann hier.',
+  );
   const pools = h('div', { class: 'play-pools' });
   const conditionSummary = h('span', { class: 'play-condition-summary' });
   const conditions = h('div', { class: 'play-condition-list' });
@@ -93,6 +139,8 @@ export function createVitalsPanel({ store, heroId, heroActions, onClose }) {
     'aside',
     { class: 'play-side play-side-left', 'aria-label': 'Werte' },
     sideHeader('Werte', onClose),
+    picker?.element,
+    empty,
     name,
     pools,
     conditionBox,
@@ -137,9 +185,16 @@ export function createVitalsPanel({ store, heroId, heroActions, onClose }) {
   }
 
   function render() {
+    picker?.render();
     const hero = store.hero;
     const id = heroId();
-    if (!hero || !id) return;
+    const hasHero = Boolean(hero && id);
+    const picking = Boolean(picker && !picker.element.hidden); // Meister: Name steht schon in der Auswahl
+    name.hidden = !hasHero || picking;
+    empty.hidden = hasHero;
+    pools.hidden = !hasHero;
+    conditionBox.hidden = !hasHero;
+    if (!hasHero) return;
     const key = JSON.stringify([id, heroName(hero), hero.base, hero.conditions, hero.conditionsOff, hero.autoPain]);
     if (key === renderedKey || isTypingIn(element)) return; // Eingabe nicht unterbrechen
     renderedKey = key;

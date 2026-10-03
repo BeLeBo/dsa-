@@ -1,5 +1,5 @@
 /**
- * map-inspector.js – Panel des Meisters unten auf der Karte für die ausgewählten Figuren.
+ * map-inspector.js – Pop-up des Meisters über der Karte für die ausgewählten Figuren (die Karte bleibt stehen).
  *  - Eine Heldenfigur: LeP, AsP, KaP und Schicksalspunkte (−/+ oder eintippen) sowie die
  *    Zustände direkt ändern, Heldenbogen öffnen, Figur bearbeiten oder verbergen.
  *  - Eine Gegner-/NSC-Figur: LeP ändern (auch das Maximum), bearbeiten, verbergen.

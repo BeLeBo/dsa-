@@ -259,53 +259,14 @@ export function createMapStage({
     const size = viewportSize();
     if (!fitted) showStart();
     else if (lastSize) view = panBy(view, (size.width - lastSize.width) / 2, (size.height - lastSize.height) / 2);
-    const shrunk = lastSize && size.height < lastSize.height;
     lastSize = size;
     applyView();
-    if (shrunk) revealSelection(); // z. B. das Panel des Meisters ist unter der Karte aufgegangen
     if (waitingPing) {
       // Die Karte war verdeckt (anderer Tab), als der Ping kam – jetzt zeigen, falls noch aktuell.
       const { point, until } = waitingPing;
       waitingPing = null;
       if (Date.now() < until) showPing(point, { reveal: true, duration: until - Date.now() });
     }
-  }
-
-  /** Schiebt die Karte so, dass die ausgewählten Figuren (samt Namen) zu sehen sind. */
-  function revealSelection() {
-    if (!map || !gridValues || gesture || selected.size === 0) return;
-    const margin = 8;
-    const nameSpace = 18;
-    let box = null;
-    for (const id of selected) {
-      const entry = tokenViews.get(id);
-      if (!entry) continue;
-      const center = mapToScreen(view, entry.position);
-      const radius = (tokenDiameter(entry.token.size, gridValues) * view.scale) / 2 + margin;
-      const bounds = {
-        left: center.x - radius,
-        right: center.x + radius,
-        top: center.y - radius,
-        bottom: center.y + radius + nameSpace,
-      };
-      box = box
-        ? {
-            left: Math.min(box.left, bounds.left),
-            right: Math.max(box.right, bounds.right),
-            top: Math.min(box.top, bounds.top),
-            bottom: Math.max(box.bottom, bounds.bottom),
-          }
-        : bounds;
-    }
-    if (!box) return;
-    const size = viewportSize();
-    // Passt nicht alles hinein, bleibt der Anfang (links/oben) sichtbar.
-    const shift = (low, high, length) => (low < 0 || high - low > length ? -low : high > length ? length - high : 0);
-    const dx = shift(box.left, box.right, size.width);
-    const dy = shift(box.top, box.bottom, size.height);
-    if (dx === 0 && dy === 0) return;
-    view = panBy(view, dx, dy);
-    applyView();
   }
 
   function toggleFullscreen() {
@@ -840,6 +801,11 @@ export function createMapStage({
   viewport.addEventListener('pointercancel', onPointerEnd);
   viewport.addEventListener('wheel', onWheel, { passive: false });
   viewport.addEventListener('contextmenu', (event) => event.preventDefault()); // rechte Taste verschiebt
+  // Der Ausschnitt wird nur über die Ansicht verschoben. Scrollt der Browser ihn doch (Fokus,
+  // scrollIntoView, ältere Browser ohne overflow: clip), passen Karte und Finger nicht mehr zusammen.
+  viewport.addEventListener('scroll', () => {
+    if (viewport.scrollTop || viewport.scrollLeft) viewport.scrollTo(0, 0);
+  });
   element.addEventListener('keydown', onKeyDown);
   document.addEventListener('keydown', (event) => {
     const dialogOpen = Boolean(document.querySelector('dialog[open]')); // Esc schließt dann nur den Dialog

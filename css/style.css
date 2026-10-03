@@ -2079,12 +2079,13 @@ body.map-fullscreen-open {
   overflow: hidden;
 }
 
-/* Die Karte nimmt den Platz über dem Panel des Meisters ein */
+/* Die Karte füllt den Rahmen; das Panel des Meisters liegt als Pop-up darüber */
 .map-viewport {
   position: relative;
   flex: 1 1 auto;
   min-height: 120px;
   overflow: hidden;
+  overflow: clip; /* nie scrollbar – sonst verrutscht die Karte gegen die Fingerposition */
   touch-action: none;
   cursor: grab;
   user-select: none;
@@ -2439,16 +2440,61 @@ body.map-fullscreen-open {
 
 /* Panel des Meisters für ausgewählte Figuren */
 /* Panel des Meisters unter der Karte – verdeckt keine Figuren */
+/* Meister: Werte der ausgewählten Figur als Pop-up über der Karte – die Karte bleibt, wo sie ist.
+   Handy: von unten über die ganze Breite, PC: Karte unten rechts (die Mitte, wo neue Figuren
+   erscheinen, bleibt frei) */
 .map-inspector {
-  position: relative;
-  z-index: 3;
-  flex: none;
-  max-height: 50%;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 6;
+  max-height: 55%;
   overflow-y: auto;
   padding: 8px 12px 12px;
   border-top: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
   background: var(--surface);
-  box-shadow: 0 -2px 10px rgb(0 0 0 / 0.15);
+  box-shadow: 0 -4px 18px rgb(0 0 0 / 0.25);
+  animation: inspector-slide-up 0.18s ease-out;
+}
+
+@keyframes inspector-slide-up {
+  from {
+    transform: translateY(40%);
+    opacity: 0;
+  }
+}
+
+@keyframes inspector-pop {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+@media (min-width: 1000px) {
+  .map-inspector {
+    right: 10px;
+    bottom: 10px;
+    left: auto;
+    width: min(400px, calc(100% - 20px));
+    max-height: 45%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    animation-name: inspector-pop;
+  }
+
+  /* Meister am PC: Werte und Proben stehen neben der Karte – keine Knöpfe dafür nötig */
+  .map-side-button {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-inspector {
+    animation: none;
+  }
 }
 
 .map-frame.is-fullscreen .map-inspector {
@@ -2965,6 +3011,56 @@ a.btn {
   font-size: 1.1rem;
 }
 
+/* Meister: Held für Werte und Proben wählen */
+.play-hero-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.play-hero-choice {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--touch);
+  padding: 2px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.play-hero-choice-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-hero-choice small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.play-hero-choice.is-selected {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.play-hero-choice.is-selected small {
+  color: inherit;
+  opacity: 0.85;
+}
+
 .play-hero-name {
   margin: 0;
   font-weight: 800;
@@ -3204,20 +3300,65 @@ a.btn {
   }
 }
 
-/* Letzte Würfe über der Karte (Handy: nur der neueste, aufklappbar; PC: die letzten drei) */
+/* Letzte Würfe: Fenster links am Kartenrand über der Karte, wegklickbar; zu: Knopf „Würfe“
+   und ein kurzer Hinweis bei jedem neuen Wurf */
 .play-log {
-  margin-bottom: 8px;
-  padding: 4px 10px 6px;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: min(300px, calc(100% - 84px)); /* rechts bleiben die Kartenknöpfe frei */
+  max-height: calc(100% - 20px);
+  pointer-events: none; /* nur die Teile selbst fangen Tipps ab, nicht die leere Fläche */
+}
+
+.play-log > * {
+  pointer-events: auto;
+}
+
+.play-log-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--touch);
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+  cursor: pointer;
+}
+
+.play-log-panel,
+.play-log-peek {
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+}
+
+.play-log-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(60vh, 100%);
+  overflow: hidden;
 }
 
 .play-log-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
+  gap: 4px;
+  padding: 2px 4px 2px 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .play-log-title {
@@ -3229,9 +3370,8 @@ a.btn {
   text-transform: uppercase;
 }
 
-.play-log-toggle,
 .play-log-all {
-  min-height: 32px;
+  min-height: 36px;
   padding: 0 6px;
   border: 0;
   background: none;
@@ -3245,27 +3385,22 @@ a.btn {
 .play-log-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
   list-style: none;
 }
 
 .play-log-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 8px;
-  padding: 2px 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 12px;
+  text-align: left;
 }
 
-.play-log-row:not(:first-child) {
-  display: none;
+.play-log-list > .play-log-row + .play-log-row {
   border-top: 1px solid var(--border);
-}
-
-.play-log.is-expanded .play-log-row {
-  display: flex;
 }
 
 .play-log-row.is-new {
@@ -3281,58 +3416,66 @@ a.btn {
   }
 }
 
+.play-log-meta,
+.play-log-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.play-log-actor {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .play-log-time {
+  margin-left: auto;
   color: var(--muted);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
 
 .play-log-label {
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .play-log-outcome {
-  margin-left: auto;
   font-weight: 800;
   white-space: nowrap;
 }
 
-@media (min-width: 1000px) {
-  .play-log-row:nth-child(-n + 3) {
-    display: flex;
-  }
+/* Hinweis auf einen neuen Wurf (Fenster zu): antippen öffnet, × oder Warten blendet aus */
+.play-log-peek {
+  display: flex;
+  align-items: center;
+  animation: play-log-pop 0.2s ease-out;
 }
 
-/* Handy: nur eine Zeile (neuester Wurf), Knöpfe daneben */
-@media (max-width: 999px) {
-  .play-log:not(.is-expanded) {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
+.play-log-peek-open {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
 
-  .play-log:not(.is-expanded) .play-log-list {
-    flex: 1;
-    min-width: 0;
-  }
+.play-log-peek-open .play-log-row {
+  display: flex;
+}
 
-  .play-log:not(.is-expanded) .play-log-head {
-    order: 2;
-  }
-
-  .play-log:not(.is-expanded) .play-log-title,
-  .play-log:not(.is-expanded) .play-log-time {
-    display: none;
-  }
-
-  .play-log:not(.is-expanded) .play-log-row {
-    flex-wrap: nowrap;
-  }
-
-  .play-log:not(.is-expanded) .play-log-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+@keyframes play-log-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
   }
 }
 

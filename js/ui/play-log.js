@@ -1,14 +1,42 @@
 /**
- * play-log.js – Die letzten Würfe direkt auf dem Spielbildschirm (über der Karte), live:
- * wer, was, Ergebnis. Am Handy nur der neueste (aufklappbar), am PC die letzten drei.
+ * play-log.js – Die letzten Würfe auf dem Spielbildschirm: als Fenster links am Kartenrand über
+ * der Karte, mit × wegzuklicken. Zugeklappt bleibt ein kleiner Knopf „Würfe“; ein neuer Wurf springt
+ * dann kurz als Hinweis auf (verschwindet von selbst, Antippen öffnet das Fenster).
+ * Offen oder zu merkt sich das Gerät (anfangs am PC offen, am Handy zu).
  * Es gelten dieselben Sichtbarkeiten wie im Protokoll (verdeckte Würfe sieht nur der Meister).
  */
-import { h, setChildren } from './dom.js';
+import { h, icon, ICONS, setChildren } from './dom.js';
 import { describeOutcome } from '../format.js';
 import { formatTime } from '../util.js';
+import { readJson, writeJson } from '../storage.js';
 
-/** So viele Würfe zeigt der Streifen aufgeklappt. */
-export const RECENT_ROLLS = 5;
+/** So viele Würfe zeigt das Fenster. */
+export const RECENT_ROLLS = 8;
+/** So lange bleibt der Hinweis auf einen neuen Wurf stehen. */
+export const PEEK_MS = 6000;
+const OPEN_KEY = 'dsa5.karte.wuerfe-offen';
+const WIDE_QUERY = '(min-width: 1000px)';
+
+/** Ein Wurf: wer und wann, darunter was und das Ergebnis. */
+function row(record, tag = 'li', isNew = false) {
+  const { text, tone } = describeOutcome(record.result);
+  return h(
+    tag,
+    { class: `play-log-row ${isNew ? 'is-new' : ''}`.trim(), dataset: { id: record.id } },
+    h(
+      'span',
+      { class: 'play-log-meta' },
+      h('strong', { class: 'play-log-actor' }, record.actor),
+      h('time', { class: 'play-log-time', datetime: record.time }, formatTime(record.time)),
+    ),
+    h(
+      'span',
+      { class: 'play-log-main' },
+      h('span', { class: 'play-log-label' }, record.label),
+      h('span', { class: `play-log-outcome tone-${tone}` }, text),
+    ),
+  );
+}
 
 /**
  * @param {object} options
@@ -16,60 +44,104 @@ export const RECENT_ROLLS = 5;
  * @param {() => void} options.onOpenProtocol     zum Tab „Protokoll“
  */
 export function createRecentRolls({ log, onOpenProtocol }) {
-  let expanded = false;
-  let lastId = null;
+  const stored = readJson(OPEN_KEY, null);
+  let open = typeof stored === 'boolean' ? stored : Boolean(window.matchMedia?.(WIDE_QUERY).matches);
+  let peekTimer = null;
+  let newestShown = null;
+
   const list = h('ol', { class: 'play-log-list', 'aria-live': 'polite' });
-  const toggle = h('button', {
-    type: 'button',
-    class: 'play-log-toggle',
-    'aria-expanded': 'false',
-    onclick: () => {
-      expanded = !expanded;
-      render();
+  const openButton = h(
+    'button',
+    {
+      type: 'button',
+      class: 'play-log-open',
+      'aria-expanded': 'false',
+      'aria-label': 'Letzte Würfe zeigen',
+      onclick: () => setOpen(true),
     },
-  });
-  const element = h(
-    'section',
-    { class: 'play-log', 'aria-label': 'Letzte Würfe' },
+    icon(ICONS.log),
+    h('span', {}, 'Würfe'),
+  );
+  const panel = h(
+    'div',
+    { class: 'play-log-panel' },
     h(
       'div',
       { class: 'play-log-head' },
       h('span', { class: 'play-log-title' }, 'Letzte Würfe'),
-      toggle,
       h('button', { type: 'button', class: 'play-log-all', onclick: onOpenProtocol }, 'Protokoll ›'),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'icon-button play-log-close',
+          'aria-label': 'Letzte Würfe schließen',
+          onclick: () => setOpen(false),
+        },
+        icon(ICONS.close),
+      ),
     ),
     list,
   );
+  const peekBody = h('button', {
+    type: 'button',
+    class: 'play-log-peek-open',
+    'aria-label': 'Neuer Wurf – alle letzten Würfe zeigen',
+    onclick: () => setOpen(true),
+  });
+  const peek = h(
+    'div',
+    { class: 'play-log-peek', role: 'status', hidden: true },
+    peekBody,
+    h(
+      'button',
+      { type: 'button', class: 'icon-button play-log-close', 'aria-label': 'Hinweis schließen', onclick: hidePeek },
+      icon(ICONS.close),
+    ),
+  );
+  const element = h('section', { class: 'play-log', 'aria-label': 'Letzte Würfe' }, openButton, peek, panel);
 
-  function row(record, isNew) {
-    const { text, tone } = describeOutcome(record.result);
-    return h(
-      'li',
-      { class: `play-log-row ${isNew ? 'is-new' : ''}`.trim(), dataset: { id: record.id } },
-      h('time', { class: 'play-log-time', datetime: record.time }, formatTime(record.time)),
-      h('strong', { class: 'play-log-actor' }, record.actor),
-      h('span', { class: 'play-log-label' }, record.label),
-      h('span', { class: `play-log-outcome tone-${tone}` }, text),
-    );
+  function hidePeek() {
+    clearTimeout(peekTimer);
+    peek.hidden = true;
+  }
+
+  function showPeek(record) {
+    setChildren(peekBody, row(record, 'span', true));
+    peek.hidden = false;
+    clearTimeout(peekTimer);
+    peekTimer = setTimeout(hidePeek, PEEK_MS);
+  }
+
+  function setOpen(value) {
+    open = value;
+    writeJson(OPEN_KEY, open);
+    if (open) hidePeek();
+    render();
   }
 
   function render() {
     const entries = log.entries().slice(0, RECENT_ROLLS);
     element.hidden = entries.length === 0;
-    element.classList.toggle('is-expanded', expanded);
-    toggle.textContent = expanded ? 'weniger ▴' : 'mehr ▾';
-    toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.hidden = entries.length < 2;
+    element.classList.toggle('is-open', open);
+    panel.hidden = !open;
+    openButton.hidden = open;
+    openButton.setAttribute('aria-expanded', String(open));
     const newest = entries[0]?.id ?? null;
-    const isNew = newest !== null && lastId !== null && newest !== lastId;
-    lastId = newest;
+    const isNew = newest !== null && newestShown !== null && newest !== newestShown;
+    newestShown = newest;
     setChildren(
       list,
-      entries.map((record, index) => row(record, isNew && index === 0)),
+      entries.map((record, index) => row(record, 'li', isNew && index === 0)),
     );
   }
 
-  log.subscribe(render);
+  log.subscribe((entries, change) => {
+    render();
+    // Neuer Wurf (nicht beim Laden), den man sehen darf: bei zugeklapptem Fenster kurz aufspringen.
+    const added = change?.added;
+    if (!open && added && log.entries().some((record) => record.id === added.id)) showPeek(added);
+  });
   render();
   return { element, render };
 }

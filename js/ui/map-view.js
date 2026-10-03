@@ -12,7 +12,7 @@ import { openMapsDialog, openTokenDialog, openOwnTokenDialog } from './map-dialo
 import { mapTabs } from '../room-map.js';
 import { heroName } from '../sheet.js';
 import { createMapInspector } from './map-inspector.js';
-import { createVitalsPanel, createChecksPanel, poolSummary } from './play-panels.js';
+import { createVitalsPanel, createChecksPanel, createHeroPicker, poolSummary } from './play-panels.js';
 import { createRecentRolls } from './play-log.js';
 import { createCombatStrip } from './play-combat.js';
 import { confirmDialog } from './dialog.js';
@@ -239,14 +239,34 @@ export function createMapView(
 
   // Spielbildschirm: Karte so groß wie möglich, Werte und Proben rechts am Rand übereinander.
   // Am Handy kommen sie als Schublade von links bzw. rechts (Knöpfe unten).
-  const vitals = createVitalsPanel({ store, heroId: openHeroId, heroActions, onClose: () => openDrawer(null) });
+  // Meister: Welcher Held steht in Werte und Proben? (Spieler haben nur den eigenen.)
+  const heroPicker = createHeroPicker({
+    heroes: () =>
+      isMaster()
+        ? room.get().characters.map(({ id }) => {
+            const hero = heroFor(id);
+            return { id, name: heroName(hero), le: `${hero.base.le.current}/${hero.base.le.max}` };
+          })
+        : [],
+    selectedId: openHeroId,
+    onSelect: (id) => heroActions.select(id),
+  });
+  const vitals = createVitalsPanel({
+    store,
+    heroId: openHeroId,
+    heroActions,
+    onClose: () => openDrawer(null),
+    picker: heroPicker,
+  });
   const checks = createChecksPanel({
     store,
     openCheck,
     onToggleFavorite: (key) => heroActions.toggleFavorite(openHeroId(), key),
     onClose: () => openDrawer(null),
   });
+  // Letzte Würfe: Fenster links am Kartenrand über der Karte (auch im Vollbild).
   const recentRolls = createRecentRolls({ log, onOpenProtocol: showProtocol });
+  stage.element.append(recentRolls.element);
   const combatStrip = createCombatStrip({
     room,
     isMaster,
@@ -283,21 +303,31 @@ export function createMapView(
     checks.element.classList.toggle('is-open', side === 'right');
     vitalsToggle.setAttribute('aria-expanded', String(side === 'left'));
     checksToggle.setAttribute('aria-expanded', String(side === 'right'));
+    for (const button of toolbar.querySelectorAll('.map-side-button')) {
+      button.setAttribute('aria-expanded', String(button.dataset.side === side));
+    }
   }
 
-  /** Seiten des Spielbildschirms und – beim Meister – das Panel der Auswahl unter der Karte. */
+  /** Seiten des Spielbildschirms und – beim Meister – das Pop-up der Auswahl über der Karte. */
   function renderPanels() {
     inspector.render();
     const hasHero = Boolean(store.hero && openHeroId());
-    game.classList.toggle('has-hero', hasHero);
-    for (const element of [vitals.element, checks.element, vitalsToggle, checksToggle]) element.hidden = !hasHero;
-    if (!hasHero) {
-      openDrawer(null);
-      return;
-    }
+    // Der Meister sieht die Seite, sobald es Helden gibt – oben wählt er, welchen.
+    const showSide = hasHero || (isMaster() && room.get().characters.length > 0);
+    game.classList.toggle('has-hero', showSide);
+    vitals.element.hidden = !showSide;
+    checks.element.hidden = !hasHero;
+    // Schwebende Knöpfe am Handy nur für Spieler – der Meister hat sie in der Werkzeugleiste.
+    vitalsToggle.hidden = !showSide || isMaster();
+    checksToggle.hidden = !hasHero || isMaster();
+    if (!showSide || (!hasHero && drawer === 'right')) openDrawer(null);
+    if (!showSide) return;
     vitals.render();
-    checks.render();
-    setChildren(vitalsToggle, h('span', { class: 'play-toggle-label' }, poolSummary(store.hero)));
+    if (hasHero) checks.render();
+    setChildren(
+      vitalsToggle,
+      h('span', { class: 'play-toggle-label' }, hasHero ? poolSummary(store.hero) : 'Helden wählen'),
+    );
   }
   const tabStrip = h('div', { class: 'map-tabs', role: 'tablist', 'aria-label': 'Geöffnete Karten' });
   const toolbar = h('div', { class: 'map-toolbar' });
@@ -307,7 +337,7 @@ export function createMapView(
     renderToolbar(controller.viewMap());
     layout();
   });
-  const center = h('div', { class: 'map-center' }, recentRolls.element, stage.element, message);
+  const center = h('div', { class: 'map-center' }, stage.element, message);
   const game = h('div', { class: 'map-game' }, vitals.element, center, checks.element, vitalsToggle, checksToggle);
   panel.append(tabStrip, toolbar, notice, combatStrip.element, gridPanel.element, game);
   document.addEventListener('keydown', (event) => {
@@ -373,11 +403,49 @@ export function createMapView(
     openOwnTokenDialog({ controller, heroName: heroName(store.hero), center: stage.visibleCenter });
   }
 
+  /**
+   * Meister am Handy: Werte und Proben über Knöpfe in der Werkzeugleiste (statt schwebend über der
+   * Karte, wo sie Figuren verdecken würden). Am PC stehen die Seiten ohnehin neben der Karte.
+   */
+  function sideButtons(hasHeroes) {
+    if (!isMaster() || !hasHeroes) return [];
+    const heroOpen = Boolean(store.hero && openHeroId());
+    const sideButton = (side, label) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn map-side-button',
+          dataset: { side },
+          'aria-expanded': String(drawer === side),
+          onclick: () => openDrawer(drawer === side ? null : side),
+        },
+        label,
+      );
+    return [
+      sideButton('left', heroOpen ? `Werte: ${heroName(store.hero)}` : 'Helden wählen'),
+      heroOpen ? sideButton('right', 'Proben') : null,
+    ];
+  }
+
   function renderToolbar(map) {
     const hasHeroes = room.get().characters.length > 0;
     const canPlace = canPlaceOwnToken(map);
     const combatRunning = Boolean(room.get().combat);
-    if (!changed('toolbar', map?.id, map?.name, isMaster(), gridPanel.isOpen(), hasHeroes, canPlace, combatRunning))
+    const heroLabel = isMaster() && store.hero && openHeroId() ? heroName(store.hero) : null;
+    if (
+      !changed(
+        'toolbar',
+        map?.id,
+        map?.name,
+        isMaster(),
+        gridPanel.isOpen(),
+        hasHeroes,
+        canPlace,
+        combatRunning,
+        heroLabel,
+      )
+    )
       return;
     // Meister: Kampf mit einem Knopf – auch ohne Karte.
     const combatButton =
@@ -389,7 +457,7 @@ export function createMapView(
           )
         : null;
     if (!map) {
-      setChildren(toolbar, combatButton);
+      setChildren(toolbar, sideButtons(hasHeroes), combatButton);
       return;
     }
     if (!isMaster()) {
@@ -413,6 +481,7 @@ export function createMapView(
       ),
       hasHeroes ? toolButton('Helden', addHeroes) : null,
       combatButton,
+      sideButtons(hasHeroes),
     );
   }
 
