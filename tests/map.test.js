@@ -402,6 +402,16 @@ function fakeApi(overrides = {}) {
       db.templates = [...db.templates.filter((entry) => entry.id !== saved.id), saved];
       return { ...saved };
     },
+    updateTemplate: async (templateId, template) => {
+      calls.push(['updateTemplate', templateId, template]);
+      const clash = db.templates.find(
+        (entry) => entry.id !== templateId && entry.name.toLowerCase() === template.name.toLowerCase(),
+      );
+      if (clash) throw new Error(`Es gibt schon eine gespeicherte Figur „${template.name}“.`);
+      const saved = { ...db.templates.find((entry) => entry.id === templateId), ...template };
+      db.templates = db.templates.map((entry) => (entry.id === templateId ? saved : entry));
+      return { ...saved };
+    },
     deleteTemplate: async (templateId) => {
       calls.push(['deleteTemplate', templateId]);
       db.templates = db.templates.filter((entry) => entry.id !== templateId);
@@ -1081,3 +1091,78 @@ test(CONTROLLER, 'Gespeicherte Figuren: nur für den Meister', async () => {
   assertEqual(controller.state.get().templates, []);
   cleanup();
 });
+
+test(CONTROLLER, 'Gespeicherte Figur bearbeiten: umbenennen, Werte, neues Bild ersetzt das alte', async () => {
+  const { controller, api, cleanup } = mapController();
+  const orc = await controller.actions.saveTemplate({
+    name: 'Ork',
+    color: 'rot',
+    size: 1,
+    leMax: '25',
+    imagePath: 'raum/ork.webp',
+  });
+  await controller.actions.saveTemplate({ name: 'Wolf', color: 'grau', size: 1, leMax: '15' });
+  const edited = await controller.actions.editTemplate(orc.id, {
+    name: ' Ork-Häuptling ',
+    color: 'gruen',
+    size: '2',
+    leMax: '45',
+    iniBase: '14',
+    imageFile: new Blob(['x'], { type: 'image/png' }),
+  });
+  assertEqual(
+    [edited.id, edited.name, edited.color, edited.size, edited.le_max, edited.ini_base, edited.image_path],
+    [orc.id, 'Ork-Häuptling', 'gruen', 2, 45, 14, 'raum/neu.webp'],
+  );
+  assertEqual(
+    controller.state.get().templates.map((t) => t.name),
+    ['Ork-Häuptling', 'Wolf'],
+    'Liste aktuell, sortiert',
+  );
+  assertEqual(api.calls.at(-1), ['removeUnusedImages', ['raum/ork.webp']], 'altes Bild aufräumen');
+  const kept = await controller.actions.editTemplate(orc.id, {
+    name: 'Ork-Häuptling',
+    color: 'gruen',
+    size: 2,
+    leMax: '45',
+  });
+  assertEqual(kept.image_path, 'raum/neu.webp', 'ohne neues Bild bleibt das Bild');
+  const removed = await controller.actions.editTemplate(orc.id, {
+    name: 'Ork-Häuptling',
+    color: 'gruen',
+    size: 2,
+    removeImage: true,
+  });
+  assertEqual([removed.image_path, removed.le_max], [null, null], 'Bild entfernt, LeP leer');
+  assertEqual(api.calls.at(-1), ['removeUnusedImages', ['raum/neu.webp']]);
+  cleanup();
+});
+
+test(
+  CONTROLLER,
+  'Gespeicherte Figur bearbeiten: vorhandener Name wird abgelehnt, neues Bild wieder gelöscht',
+  async () => {
+    const { controller, api, cleanup } = mapController();
+    const orc = await controller.actions.saveTemplate({ name: 'Ork', color: 'rot', size: 1 });
+    await controller.actions.saveTemplate({ name: 'Wolf', color: 'grau', size: 1 });
+    let message = '';
+    try {
+      await controller.actions.editTemplate(orc.id, {
+        name: 'wolf',
+        color: 'rot',
+        size: 1,
+        imageFile: new Blob(['x'], { type: 'image/png' }),
+      });
+    } catch (error) {
+      message = error.message;
+    }
+    assertTrue(message.includes('schon eine gespeicherte Figur'), message);
+    assertEqual(api.calls.at(-1), ['discardUpload', 'raum/neu.webp'], 'gerade hochgeladenes Bild wieder weg');
+    assertEqual(
+      controller.state.get().templates.map((t) => t.name),
+      ['Ork', 'Wolf'],
+      'nichts geändert',
+    );
+    cleanup();
+  },
+);

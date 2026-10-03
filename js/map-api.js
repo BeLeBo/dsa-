@@ -85,6 +85,23 @@ export async function saveTemplate(roomId, template) {
   return requireRows(rows, 'Nur der Meister kann Figuren speichern.')[0];
 }
 
+/** Meister: gespeicherte Figur bearbeiten (auch umbenennen). */
+export async function updateTemplate(templateId, template) {
+  const client = await getClient();
+  const rows = await unwrap(
+    client.rpc('update_figure_template', {
+      p_template_id: templateId,
+      p_name: template.name,
+      p_color: template.color,
+      p_size: template.size,
+      p_le_max: template.le_max,
+      p_ini_base: template.ini_base,
+      p_image_path: template.image_path,
+    }),
+  );
+  return requireRows(rows, 'Diese gespeicherte Figur gibt es nicht (mehr).')[0];
+}
+
 export async function deleteTemplate(templateId) {
   const client = await getClient();
   const rows = await unwrap(client.from('figure_templates').delete().eq('id', templateId).select('id'));

@@ -2839,6 +2839,7 @@ body.map-fullscreen-open {
   object-fit: cover;
 }
 
+.figure-template-edit,
 .figure-template-remove {
   flex: none;
   color: var(--muted);

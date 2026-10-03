@@ -450,6 +450,41 @@ export function createMapController({
     return saved;
   }
 
+  /**
+   * Meister: gespeicherte Figur bearbeiten – auch umbenennen. Ein neues oder entferntes Bild:
+   * das alte wird aufgeräumt, wenn es nichts mehr benutzt.
+   * @param {string} templateId
+   * @param {object} spec  { name, color, size, leMax, iniBase, imageFile, removeImage }
+   */
+  async function editTemplate(templateId, spec) {
+    const current = state.get().templates.find((entry) => entry.id === templateId);
+    if (!current) throw new Error('Diese gespeicherte Figur gibt es nicht (mehr).');
+    const name = String(spec.name ?? '').trim();
+    if (!name) throw new Error('Bitte einen Namen eingeben.');
+    const uploaded = spec.imageFile ? await uploadTokenImage(spec.imageFile) : null;
+    let saved;
+    try {
+      saved = await api.updateTemplate(templateId, {
+        name,
+        color: spec.color,
+        size: Number(spec.size) || 1,
+        le_max: parseLife(spec.leMax, 0),
+        ini_base: parseIniBase(spec.iniBase),
+        image_path: uploaded ?? (spec.removeImage ? null : current.image_path),
+      });
+    } catch (error) {
+      if (uploaded) api.discardUpload(uploaded).catch(() => {});
+      throw error;
+    }
+    state.update({
+      templates: sortTemplates(state.get().templates.map((entry) => (entry.id === templateId ? saved : entry))),
+    });
+    if (current.image_path && current.image_path !== saved.image_path) {
+      await api.removeUnusedImages(roomId, [current.image_path]).catch(onError);
+    }
+    return saved;
+  }
+
   /** Meister: gespeicherte Figur löschen (ihr Bild, wenn es nichts mehr benutzt). */
   async function removeTemplate(templateId) {
     const template = state.get().templates.find((entry) => entry.id === templateId);
@@ -702,6 +737,7 @@ export function createMapController({
       ping,
       loadTemplates,
       saveTemplate,
+      editTemplate,
       removeTemplate,
     },
   };

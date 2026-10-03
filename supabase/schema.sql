@@ -709,6 +709,57 @@ begin
 end;
 $$;
 
+-- Meister: gespeicherte Figur bearbeiten (auch umbenennen). Ein Name, den schon eine andere
+-- gespeicherte Figur im Raum hat, wird abgelehnt.
+create or replace function public.update_figure_template(
+  p_template_id uuid,
+  p_name text,
+  p_color text default 'rot',
+  p_size real default 1,
+  p_le_max integer default null,
+  p_ini_base integer default null,
+  p_image_path text default null
+)
+returns setof public.figure_templates
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_room uuid;
+  v_name text := btrim(coalesce(p_name, ''));
+begin
+  perform private.require_user();
+  select f.room_id into v_room from public.figure_templates f where f.id = p_template_id;
+  if v_room is null or not public.is_room_master(v_room) then
+    raise exception 'Diese gespeicherte Figur gibt es nicht (mehr).' using errcode = 'P0002';
+  end if;
+  if v_name = '' then
+    raise exception 'Bitte einen Namen eingeben.' using errcode = '22023';
+  end if;
+  if p_image_path is not null and public.room_of_path(p_image_path) is distinct from v_room then
+    raise exception 'Das Bild gehört nicht zu diesem Raum.' using errcode = '42501';
+  end if;
+  if exists (
+    select 1 from public.figure_templates f
+    where f.room_id = v_room and lower(f.name) = lower(v_name) and f.id <> p_template_id
+  ) then
+    raise exception 'Es gibt schon eine gespeicherte Figur „%“.', v_name using errcode = '23505';
+  end if;
+  return query
+    update public.figure_templates f
+    set name = v_name,
+        color = coalesce(p_color, 'rot'),
+        size = coalesce(p_size, 1),
+        le_max = p_le_max,
+        ini_base = p_ini_base,
+        image_path = p_image_path,
+        updated_at = now()
+    where f.id = p_template_id
+    returning f.*;
+end;
+$$;
+
 -- -----------------------------------------------------------------------------
 -- Row Level Security
 -- -----------------------------------------------------------------------------
@@ -865,7 +916,7 @@ create policy "Meister entfernt Figuren" on public.tokens
   for delete to authenticated
   using (public.is_room_master(room_id));
 
--- Gespeicherte Figuren: nur der Meister (Anlegen und Ändern über save_figure_template()).
+-- Gespeicherte Figuren: nur der Meister (Anlegen und Ändern über save_/update_figure_template()).
 drop policy if exists "Meister sieht gespeicherte Figuren" on public.figure_templates;
 create policy "Meister sieht gespeicherte Figuren" on public.figure_templates
   for select to authenticated
@@ -913,6 +964,7 @@ revoke all on function public.move_token(uuid, double precision, double precisio
 revoke all on function public.unused_images(uuid, text[]) from public, anon;
 revoke all on function public.place_own_token(uuid, double precision, double precision, text, text) from public, anon;
 revoke all on function public.save_figure_template(uuid, text, text, real, integer, integer, text) from public, anon;
+revoke all on function public.update_figure_template(uuid, text, text, real, integer, integer, text) from public, anon;
 
 grant execute on function public.is_room_member(uuid) to authenticated;
 grant execute on function public.is_room_master(uuid) to authenticated;
@@ -926,6 +978,7 @@ grant execute on function public.move_token(uuid, double precision, double preci
 grant execute on function public.unused_images(uuid, text[]) to authenticated;
 grant execute on function public.place_own_token(uuid, double precision, double precision, text, text) to authenticated;
 grant execute on function public.save_figure_template(uuid, text, text, real, integer, integer, text) to authenticated;
+grant execute on function public.update_figure_template(uuid, text, text, real, integer, integer, text) to authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Speicher für Kartenbilder und Figurenbilder (Supabase Storage, nicht öffentlich)
@@ -987,7 +1040,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 4;
+  select 5;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

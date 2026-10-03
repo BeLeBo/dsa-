@@ -2,7 +2,7 @@
  * map-dialogs.js – Dialoge des Meisters für die Karte: Karten verwalten (hochladen, zeigen,
  * umbenennen, löschen) und Figuren aufstellen oder bearbeiten – auch aus gespeicherten Figuren.
  */
-import { h, setChildren } from './dom.js';
+import { h, icon, ICONS, setChildren } from './dom.js';
 import { openDialog, confirmDialog } from './dialog.js';
 import { showToast, showError } from './toast.js';
 import {
@@ -310,6 +310,132 @@ function templateDetails(template) {
     .join(' · ');
 }
 
+/** Gespeicherte Figur nach Rückfrage löschen. @returns {Promise<boolean>} gelöscht? */
+async function removeTemplateAfterConfirm(controller, template) {
+  if (
+    !(await confirmDialog(`Gespeicherte Figur „${template.name}“ löschen?`, { confirmLabel: 'Löschen', danger: true }))
+  )
+    return false;
+  try {
+    await controller.actions.removeTemplate(template.id);
+    return true;
+  } catch (error) {
+    showError(error, 'Nicht gelöscht');
+    return false;
+  }
+}
+
+/**
+ * Meister: gespeicherte Figur bearbeiten – Name (auch umbenennen), LeP, INI-Basis, Größe, Farbe,
+ * Bild. Figuren, die schon auf einer Karte stehen, bleiben, wie sie sind.
+ * @param {object} options
+ * @param {object} options.controller
+ * @param {object} options.template
+ * @param {(saved: object|null, previous: object) => void} options.onChange  gespeichert (null = gelöscht)
+ */
+function openTemplateDialog({ controller, template, onChange }) {
+  const dialog = openDialog({ title: 'Gespeicherte Figur bearbeiten' });
+  const values = { color: template.color, removeImage: false };
+  const nameInput = h('input', {
+    type: 'text',
+    value: template.name,
+    maxlength: MAX_TOKEN_NAME_LENGTH,
+    autocomplete: 'off',
+  });
+  const lifeInput = h('input', {
+    type: 'number',
+    class: 'num',
+    inputmode: 'numeric',
+    min: 0,
+    max: MAX_TOKEN_LIFE,
+    value: template.le_max ?? '',
+    placeholder: 'z. B. 30',
+    'aria-label': 'Lebensenergie (LeP)',
+  });
+  const iniInput = h('input', {
+    type: 'number',
+    class: 'num',
+    inputmode: 'numeric',
+    min: 0,
+    max: MAX_INI_BASE,
+    value: template.ini_base ?? '',
+    placeholder: 'z. B. 12',
+    'aria-label': 'INI-Basis',
+  });
+  const sizeSelect = h(
+    'select',
+    {},
+    TOKEN_SIZES.map((size) =>
+      h('option', { value: String(size.value), selected: size.value === template.size }, size.name),
+    ),
+  );
+  const colors = colorPicker(values.color, (id) => (values.color = id));
+  const picker = imagePicker(template.image_path ? 'Neues Bild' : 'Bild (optional)', 'Wird quadratisch zugeschnitten.');
+
+  setChildren(
+    dialog.body,
+    h(
+      'div',
+      { class: 'figure-template-image' },
+      templateFace(template),
+      h('span', {}, 'Figuren, die schon auf einer Karte stehen, bleiben, wie sie sind.'),
+    ),
+    field('Name', nameInput),
+    field('Lebensenergie (LeP)', lifeInput, 'Jede neue Figur startet mit vollen LeP. Leer = ohne LeP.'),
+    field('INI-Basis (Kampf)', iniInput, 'Steht im Kampf bei „+ Gegner“ schon drin. Leer = später.'),
+    field('Größe', sizeSelect),
+    h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Farbe'), colors.element),
+    picker.element,
+    template.image_path
+      ? h(
+          'label',
+          { class: 'check' },
+          h('input', { type: 'checkbox', onchange: (event) => (values.removeImage = event.target.checked) }),
+          h('span', {}, 'Bild entfernen (Kürzel statt Bild)'),
+        )
+      : null,
+  );
+
+  async function save() {
+    try {
+      const saved = await controller.actions.editTemplate(template.id, {
+        name: nameInput.value,
+        color: values.color,
+        size: sizeSelect.value,
+        leMax: lifeInput.value,
+        iniBase: iniInput.value,
+        imageFile: picker.input.files[0] ?? null,
+        removeImage: values.removeImage,
+      });
+      dialog.close();
+      onChange(saved, template);
+      showToast(`„${saved.name}“ gespeichert.`);
+    } catch (error) {
+      showError(error, 'Nicht gespeichert');
+    }
+  }
+
+  setChildren(
+    dialog.footer,
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn-danger-outline',
+        onclick: async () => {
+          if (!(await removeTemplateAfterConfirm(controller, template))) return;
+          dialog.close();
+          onChange(null, template);
+        },
+      },
+      'Löschen',
+    ),
+    h('button', { type: 'button', class: 'btn', onclick: () => dialog.close() }, 'Abbrechen'),
+    busyButton('Speichern', 'speichert …', save, 'btn btn-primary'),
+  );
+  nameInput.focus();
+}
+
 /**
  * Meister: Figur aufstellen (token = null) oder bearbeiten.
  * Beim Aufstellen stehen oben die gespeicherten Figuren: antippen füllt alles aus (Name, LeP,
@@ -437,6 +563,13 @@ export function openTokenDialog({ controller, token = null, characters, center }
     countInput.focus();
     countInput.select();
   }
+  /** Eine gespeicherte Figur wurde bearbeitet oder gelöscht (saved = null). */
+  function templateChanged(saved, previous) {
+    // Steht ihr altes Bild gerade im Formular, das neue nehmen (das alte ist evtl. schon gelöscht).
+    if (previous.image_path && values.imagePath === previous.image_path) showTemplateImage(saved);
+    renderTemplates(controller.state.get().templates);
+  }
+
   function renderTemplates(templates) {
     templateList.hidden = templates.length === 0;
     setChildren(
@@ -469,22 +602,20 @@ export function openTokenDialog({ controller, token = null, characters, center }
               'button',
               {
                 type: 'button',
+                class: 'icon-button figure-template-edit',
+                'aria-label': `Gespeicherte Figur „${template.name}“ bearbeiten`,
+                onclick: () => openTemplateDialog({ controller, template, onChange: templateChanged }),
+              },
+              icon(ICONS.edit),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
                 class: 'icon-button figure-template-remove',
                 'aria-label': `Gespeicherte Figur „${template.name}“ löschen`,
                 onclick: async () => {
-                  if (
-                    !(await confirmDialog(`Gespeicherte Figur „${template.name}“ löschen?`, {
-                      confirmLabel: 'Löschen',
-                      danger: true,
-                    }))
-                  )
-                    return;
-                  try {
-                    await controller.actions.removeTemplate(template.id);
-                    renderTemplates(controller.state.get().templates);
-                  } catch (error) {
-                    showError(error, 'Nicht gelöscht');
-                  }
+                  if (await removeTemplateAfterConfirm(controller, template)) templateChanged(null, template);
                 },
               },
               '×',

@@ -251,7 +251,9 @@ auf dem Server gespeichert und für den Meister sichtbar.
    **Gespeicherte Figuren:** **Für später merken** speichert die eingetragene Figur (Name, LeP,
    INI-Basis, Größe, Farbe, Bild) – auch aus **Figur bearbeiten** (dann ohne Nummer, z. B. „Ork“).
    Beim nächsten **+ Figur** stehen sie oben: ein Tipp füllt alles aus, Anzahl wählen, **Aufstellen**.
-   Gleicher Name ersetzt die alte, × löscht. Sie gehören zum Raum (der Kampagne), liegen auf dem Server
+   **✎** öffnet sie zum Bearbeiten (Name – auch umbenennen –, LeP, INI-Basis, Größe, Farbe, Bild ändern
+   oder entfernen; Figuren, die schon auf einer Karte stehen, bleiben, wie sie sind). Gleicher Name beim
+   Merken ersetzt die alte, × löscht. Sie gehören zum Raum (der Kampagne), liegen auf dem Server
    und sind auf jedem Gerät des Meisters da; Spieler sehen sie nicht. Die **INI-Basis** steht im Kampf
    bei **+ Gegner** schon drin.
 5. **Helden:** stellt alle Helden des Raums auf, die noch fehlen (mit ihrem Bild von einer früheren Karte).
