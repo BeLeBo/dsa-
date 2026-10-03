@@ -65,7 +65,11 @@ function initiativeRow(entry, position, { isCurrent, editing, isMine, actions })
   );
 }
 
-function npcForm(actions) {
+/**
+ * Formular „Gegner / NSC“. Die Gruppenansicht legt es einmal an und setzt es bei jedem Neuaufbau
+ * wieder ein – so gehen halb eingetippte Werte nicht verloren, wenn live etwas hereinkommt.
+ */
+export function createNpcForm(actions) {
   const form = h(
     'form',
     {
@@ -141,8 +145,17 @@ function missingHeroes(combat, characters, actions) {
  * @param {string|null} options.myCharacterId eigener Held (für „Du bist am Zug“)
  * @param {boolean} options.editing       Meister: Werte anpassen und Einträge entfernen
  * @param {object} options.actions  { start, end, next, previous, adjust, remove, addNpc, rollHero, rollAllHeroes, toggleEditing }
+ * @param {HTMLFormElement} [options.npcForm]  bleibendes Formular „Gegner / NSC“ (createNpcForm)
  */
-export function renderCombatCard({ combat, isMaster, characters, myCharacterId, editing = false, actions }) {
+export function renderCombatCard({
+  combat,
+  isMaster,
+  characters,
+  myCharacterId,
+  editing = false,
+  actions,
+  npcForm = null,
+}) {
   if (!combat) {
     if (!isMaster) return null;
     return h(
@@ -207,7 +220,7 @@ export function renderCombatCard({ combat, isMaster, characters, myCharacterId, 
         )
       : null,
     isMaster ? missingHeroes(combat, characters, actions) : null,
-    isMaster ? npcForm(actions) : null,
+    isMaster ? (npcForm ?? createNpcForm(actions)) : null,
     isMaster
       ? h(
           'button',

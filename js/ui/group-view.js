@@ -4,7 +4,7 @@
  */
 import { h, setChildren } from './dom.js';
 import { confirmDialog } from './dialog.js';
-import { renderCombatCard } from './combat-view.js';
+import { renderCombatCard, createNpcForm } from './combat-view.js';
 import { ROLE_NAMES, ROLES } from '../room.js';
 import { heroName, normalizeHero, describeConditions } from '../sheet.js';
 
@@ -80,6 +80,8 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
       render();
     },
   };
+  // Bleibt über jeden Neuaufbau erhalten (live kommen ständig Änderungen der Helden herein).
+  const npcForm = createNpcForm(combatViewActions);
 
   function memberName(members, userId) {
     return members.find((member) => member.user_id === userId)?.display_name ?? 'niemand';
@@ -157,7 +159,33 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
     );
   }
 
+  /** Fokus im Formular „Gegner / NSC“ merken, damit Tippen nach dem Neuaufbau weitergeht. */
+  function focusInForm() {
+    const active = document.activeElement;
+    if (!active || !npcForm.contains(active)) return null;
+    let selection = null;
+    try {
+      selection = [active.selectionStart, active.selectionEnd];
+    } catch {
+      selection = null; // Zahlenfelder kennen keine Auswahl
+    }
+    return { active, selection };
+  }
+
+  function restoreFocus(saved) {
+    if (!saved || !saved.active.isConnected || document.activeElement === saved.active) return;
+    saved.active.focus({ preventScroll: true });
+    if (saved.selection?.[0] !== null && saved.selection?.[0] !== undefined) {
+      try {
+        saved.active.setSelectionRange(...saved.selection);
+      } catch {
+        // Feld ohne Textauswahl
+      }
+    }
+  }
+
   function render() {
+    const focused = focusInForm();
     const { session, members, characters, live, combat } = room.get();
     const isMaster = session.role === ROLES.MASTER;
     const heroOwners = new Map(characters.map((character) => [character.owner_id, character]));
@@ -172,6 +200,7 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
         myCharacterId,
         editing: ui.editingCombat,
         actions: combatViewActions,
+        npcForm,
       }),
       h(
         'section',
@@ -241,6 +270,7 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
         'Raum verlassen',
       ),
     );
+    restoreFocus(focused);
   }
 
   // Nicht neu zeichnen, während eine Auswahlliste offen ist oder getippt wird – danach nachholen.
