@@ -191,7 +191,7 @@ export function startRoomMode(initialSession, { onLeave }) {
     session = { ...session, ...changes };
     saveRoomSession(session);
     room.update({ session });
-    shell.refreshHeader();
+    shell.refreshTitle();
   }
 
   function setViewState(state, error = '') {

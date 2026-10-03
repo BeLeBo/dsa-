@@ -54,8 +54,9 @@ function deviceSettings() {
  * @param {object} options
  * @param {{ label: string, onClick: Function, danger?: boolean }[]} options.items
  * @param {string} [options.note]  Hinweis unter den Einträgen
+ * @param {string[]} [options.info]  oben: Held bzw. Titel, Raum und Rolle, Speicherstatus
  */
-export function openMenu({ items, note = '' }) {
+export function openMenu({ items, note = '', info = [] }) {
   const dialog = openDialog({ title: 'Menü', className: 'dialog-small' });
   const install = canPromptInstall()
     ? [
@@ -71,6 +72,7 @@ export function openMenu({ items, note = '' }) {
 
   setChildren(
     dialog.body,
+    info.length ? h('p', { class: 'menu-info' }, info.join(' · ')) : null,
     h(
       'div',
       { class: 'menu-list' },

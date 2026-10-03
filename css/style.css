@@ -437,63 +437,32 @@ input.num::-webkit-inner-spin-button {
   min-height: 100vh;
 }
 
-.app-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  padding: 8px var(--gutter) 8px;
-  padding-top: max(8px, env(safe-area-inset-top));
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow);
-}
-
-.app-header-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.app-heading {
-  flex: 1;
-  min-width: 0;
-}
-
-.app-title {
-  margin: 0;
-  font-size: 1.15rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .save-status {
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-.save-status::before {
-  content: '';
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
+  position: absolute;
+  top: 8px;
+  left: calc(50% + 6px);
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface);
   border-radius: 50%;
   background: var(--success);
-  vertical-align: middle;
+  box-sizing: content-box;
 }
 
-.save-status[data-status='saving']::before {
+.save-status[data-status='saving'],
+.save-status[data-status='connecting'] {
   background: var(--critical);
 }
 
-.save-status[data-status='offline']::before,
-.save-status[data-status='error']::before {
+.save-status[data-status='offline'],
+.save-status[data-status='error'] {
   background: var(--failure);
 }
 
-.save-status[data-status='error'] {
-  color: var(--failure);
+/* Im Menü oben: Held bzw. Titel, Raum und Rolle, Speicherstatus */
+.menu-info {
+  margin: 0 0 10px;
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -530,6 +499,7 @@ input.num::-webkit-inner-spin-button {
   max-width: 760px;
   margin: 0 auto;
   padding: 12px var(--gutter) calc(var(--tabbar-height) + env(safe-area-inset-bottom) + 24px);
+  padding-top: max(12px, env(safe-area-inset-top)); /* ohne Kopfzeile: Notch/Statusleiste freilassen */
 }
 
 .tab-bar {
@@ -545,8 +515,17 @@ input.num::-webkit-inner-spin-button {
   border-top: 1px solid var(--border);
 }
 
+.tab-list {
+  display: flex;
+  /* gleich breite Knöpfe: die Tabs bekommen ihren Anteil, der Rest geht an „Menü“ */
+  flex: 0 0 calc(100% * var(--tabs, 5) / (var(--tabs, 5) + 1));
+  min-width: 0;
+}
+
 .tab-bar button {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 2px; /* statt der 6 px des Browsers – die Beschriftung braucht die Breite */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -558,6 +537,28 @@ input.num::-webkit-inner-spin-button {
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Handys: sechs Knöpfe (fünf Tabs und Menü) passen nebeneinander */
+@media (max-width: 480px) {
+  .tab-bar button {
+    font-size: 0.7rem;
+  }
+}
+
+@media (max-width: 350px) {
+  .tab-bar button {
+    padding: 0;
+    font-size: 0.62rem;
+    letter-spacing: -0.01em;
+  }
 }
 
 .tab-bar button[aria-selected='true'] {
@@ -1215,6 +1216,11 @@ input.num::-webkit-inner-spin-button {
   gap: 12px;
 }
 
+/* Der Inhalt scrollt – nichts darin wird gestaucht (z. B. Auswahlfelder bei sehr großer Schrift) */
+.dialog-body > * {
+  flex-shrink: 0;
+}
+
 .dialog-subtitle {
   margin: 0;
   color: var(--muted);
@@ -1631,17 +1637,6 @@ input.num::-webkit-inner-spin-button {
   background: var(--critical-soft);
   color: var(--text);
   font-weight: 600;
-}
-
-/* ---------- Kopfzeile im Raum ---------- */
-
-.app-subtitle {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---------- Held anlegen / Verbindungszustände ---------- */

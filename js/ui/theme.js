@@ -7,8 +7,8 @@ import { readJson, writeJson } from '../storage.js';
 const THEME_KEY = 'dsa5.ui.theme';
 const TEXT_SIZE_KEY = 'dsa5.ui.schrift';
 
-/** Farbe der Browserleiste passend zur Kopfzeile. */
-const BAR_COLORS = Object.freeze({ light: '#ffffff', dark: '#1c1a17' });
+/** Farbe der Browserleiste passend zum Seitenhintergrund (--bg; eine Kopfzeile gibt es nicht). */
+const BAR_COLORS = Object.freeze({ light: '#f4f1ea', dark: '#11100e' });
 
 export const THEMES = Object.freeze([
   { id: 'auto', name: 'Automatisch' },

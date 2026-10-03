@@ -114,7 +114,7 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 Installiert startet die App ohne Adressleiste im Vollbild, hat ein eigenes Symbol und lässt sich
 auch ohne Internet öffnen.
 
-- **Android (Chrome, Edge):** App öffnen → Menü **⋮** der App →
+- **Android (Chrome, Edge):** App öffnen → Knopf **Menü** unten rechts →
   **App auf dem Startbildschirm installieren**. Alternativ im Browsermenü **App installieren**
   bzw. **Zum Startbildschirm hinzufügen** (so auch in anderen Android-Browsern).
 - **iPhone/iPad (Safari):** App in Safari öffnen → **Teilen** (Quadrat mit Pfeil) →
@@ -165,7 +165,9 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 ## Bedienung
 
 - **Held:** Alle Bereiche lassen sich auf- und zuklappen (merkt sich das Gerät). Änderungen werden
-  nach ca. 0,8 Sekunden gespeichert; oben steht „wird gespeichert …“ bzw. „gespeichert“.
+  nach ca. 0,8 Sekunden gespeichert. Der Punkt am Knopf **Menü** (unten rechts) zeigt den Stand: grün
+  gespeichert, gelb wird gespeichert, rot offline oder Fehler; ausgeschrieben steht er oben im Menü.
+  Eine Kopfzeile gibt es nicht – der Platz gehört Karte und Bogen.
 - **Proben:** Ein Tipp auf eine Eigenschaft, ein Talent, einen Zauber, AT/PA/FK, Ausweichen oder
   Initiative öffnet den Probendialog mit Erleichterung/Erschwernis. Zustände werden automatisch
   eingerechnet (im Dialog abschaltbar). Das Ergebnis zeigt jeden Würfel, den Zielwert und die Rest-FP.
@@ -186,8 +188,9 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 - **Protokoll:** alle Würfe mit Heldennamen und Uhrzeit, zum Aufklappen mit allen Einzelwürfeln.
   Im Raum gemeinsam für alle (je nach Sichtbarkeit), ohne Raum nur auf diesem Gerät.
 - **Gruppe** (nur im Raum): Kampf & Initiative, Raumcode, Einladung, Helden, Mitglieder; **Raum verlassen**.
-- **Menü (⋮):** Export/Import, Einladung teilen, Raum verlassen bzw. „Mit einer Gruppe spielen“,
-  App installieren, außerdem die Geräteeinstellungen:
+- **Menü** (letzter Knopf der Tab-Leiste unten): oben Held, Raum, Rolle und Speicherstand; Export/Import,
+  Einladung teilen, Raum verlassen bzw. „Mit einer Gruppe spielen“, App installieren, außerdem die
+  Geräteeinstellungen:
   - **Farbmodus** Hell / Dunkel / Automatisch (folgt dem Handy). Der helle Modus hat starken Kontrast
     für draußen und helles Licht.
   - **Schriftgröße** Normal / Groß / Sehr groß – vergrößert die ganze App, auch Knöpfe.
@@ -442,7 +445,7 @@ js/log.js                Sichtbarkeit von Würfen, Würfelprotokoll dieses Gerä
 js/storage.js            Sicherer Zugriff auf localStorage
 js/pwa.js                Service Worker anmelden, App installieren, Bildschirm anlassen
 js/util.js               Allgemeine Hilfsfunktionen
-js/ui/shell.js           Rahmen: Kopfzeile, Tabs, Ansichten
+js/ui/shell.js           Rahmen: Tabs mit Menü und Speicherstatus, Ansichten
 js/ui/home-view.js       Startseite (Raum beitreten/erstellen, ohne Raum)
 js/ui/group-view.js      Tab „Gruppe“ (Meister-Übersicht)
 js/ui/combat-view.js     Kampfkarte: Initiative-Reihenfolge, wer ist am Zug

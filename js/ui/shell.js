@@ -1,6 +1,7 @@
 /**
- * shell.js – Rahmen der App: Kopfzeile (Held, Speicherstatus, Werte), Tabs unten
- * und die Ansichten Held, Würfeln, Protokoll (im Raum zusätzlich Karte und Gruppe).
+ * shell.js – Rahmen der App: Tabs unten (mit Menü und Speicherstatus) und die Ansichten Held,
+ * Würfeln, Protokoll (im Raum zusätzlich Karte und Gruppe). Eine Kopfzeile gibt es nicht – der
+ * Platz gehört Karte und Bogen; Held, Raum und Status stehen im Menü und im Fenstertitel.
  * Wird vom Modus „Ohne Raum“ und vom Raum-Modus gleichermaßen genutzt.
  */
 import { h, icon, setChildren, ICONS } from './dom.js';
@@ -11,8 +12,7 @@ import { createSheetView } from './sheet/view.js';
 import { createDiceView } from './dice-view.js';
 import { createLogView } from './protocol-view.js';
 import { readJson, writeJson } from '../storage.js';
-import { heroName, conditionState } from '../sheet.js';
-import { formatModifier } from '../format.js';
+import { heroName } from '../sheet.js';
 
 const TAB_KEY = 'dsa5.ui.tab';
 
@@ -33,66 +33,49 @@ const STATUS_TEXT = {
   error: 'Speichern fehlgeschlagen',
 };
 
-function createHeader(store, { title, subtitle, menu }) {
-  const titleElement = h('h1', { class: 'app-title' });
-  const subtitleElement = h('p', { class: 'app-subtitle' });
-  const status = h('span', { class: 'save-status', dataset: { status: 'saved' } }, STATUS_TEXT.saved);
-  const vitals = h('div', { class: 'vitals', 'aria-label': 'Aktuelle Werte' });
-  const menuButton = h(
-    'button',
-    { type: 'button', class: 'icon-button', 'aria-label': 'Menü öffnen', onclick: () => openMenu(menu()) },
-    icon(ICONS.menu),
-  );
-
-  function vital(label, pool) {
-    return h('span', { class: 'vital' }, h('small', {}, label), `${pool.current}/${pool.max}`);
-  }
-
-  function refresh() {
-    const hero = store.hero;
-    const text = hero ? heroName(hero) : title();
-    titleElement.textContent = text;
-    document.title = `${text} – DSA5`;
-    const sub = subtitle();
-    subtitleElement.textContent = sub ?? '';
-    subtitleElement.hidden = !sub;
-    if (!hero) {
-      setChildren(vitals);
-      return;
-    }
-    const { penalty } = conditionState(hero);
-    setChildren(
-      vitals,
-      vital('LE', hero.base.le),
-      hero.base.asp.max > 0 ? vital('AsP', hero.base.asp) : null,
-      hero.base.kap.max > 0 ? vital('KaP', hero.base.kap) : null,
-      vital('SchiP', hero.base.schip),
-      penalty ? h('span', { class: 'vital vital-warn' }, h('small', {}, 'Zustände'), formatModifier(penalty)) : null,
-    );
-  }
-
-  function setStatus(state) {
-    status.dataset.status = state;
-    status.textContent = STATUS_TEXT[state] ?? state;
-  }
-
+/**
+ * Menü-Knopf (letzter in der Tab-Leiste) mit dem Speicherstatus als farbigem Punkt: grün gespeichert,
+ * gelb beim Speichern, rot offline oder bei Fehlern. Ausgeschrieben steht der Status im Menü.
+ */
+function createMenuButton(store, { title, subtitle, menu }) {
+  let state = 'saved';
+  const statusText = h('span', { class: 'visually-hidden' }, STATUS_TEXT.saved);
+  const status = h('span', { class: 'save-status', dataset: { status: state } }, statusText);
   const element = h(
-    'header',
-    { class: 'app-header' },
-    h(
-      'div',
-      { class: 'app-header-main' },
-      h('div', { class: 'app-heading' }, titleElement, subtitleElement, status),
-      menuButton,
-    ),
-    vitals,
+    'button',
+    {
+      type: 'button',
+      class: 'tab-menu',
+      'aria-label': 'Menü öffnen',
+      title: `Menü – ${STATUS_TEXT.saved}`,
+      onclick: () => {
+        const info = [store.hero ? heroName(store.hero) : title(), subtitle(), STATUS_TEXT[state] ?? state];
+        openMenu({ ...menu(), info: info.filter(Boolean) });
+      },
+    },
+    icon(ICONS.menu),
+    h('span', { class: 'tab-label' }, 'Menü'),
+    status,
   );
+
+  /** Fenstertitel: geöffneter Held, sonst der Titel des Modus. */
+  function refresh() {
+    document.title = `${store.hero ? heroName(store.hero) : title()} – DSA5`;
+  }
+
+  function setStatus(next) {
+    state = next;
+    status.dataset.status = next;
+    statusText.textContent = STATUS_TEXT[next] ?? next;
+    element.title = `Menü – ${STATUS_TEXT[next] ?? next}`;
+  }
+
   store.subscribe(refresh);
   refresh();
   return { element, setStatus, refresh };
 }
 
-function createTabBar(tabs, panels, initialTab = null) {
+function createTabBar(tabs, panels, initialTab = null, extra = null) {
   const buttons = new Map();
   const badges = new Map();
   const unseen = new Map();
@@ -122,16 +105,16 @@ function createTabBar(tabs, panels, initialTab = null) {
     window.scrollTo(0, 0);
   }
 
-  const element = h(
-    'nav',
-    { class: 'tab-bar', role: 'tablist', 'aria-label': 'Bereiche' },
+  const list = h(
+    'div',
+    { class: 'tab-list', role: 'tablist', 'aria-label': 'Bereiche' },
     tabs.map((tab) => {
       const badge = h('span', { class: 'tab-badge', hidden: true, 'aria-label': 'neu' });
       const button = h(
         'button',
         { type: 'button', role: 'tab', 'aria-controls': `tab-${tab.id}`, onclick: () => select(tab.id) },
         icon(tab.icon),
-        h('span', {}, tab.name),
+        h('span', { class: 'tab-label' }, tab.name),
         badge,
       );
       buttons.set(tab.id, button);
@@ -139,6 +122,8 @@ function createTabBar(tabs, panels, initialTab = null) {
       return button;
     }),
   );
+  list.style.setProperty('--tabs', String(tabs.length)); // gleich breite Knöpfe samt Menü
+  const element = h('nav', { class: 'tab-bar' }, list, extra);
   select(initialTab ?? readJson(TAB_KEY, tabs[0].id));
   return { element, select, notify };
 }
@@ -169,7 +154,7 @@ export function createShell({
   rollOptions = {},
   initialTab = null,
 }) {
-  const header = createHeader(store, { title, subtitle, menu });
+  const menuButton = createMenuButton(store, { title, subtitle, menu });
   const panels = new Map(
     tabs.map((tab) => [tab.id, h('section', { id: `tab-${tab.id}`, class: 'tab-panel', role: 'tabpanel' })]),
   );
@@ -188,17 +173,12 @@ export function createShell({
   createDiceView(panels.get(TABS.dice.id), { store, log, openCheck, actorName, rollOptions });
   createLogView(panels.get(TABS.log.id), log);
 
-  const tabBar = createTabBar(tabs, panels, initialTab);
+  const tabBar = createTabBar(tabs, panels, initialTab, menuButton.element);
   // Neue Würfe anderer zählen, solange das Protokoll nicht offen ist.
   log.subscribe((entries, change) => {
     if (change?.remote) tabBar.notify(TABS.log.id);
   });
-  setChildren(
-    document.getElementById('app'),
-    header.element,
-    h('main', { class: 'app-main' }, [...panels.values()]),
-    tabBar.element,
-  );
+  setChildren(document.getElementById('app'), h('main', { class: 'app-main' }, [...panels.values()]), tabBar.element);
 
   return {
     panel: (id) => panels.get(id),
@@ -207,8 +187,9 @@ export function createShell({
     selectTab: tabBar.select,
     /** Zähler an einem Tab erhöhen, wenn er gerade nicht offen ist. */
     notifyTab: tabBar.notify,
-    setStatus: header.setStatus,
-    refreshHeader: header.refresh,
+    setStatus: menuButton.setStatus,
+    /** Fenstertitel auffrischen (z. B. nach Wechsel des Raums oder der Rolle). */
+    refreshTitle: menuButton.refresh,
     /** Held-Tab neu aufbauen (z. B. wenn sich der Inhalt ohne Held ändert). */
     renderSheet: sheet.render,
   };
