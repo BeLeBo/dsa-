@@ -97,6 +97,11 @@ create table if not exists public.maps (
   created_at timestamptz not null default now()
 );
 create index if not exists maps_room on public.maps (room_id);
+-- Selbst gebaute Karten (Karten-Editor) behalten ihre Szene (Gelände und Objekte), damit der
+-- Meister sie später weiterbearbeiten kann. has_scene zeigt das an, ohne die Szene mitzuladen.
+alter table public.maps add column if not exists scene jsonb
+  check (scene is null or (jsonb_typeof(scene) = 'object' and pg_column_size(scene) < 200000));
+alter table public.maps add column if not exists has_scene boolean generated always as (scene is not null) stored;
 
 -- Karte, die gerade alle sehen (null = keine). Nur der Meister ändert sie.
 alter table public.rooms add column if not exists active_map_id uuid references public.maps (id) on delete set null;
@@ -868,7 +873,7 @@ drop policy if exists "Meister bearbeitet Karten" on public.maps;
 create policy "Meister bearbeitet Karten" on public.maps
   for update to authenticated
   using (public.is_room_master(room_id))
-  with check (public.is_room_master(room_id));
+  with check (public.is_room_master(room_id) and public.room_of_path(image_path) = room_id);
 
 drop policy if exists "Meister löscht Karten" on public.maps;
 create policy "Meister löscht Karten" on public.maps
@@ -937,8 +942,8 @@ revoke all on public.maps, public.tokens, public.figure_templates from anon, aut
 grant select on public.rooms to authenticated;
 grant update (combat, active_map_id, ping) on public.rooms to authenticated;
 grant select, delete on public.maps to authenticated;
-grant insert (id, room_id, name, image_path, width, height, grid) on public.maps to authenticated;
-grant update (name, grid) on public.maps to authenticated;
+grant insert (id, room_id, name, image_path, width, height, grid, scene) on public.maps to authenticated;
+grant update (name, grid, image_path, width, height, scene) on public.maps to authenticated;
 grant select, delete on public.tokens to authenticated;
 grant insert (id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max)
   on public.tokens to authenticated;
@@ -1040,7 +1045,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 5;
+  select 6;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

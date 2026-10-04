@@ -1,6 +1,6 @@
 /**
- * map-dialogs.js – Dialoge des Meisters für die Karte: Karten verwalten (hochladen, zeigen,
- * umbenennen, löschen) und Figuren aufstellen oder bearbeiten – auch aus gespeicherten Figuren.
+ * map-dialogs.js – Dialoge des Meisters für die Karte: Karten verwalten (hochladen, selbst bauen,
+ * zeigen, umbenennen, löschen) und Figuren aufstellen oder bearbeiten – auch aus gespeicherten Figuren.
  */
 import { h, icon, ICONS, setChildren } from './dom.js';
 import { openDialog, confirmDialog } from './dialog.js';
@@ -21,6 +21,7 @@ import {
 import { heroName, normalizeHero } from '../sheet.js';
 import { imageUrl } from '../map-api.js';
 import { enemyGroup, rememberedIni, rememberIni } from './play-combat.js';
+import { openMapEditor } from './map-editor-view.js';
 
 /** Knopf, der während einer Aktion gesperrt ist und „…“ zeigt. */
 function busyButton(label, busyLabel, action, className = 'btn') {
@@ -108,7 +109,22 @@ function uploadForm(actions, onDone) {
   );
 }
 
-function mapRow(map, { activeMapId, viewMapId }, actions, close) {
+/** Karten-Editor: eigene Karte aus fertigen Objekten bauen oder automatisch erstellen lassen. */
+function buildSection(onBuild) {
+  return h(
+    'section',
+    { class: 'map-upload' },
+    h('h3', {}, 'Karte selbst bauen'),
+    h(
+      'p',
+      { class: 'section-hint' },
+      'Mit fertigen Objekten wie Bäumen, Hütten und Felsen – oder automatisch erstellt (Wald, Dorf, Lager, Fluss, Höhle).',
+    ),
+    h('button', { type: 'button', class: 'btn btn-primary', onclick: onBuild }, 'Karten-Editor öffnen'),
+  );
+}
+
+function mapRow(map, { activeMapId, viewMapId }, actions, close, edit) {
   const isActive = map.id === activeMapId;
   const isViewed = map.id === viewMapId;
   const run = (label, action) => async () => {
@@ -162,6 +178,13 @@ function mapRow(map, { activeMapId, viewMapId }, actions, close) {
         },
         isActive ? 'Für alle ausblenden' : 'Allen zeigen',
       ),
+      map.has_scene
+        ? h(
+            'button',
+            { type: 'button', class: 'btn', onclick: run('Bearbeiten fehlgeschlagen', () => edit(map)) },
+            'Bearbeiten',
+          )
+        : null,
       h(
         'button',
         {
@@ -226,15 +249,24 @@ export function openMapsDialog(controller) {
   let renderedKey = '';
   const render = (state) => {
     // Nur bei geänderten Karten neu aufbauen (nicht bei jeder bewegten Figur).
-    const key = JSON.stringify([state.maps.map((map) => [map.id, map.name]), state.activeMapId, state.viewMapId]);
+    const key = JSON.stringify([
+      state.maps.map((map) => [map.id, map.name, map.has_scene]),
+      state.activeMapId,
+      state.viewMapId,
+    ]);
     if (key === renderedKey) return;
     renderedKey = key;
     setChildren(
       list,
       state.maps.length
-        ? state.maps.map((map) => mapRow(map, state, controller.actions, dialog.close))
+        ? state.maps.map((map) => mapRow(map, state, controller.actions, dialog.close, edit))
         : h('li', { class: 'empty-hint' }, 'Noch keine Karte hochgeladen.'),
     );
+  };
+  /** Editor öffnen: Kartenliste schließen, damit nach dem Speichern die Karte zu sehen ist. */
+  const edit = async (map) => {
+    dialog.close();
+    await openMapEditor({ controller, map });
   };
   dialog.body.append(
     h(
@@ -244,6 +276,7 @@ export function openMapsDialog(controller) {
     ),
     list,
     uploadForm(controller.actions, dialog.close),
+    buildSection(() => edit(null)),
   );
   render(controller.state.get());
   unsubscribe = controller.state.subscribe(render);

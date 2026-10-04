@@ -9,6 +9,7 @@ import './combat.test.js';
 import './map.test.js';
 import './optolith.test.js';
 import './check-search.test.js';
+import './map-editor.test.js';
 
 const results = await runTests();
 window.testResults = results;

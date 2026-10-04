@@ -1,6 +1,7 @@
 /**
  * room-map.js – Karte im Raum: lädt Karten und Figuren, hält sie live aktuell und führt
- * die Aktionen aus. Meister: Karten hochladen, zeigen, Raster einstellen, Figuren verwalten.
+ * die Aktionen aus. Meister: Karten hochladen oder selbst bauen (Karten-Editor), zeigen,
+ * Raster einstellen, Figuren verwalten.
  * Alle: die eigene Figur bewegen (Spieler nur die ihres Helden).
  *
  * Der Meister kann eine Karte vorbereiten, ohne dass die Spieler sie sehen: `viewMapId`
@@ -235,29 +236,68 @@ export function createMapController({
   // Aktionen: Karten (Meister)
   // -------------------------------------------------------------------------
 
-  async function uploadMap(file, name) {
-    const prepared = await images.prepareMapImage(file);
-    const path = await api.uploadImage(roomId, prepared.blob);
+  const cleanName = (name) =>
+    String(name ?? '')
+      .trim()
+      .slice(0, MAX_MAP_NAME_LENGTH);
+
+  /** Bild hochladen und Karte anlegen; neue Karte als Tab öffnen und ansehen (noch nicht für alle). */
+  async function addMap(blob, fields) {
+    const path = await api.uploadImage(roomId, blob);
     let map;
     try {
-      map = await api.createMap({
-        room_id: roomId,
-        name: String(name ?? '')
-          .trim()
-          .slice(0, MAX_MAP_NAME_LENGTH),
-        image_path: path,
-        width: prepared.width,
-        height: prepared.height,
-        grid: defaultGrid(prepared.width, prepared.height),
-      });
+      map = await api.createMap({ room_id: roomId, ...fields, name: cleanName(fields.name), image_path: path });
     } catch (error) {
       api.discardUpload(path).catch(() => {});
       throw error;
     }
     state.update({ maps: upsertById(state.get().maps, map) });
-    rememberOpen([...state.get().openMapIds, map.id]); // neue Karte als Tab öffnen …
-    writeJson(preferenceKey, map.id); // … und gleich ansehen (noch nicht für alle)
+    rememberOpen([...state.get().openMapIds, map.id]);
+    writeJson(preferenceKey, map.id);
     await refreshView();
+    return map;
+  }
+
+  async function uploadMap(file, name) {
+    const prepared = await images.prepareMapImage(file);
+    return addMap(prepared.blob, {
+      name,
+      width: prepared.width,
+      height: prepared.height,
+      grid: defaultGrid(prepared.width, prepared.height),
+    });
+  }
+
+  /**
+   * Meister: selbst gebaute Karte (Karten-Editor) anlegen.
+   * @param {{ name, blob, width, height, grid, scene }} built  fertiges Bild und Szene
+   */
+  async function createBuiltMap({ name, blob, width, height, grid, scene }) {
+    return addMap(blob, { name, width, height, grid, scene });
+  }
+
+  /** Meister: Szene einer gebauten Karte laden (zum Weiterbearbeiten). */
+  async function loadScene(mapId) {
+    return api.fetchMapScene(mapId);
+  }
+
+  /**
+   * Meister: gebaute Karte neu speichern – neues Bild, neue Szene. Größe und Raster bleiben,
+   * Figuren stehen danach an derselben Stelle. Das alte Bild wird aufgeräumt.
+   */
+  async function updateBuiltMap(mapId, { name, blob, width, height, scene }) {
+    const previous = state.get().maps.find((map) => map.id === mapId);
+    if (!previous) throw new Error('Diese Karte gibt es nicht (mehr).');
+    const path = await api.uploadImage(roomId, blob);
+    let map;
+    try {
+      map = await api.updateMap(mapId, { name: cleanName(name), image_path: path, width, height, scene });
+    } catch (error) {
+      api.discardUpload(path).catch(() => {});
+      throw error;
+    }
+    state.update({ maps: upsertById(state.get().maps, map) });
+    await api.removeUnusedImages(roomId, [previous.image_path]).catch(onError);
     return map;
   }
 
@@ -298,11 +338,7 @@ export function createMapController({
   }
 
   async function renameMap(mapId, name) {
-    const map = await api.updateMap(mapId, {
-      name: String(name ?? '')
-        .trim()
-        .slice(0, MAX_MAP_NAME_LENGTH),
-    });
+    const map = await api.updateMap(mapId, { name: cleanName(name) });
     state.update({ maps: upsertById(state.get().maps, map) });
   }
 
@@ -715,6 +751,9 @@ export function createMapController({
     handleTokenDeleted,
     actions: {
       uploadMap,
+      createBuiltMap,
+      loadScene,
+      updateBuiltMap,
       showMap,
       selectMap,
       openMap,

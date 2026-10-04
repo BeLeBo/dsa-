@@ -9,7 +9,7 @@ import { getClient, unwrap, ServerError } from './supabase.js';
 import { newId } from './util.js';
 
 export const IMAGE_BUCKET = 'karten';
-const MAP_COLUMNS = 'id, room_id, name, image_path, width, height, grid, revision, created_at';
+const MAP_COLUMNS = 'id, room_id, name, image_path, width, height, grid, has_scene, revision, created_at';
 const TOKEN_COLUMNS =
   'id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max, updated_at';
 const TEMPLATE_COLUMNS = 'id, room_id, name, image_path, color, size, le_max, ini_base, updated_at';
@@ -38,7 +38,14 @@ export async function createMap(fields) {
   return unwrap(client.from('maps').insert(fields).select(MAP_COLUMNS).single());
 }
 
-/** Meister: Name oder Raster ändern. */
+/** Meister: Szene einer selbst gebauten Karte (für den Karten-Editor; sonst nicht mitgeladen). */
+export async function fetchMapScene(mapId) {
+  const client = await getClient();
+  const rows = await unwrap(client.from('maps').select('scene').eq('id', mapId));
+  return requireRows(rows, 'Diese Karte gibt es nicht (mehr).')[0].scene ?? null;
+}
+
+/** Meister: Name oder Raster ändern – bei gebauten Karten auch Bild und Szene. */
 export async function updateMap(mapId, changes) {
   const client = await getClient();
   const rows = await unwrap(client.from('maps').update(changes).eq('id', mapId).select(MAP_COLUMNS));

@@ -1,6 +1,6 @@
 /**
  * image.js – Bilder vor dem Hochladen vorbereiten: Karten verkleinern, Figurenbilder
- * quadratisch zuschneiden. Spart Speicher und Datenvolumen am Handy.
+ * quadratisch zuschneiden, gebaute Karten umwandeln. Spart Speicher und Datenvolumen am Handy.
  * Ergebnis ist WebP; Browser ohne WebP-Unterstützung liefern JPEG (Karte) bzw. PNG (Figur).
  */
 import { scaledSize, MAP_MAX_EDGE, TOKEN_IMAGE_EDGE } from './map.js';
@@ -88,6 +88,16 @@ export async function prepareMapImage(file) {
   } finally {
     release();
   }
+}
+
+/**
+ * Selbst gezeichnete Karte (Leinwand aus dem Karten-Editor) als Bild für den Speicher.
+ * Liefert null, wenn das Bild über der Speichergrenze liegt – dann kleiner zeichnen.
+ * @returns {Promise<Blob|null>}
+ */
+export async function canvasToMapImage(canvas) {
+  const blob = await encode(canvas, 'image/jpeg');
+  return blob.size <= MAX_IMAGE_BYTES ? blob : null;
 }
 
 /** Figur: mittiger quadratischer Ausschnitt, höchstens TOKEN_IMAGE_EDGE Punkte (Transparenz bleibt). */

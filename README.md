@@ -11,22 +11,23 @@ alles live für alle synchronisiert.
 
 ## Stand der Entwicklung
 
-| Phase | Inhalt                                                                 | Status    |
-| ----- | ---------------------------------------------------------------------- | --------- |
-| 1     | Dateistruktur, Regel-Logik (`rules.js`), Würfel (`dice.js`), Testseite | ✅ fertig |
-| 2     | Heldenbogen lokal (noch ohne Server)                                   | ✅ fertig |
-| 3     | Supabase: SQL, Räume, Rollen, Sync                                     | ✅ fertig |
-| 4     | Gemeinsames Würfelprotokoll, Meister-Ansicht, Initiative               | ✅ fertig |
-| 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)              | ✅ fertig |
-| 6     | Karte mit Figuren (hochladen, Raster, Drag & Drop, live)               | ✅ fertig |
-| 7     | Optolith-Import, Mehrfachauswahl und Werte-Panel auf der Karte         | ✅ fertig |
-| 8     | Ohne Meister-PIN, LeP für Gegner, Proben und Werte auf der Karte       | ✅ fertig |
-| 9     | Lebensbalken: Helden genau, Gegner in Vierteln                         | ✅ fertig |
-| 10    | Spielbildschirm (Werte/Proben), eigene Figur, Karten-Tabs des Meisters | ✅ fertig |
-| 11    | Kampf und letzte Würfe im Spielbildschirm, Favoriten                   | ✅ fertig |
-| 12    | Ping: Meister markiert Stellen auf der Karte                           | ✅ fertig |
-| 13    | Inventar in eigenen Gruppen                                            | ✅ fertig |
-| 14    | Gespeicherte Figuren des Meisters (Vorlagen)                           | ✅ fertig |
+| Phase | Inhalt                                                                  | Status    |
+| ----- | ----------------------------------------------------------------------- | --------- |
+| 1     | Dateistruktur, Regel-Logik (`rules.js`), Würfel (`dice.js`), Testseite  | ✅ fertig |
+| 2     | Heldenbogen lokal (noch ohne Server)                                    | ✅ fertig |
+| 3     | Supabase: SQL, Räume, Rollen, Sync                                      | ✅ fertig |
+| 4     | Gemeinsames Würfelprotokoll, Meister-Ansicht, Initiative                | ✅ fertig |
+| 5     | Mobile-Feinschliff, PWA (installierbar, offline startbar)               | ✅ fertig |
+| 6     | Karte mit Figuren (hochladen, Raster, Drag & Drop, live)                | ✅ fertig |
+| 7     | Optolith-Import, Mehrfachauswahl und Werte-Panel auf der Karte          | ✅ fertig |
+| 8     | Ohne Meister-PIN, LeP für Gegner, Proben und Werte auf der Karte        | ✅ fertig |
+| 9     | Lebensbalken: Helden genau, Gegner in Vierteln                          | ✅ fertig |
+| 10    | Spielbildschirm (Werte/Proben), eigene Figur, Karten-Tabs des Meisters  | ✅ fertig |
+| 11    | Kampf und letzte Würfe im Spielbildschirm, Favoriten                    | ✅ fertig |
+| 12    | Ping: Meister markiert Stellen auf der Karte                            | ✅ fertig |
+| 13    | Inventar in eigenen Gruppen                                             | ✅ fertig |
+| 14    | Gespeicherte Figuren des Meisters (Vorlagen)                            | ✅ fertig |
+| 15    | Karten-Editor: Karten aus fertigen Objekten bauen oder erstellen lassen | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -285,6 +286,39 @@ auf dem Server gespeichert und für den Meister sichtbar.
    anderen Tab ist, bekommt eine Meldung mit **Ansehen**. Auf einer vorbereiteten Karte (nur der
    Meister sieht sie) gibt es keinen Ping.
 
+**Karte selbst bauen (Karten-Editor)**
+
+Statt ein Bild hochzuladen, baut der Meister eine Karte aus fertigen Objekten: **Karte bauen** (bei
+leerer Karte) oder **Karten → Karten-Editor öffnen**. Der Editor füllt den ganzen Bildschirm; oben
+wählt man das Werkzeug:
+
+- **Karte:** **Automatisch erstellen** würfelt eine fertige Karte zur **Vorlage** – Wald (Lichtung,
+  Weg, viele Bäume), Dorf (Straßen, Platz mit Brunnen, Häuser mit der Tür zur Straße, Felder mit Zaun),
+  Lager (Feuer, Zelte im Kreis, Kisten und Fässer), Fluss (Sandbänke, Schilf, Brücke mit Weg) oder
+  Höhle (Felswände, Wasserstellen, Eingang links). Jeder Klick ergibt eine neue Karte; **Rückgängig**
+  holt die vorige zurück. **Größe** klein (20 × 15 Felder), mittel (30 × 20) oder groß (40 × 28),
+  **Leere Karte** fängt ohne Objekte an, **Boden** wechselt den Untergrund (Gras, Waldboden, Erde,
+  Sand, Steinboden, Schnee, Holzdielen), dazu der **Name**.
+- **Objekte:** Natur (Laub- und Nadelbaum, Busch, Stein, Felsbrocken, Baumstumpf, Blumen, Schilf),
+  Gebäude (Hütte, Haus, Turm, Zelt, Mauer, Zaun, Brücke) und Ausstattung (Lagerfeuer, Brunnen, Kiste,
+  Fass, Tisch, Karren). Objekt wählen, auf die Karte tippen – es wird gesetzt und ist gleich gewählt.
+  Bäume, Steine usw. bekommen dabei eine zufällige Drehung und ein eigenes Aussehen.
+- **Gelände:** Weg, Pflaster, Wasser, Gras, Erde, Sand, Dielen und Fels mit dem Finger malen
+  (Pinsel 1 Feld bis groß); der **Radierer** stellt den Boden wieder her.
+- **Auswählen:** Objekt antippen und ziehen. Für das gewählte Objekt (in jedem Werkzeug): drehen
+  (↺ ↻ in 45°-Schritten), kleiner/größer, **Variante** (anderes Aussehen), **Kopie**, **Entfernen**.
+- Unten: **↶** (Rückgängig), **Raster** (Hilfslinien nur im Editor) und **Einrasten** (Objekte liegen
+  genau auf den Feldern). Zoomen mit + / − rechts auf der Karte, ⛶ zeigt die ganze Karte. Ein Finger
+  verschiebt die Ansicht (beim Malen: zwei Finger). Am Rechner: Strg + Mausrad zoomt, **Entf** löscht
+  das gewählte Objekt, **Strg + Z** macht rückgängig.
+
+**Speichern** zeichnet das Kartenbild (64 Bildpunkte je Feld) und legt es wie eine hochgeladene
+Karte an – mit eingeschaltetem Raster, ein Feld der Karte ist genau ein Rasterfeld. Bis zum Zeigen
+sieht sie nur der Meister. Gebaute Karten merken sich ihren Aufbau: In **Karten** steht bei ihnen
+**Bearbeiten**. Dabei bleibt die Größe gleich, sodass Figuren an ihrem Platz bleiben; Spieler sehen
+die geänderte Karte sofort. Ungespeicherte Änderungen gehen nicht aus Versehen verloren: Schließen
+fragt nach.
+
 **Spieler**
 
 - **Meine Figur aufstellen:** Steht die eigene Figur noch nicht auf der gezeigten Karte, stellt man sie
@@ -375,7 +409,8 @@ Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort a
 Webserver wie oben starten und <http://localhost:8000/tests/rules.test.html> öffnen. Die Seite prüft
 Regeln, Würfel, Heldenmodell (inkl. Inventar-Gruppen), Proben, Zusammenführen gleichzeitiger Änderungen, den Abgleich,
 das gemeinsame Protokoll, die Kampfreihenfolge sowie Raster, Einrasten, Zoom, Auswahlrahmen,
-gemeinsames Bewegen, Ping und die Karten-Steuerung
+gemeinsames Bewegen, Ping, den Karten-Editor (Gelände malen, Objekte setzen, drehen, einrasten,
+der Zufallsgenerator für alle Vorlagen und Größen) und die Karten-Steuerung
 (mit Attrappen statt Server). Oben steht „Alle … Tests bestanden ✓“ oder fehlgeschlagene Tests
 erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle stehen ganz oben.
 
@@ -407,6 +442,12 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
   Sehen dürfen sie nur Mitglieder des Raums, hochladen und löschen nur der Meister. Nicht mehr
   benutzte Bilder löscht die App beim Entfernen von Karten und Figuren. Ob Spieler eine Karte
   sehen, entscheidet die Datenbank (gezeigte Karte, verborgene Figuren) – nicht nur die App.
+- **Gebaute Karten** (Karten-Editor) zeichnet der Browser selbst – alle Objekte und Gelände sind
+  Code (`js/map-render.js`), es gibt keine Bilddateien dafür. Gespeichert wird das fertige Bild wie
+  bei hochgeladenen Karten, dazu der Aufbau als JSON in `maps.scene` (Gelände als Zeichenkette, ein
+  Zeichen je Feld, und die Objektliste – höchstens 800 Objekte). Der Zufallsgenerator ist
+  wiederholbar: gleiche Vorlage, Größe und Startwert ergeben dieselbe Karte. Beim Bearbeiten ersetzt
+  die App das Bild und räumt das alte auf.
 - **Werbe- und Tracker-Blocker** (z. B. in Opera GX, Brave, uBlock Origin) sperren Dateien auch nach
   ihrem Namen. Schon eine gesperrte Datei verhindert den Start der ganzen App. Deshalb heißt z. B. die
   Protokoll-Ansicht `protocol-view.js` und nicht `log-view.js` (steht in EasyPrivacy). Neue Dateien
@@ -430,7 +471,9 @@ js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, G
 js/room-map.js           Karte im Raum: laden, live aktuell halten, Aktionen (Meister/Spieler)
 js/map.js                Karte als reine Funktionen: Raster, Einrasten, Aufstellen, Zoom, Auswahl, Ping
 js/map-api.js            Karte auf dem Server: Karten, Figuren, Bilder (Storage), Realtime
-js/image.js              Bilder vor dem Hochladen verkleinern bzw. zuschneiden
+js/image.js              Bilder vor dem Hochladen verkleinern bzw. zuschneiden, gebaute Karten umwandeln
+js/map-editor.js         Karten-Editor als reine Funktionen: Szene, Gelände, Objekte, Zufallsgenerator
+js/map-render.js         Gebaute Karten zeichnen: Boden, Gelände mit weichen Rändern, alle Objekte
 js/room-log.js           Gemeinsames Würfelprotokoll (Server, Warteschlange für offline)
 js/room-combat.js        Kampf im Raum: speichern, Initiative-Würfe übernehmen, „am Zug“
 js/combat.js             Kampfreihenfolge als reine Funktionen (Initiative, Runden)
@@ -467,6 +510,7 @@ js/ui/play-log.js        Spielbildschirm: letzte Würfe
 js/ui/schema-help.js     Anleitung „Datenbank aktualisieren“ (Skript kopieren, SQL Editor öffnen)
 js/check-search.js       Proben suchen (Talente, Zauber, Eigenschaften, Kampf), zuletzt gewürfelt
 js/ui/map-dialogs.js     Meister: Karten verwalten, Figuren aufstellen und bearbeiten
+js/ui/map-editor-view.js Meister: Karten-Editor (bauen, automatisch erstellen, speichern, bearbeiten)
 js/ui/visibility-control.js  Auswahl „Öffentlich / Nur Meister / Verdeckt“
 js/ui/hero-choice.js     Held anlegen/übernehmen, Verbindungszustände
 js/ui/hero-file.js       Held als JSON sichern und laden, Importbericht (Optolith)

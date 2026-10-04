@@ -5,10 +5,12 @@ import { h, icon, ICONS } from './dom.js';
 
 /**
  * Öffnet einen Dialog.
- * @param {object} options { title, className, onClose }
- * @returns {{ element, body, footer, setTitle, close }}
+ * @param {object} options { title, className, onClose, beforeClose }
+ *   beforeClose: () => boolean | Promise<boolean> – vor dem Schließen per ×, Hintergrund oder
+ *   Escape gefragt (z. B. „Änderungen verwerfen?“); false lässt den Dialog offen.
+ * @returns {{ element, body, footer, setTitle, close, requestClose }}
  */
-export function openDialog({ title = '', className = '', onClose = null } = {}) {
+export function openDialog({ title = '', className = '', onClose = null, beforeClose = null } = {}) {
   const titleElement = h('h2', { class: 'dialog-title' }, title);
   const body = h('div', { class: 'dialog-body' });
   const footer = h('div', { class: 'dialog-footer' });
@@ -21,7 +23,7 @@ export function openDialog({ title = '', className = '', onClose = null } = {}) 
       titleElement,
       h(
         'button',
-        { class: 'icon-button', type: 'button', 'aria-label': 'Schließen', onclick: () => close() },
+        { class: 'icon-button', type: 'button', 'aria-label': 'Schließen', onclick: () => requestClose() },
         icon(ICONS.close),
       ),
     ),
@@ -33,13 +35,23 @@ export function openDialog({ title = '', className = '', onClose = null } = {}) 
     if (dialog.open) dialog.close();
   }
 
+  async function requestClose() {
+    if (beforeClose && !(await beforeClose())) return;
+    close();
+  }
+
   dialog.addEventListener('close', () => {
     dialog.remove();
     onClose?.();
   });
   // Tipp auf den abgedunkelten Hintergrund schließt den Dialog.
   dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) close();
+    if (event.target === dialog) requestClose();
+  });
+  dialog.addEventListener('cancel', (event) => {
+    if (!beforeClose) return;
+    event.preventDefault(); // Escape: erst nachfragen
+    requestClose();
   });
 
   document.body.append(dialog);
@@ -53,6 +65,7 @@ export function openDialog({ title = '', className = '', onClose = null } = {}) 
       dialog.setAttribute('aria-label', text);
     },
     close,
+    requestClose,
   };
 }
 

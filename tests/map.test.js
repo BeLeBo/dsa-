@@ -390,6 +390,7 @@ function fakeApi(overrides = {}) {
       return { ...token };
     },
     fetchHeroTokenImages: async () => new Map([['c1', 'raum/alrik.webp']]),
+    fetchMapScene: async (mapId) => db.maps.find((map) => map.id === mapId)?.scene ?? null,
     uploadImage: async () => 'raum/neu.webp',
     discardUpload: async (path) => calls.push(['discardUpload', path]),
     removeUnusedImages: async (roomId, paths) => calls.push(['removeUnusedImages', paths]),
@@ -872,6 +873,79 @@ test(CONTROLLER, 'Meister: misslingt das Anlegen, wird das Bild wieder gelöscht
   assertEqual(api.calls.at(-1), ['discardUpload', 'raum/neu.webp']);
   cleanup();
 });
+
+test(CONTROLLER, 'Meister: gebaute Karte anlegen – mit Szene, Raster an, gleich geöffnet', async () => {
+  const { controller, api, cleanup } = mapController();
+  await controller.load();
+  const scene = { version: 1, cols: 20, rows: 15, ground: 'gras', terrain: '.'.repeat(300), objects: [] };
+  const grid = { show: true, size: 64, offsetX: 0, offsetY: 0, color: 'dunkel' };
+  const map = await controller.actions.createBuiltMap({
+    name: '  Wald  ',
+    blob: new Blob(['x'], { type: 'image/webp' }),
+    width: 1280,
+    height: 960,
+    grid,
+    scene,
+  });
+  assertEqual([map.name, map.image_path, map.width, map.height], ['Wald', 'raum/neu.webp', 1280, 960]);
+  assertEqual(map.grid, grid);
+  assertEqual(api.db.maps[0].scene, scene, 'Szene gespeichert');
+  assertEqual(controller.viewMap().id, map.id, 'neue Karte wird angezeigt');
+  assertEqual(controller.state.get().openMapIds.includes(map.id), true, 'als Tab geöffnet');
+  assertEqual(await controller.actions.loadScene(map.id), scene, 'Szene wieder ladbar');
+  cleanup();
+});
+
+test(
+  CONTROLLER,
+  'Meister: gebaute Karte neu speichern – neues Bild, altes Bild aufgeräumt, Figuren bleiben',
+  async () => {
+    const { controller, api, cleanup } = mapController();
+    addMap(api, 'm1', { image_path: 'raum/alt.webp', width: 1280, height: 960, scene: { cols: 20 } });
+    api.db.tokens.push({ id: 't1', map_id: 'm1', name: 'Ork', x: 100, y: 200 });
+    await controller.load();
+    const scene = { version: 1, cols: 20, rows: 15, ground: 'sand', terrain: '.'.repeat(300), objects: [] };
+    const map = await controller.actions.updateBuiltMap('m1', {
+      name: 'Strand',
+      blob: new Blob(['x'], { type: 'image/webp' }),
+      width: 1280,
+      height: 960,
+      scene,
+    });
+    assertEqual([map.name, map.image_path], ['Strand', 'raum/neu.webp']);
+    assertEqual(api.db.maps[0].scene, scene);
+    assertEqual(api.calls.at(-1), ['removeUnusedImages', ['raum/alt.webp']], 'altes Bild aufräumen');
+    assertEqual(
+      controller.state.get().tokens.map((token) => [token.id, token.x, token.y]),
+      [['t1', 100, 200]],
+      'Figuren bleiben',
+    );
+    cleanup();
+  },
+);
+
+test(
+  CONTROLLER,
+  'Meister: misslingt das Speichern der gebauten Karte, wird das neue Bild wieder gelöscht',
+  async () => {
+    const api = fakeApi({
+      updateMap: async () => {
+        throw new Error('Serverfehler');
+      },
+    });
+    const { controller, cleanup } = mapController({ api });
+    addMap(api, 'm1', { image_path: 'raum/alt.webp' });
+    await controller.load();
+    const result = await controller.actions
+      .updateBuiltMap('m1', { name: 'x', blob: new Blob(['x']), width: 10, height: 10, scene: {} })
+      .catch((error) => error);
+    assertEqual(result.message, 'Serverfehler');
+    await wait(0);
+    assertEqual(api.calls.at(-1), ['discardUpload', 'raum/neu.webp']);
+    assertTrue(!api.calls.some((call) => call[0] === 'removeUnusedImages'), 'altes Bild bleibt');
+    cleanup();
+  },
+);
 
 test(CONTROLLER, 'Meister: Figuren aufstellen – nummeriert, auf freien Feldern, Helden mit Bild', async () => {
   const characters = [{ id: 'c1', data: { general: { name: 'Alrik' } } }];

@@ -9,6 +9,7 @@ import { showToast, showError } from './toast.js';
 import { segmentedControl } from './segmented.js';
 import { createMapStage } from './map-stage.js';
 import { openMapsDialog, openTokenDialog, openOwnTokenDialog } from './map-dialogs.js';
+import { openMapEditor } from './map-editor-view.js';
 import { mapTabs } from '../room-map.js';
 import { heroName } from '../sheet.js';
 import { createMapInspector } from './map-inspector.js';
@@ -532,7 +533,7 @@ export function createMapView(
         {
           type: 'button',
           class: 'map-tab-add',
-          'aria-label': 'Weitere Karte öffnen oder hochladen',
+          'aria-label': 'Weitere Karte öffnen, hochladen oder bauen',
           onclick: () => openMapsDialog(controller),
         },
         '+ Karte',
@@ -642,12 +643,21 @@ export function createMapView(
             h(
               'p',
               { class: 'section-hint' },
-              'Lade ein Bild hoch (Dungeon, Taverne, Landkarte …). Du kannst es in Ruhe vorbereiten und dann allen zeigen.',
+              'Lade ein Bild hoch (Dungeon, Taverne, Landkarte …) oder baue selbst eine Karte aus fertigen Objekten. Du kannst sie in Ruhe vorbereiten und dann allen zeigen.',
             ),
             h(
-              'button',
-              { type: 'button', class: 'btn btn-primary', onclick: () => openMapsDialog(controller) },
-              'Karte hochladen',
+              'div',
+              { class: 'button-row' },
+              h(
+                'button',
+                { type: 'button', class: 'btn btn-primary', onclick: () => openMapsDialog(controller) },
+                'Karte hochladen',
+              ),
+              h(
+                'button',
+                { type: 'button', class: 'btn', onclick: () => openMapEditor({ controller }) },
+                'Karte bauen',
+              ),
             ),
           )
         : h('p', { class: 'empty-hint' }, 'Der Meister zeigt gerade keine Karte.'),
