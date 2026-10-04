@@ -848,8 +848,8 @@ export function drawSelection(ctx, object, cellPx) {
 /** Fertiges Kartenbild als Leinwand. */
 export function renderSceneCanvas(scene, cellPx) {
   const canvas = document.createElement('canvas');
-  canvas.width = scene.cols * cellPx;
-  canvas.height = scene.rows * cellPx;
+  canvas.width = Math.round(scene.cols * cellPx);
+  canvas.height = Math.round(scene.rows * cellPx);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Dieser Browser kann keine Bilder zeichnen.');
   renderScene(ctx, scene, cellPx);

@@ -32,7 +32,6 @@ import {
   randomSeed,
   removeObject,
   sceneGrid,
-  sceneSize,
   setGround,
   snapObject,
   updateObject,
@@ -110,10 +109,12 @@ function iconCanvas(draw) {
 async function sceneImage(scene, cellSizes) {
   for (const cellPx of cellSizes) {
     const canvas = renderSceneCanvas(scene, cellPx);
+    // Maße der tatsächlichen Leinwand (ganze Bildpunkte) – so passen Karte und Bild genau zusammen.
+    const { width, height } = canvas;
     const blob = await canvasToMapImage(canvas);
     canvas.width = 0; // Speicher sofort freigeben (große Leinwände)
     canvas.height = 0;
-    if (blob) return { blob, cellPx, ...sceneSize(scene, cellPx) };
+    if (blob) return { blob, cellPx, width, height };
   }
   throw new ImageError('Die Karte ist zu groß für den Speicher. Bitte eine kleinere Karte bauen.');
 }
