@@ -1207,8 +1207,14 @@ input.num::-webkit-inner-spin-button {
   font-size: 1.25rem;
 }
 
+/*
+ * Höhe nach dem Inhalt („auto“), bei Platzmangel schrumpft nur der Inhalt und scrollt.
+ * Nicht „flex: 1“ (Basis 0): Safari am iPhone hat den Inhalt damit manchmal auf fast
+ * nichts zusammengedrückt – der Dialog war dann nur noch Titel und Knöpfe.
+ */
 .dialog-body {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 4px var(--gutter) 12px;
   display: flex;
