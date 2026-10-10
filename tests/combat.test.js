@@ -17,6 +17,7 @@ import {
   currentEntry,
   heroEntryId,
   isHeroInitiativeRoll,
+  heroOnTurnChange,
 } from '../js/combat.js';
 import { canSee, VISIBILITY } from '../js/log.js';
 import { createRoomLog, rowToRecord } from '../js/room-log.js';
@@ -80,6 +81,25 @@ test(COMBAT, 'Zurück, auch über den Rundenanfang', () => {
   combat = previousTurn(previousTurn(combat));
   assertEqual(currentEntry(combat).name, 'Alrik');
   assertEqual(previousTurn(combat), combat, 'vor Runde 1 geht es nicht zurück');
+});
+
+test(COMBAT, 'Meister folgt dem Zug: neuer Held am Zug → zu ihm springen', () => {
+  const start = sampleCombat();
+  const alrik = advanceTurn(start);
+  assertEqual(heroOnTurnChange(start, alrik), 'a', 'Start: Alrik ist am Zug');
+  const bosper = advanceTurn(alrik);
+  assertEqual(heroOnTurnChange(alrik, bosper), 'b', 'Weiter: Bosper');
+  const ork = advanceTurn(bosper);
+  assertEqual(heroOnTurnChange(bosper, ork), null, 'Ork am Zug: kein Held, Auswahl bleibt');
+  const nextRound = advanceTurn(ork);
+  assertEqual(heroOnTurnChange(ork, nextRound), 'a', 'neue Runde: wieder Alrik');
+  assertEqual(heroOnTurnChange(nextRound, previousTurn(nextRound)), null, 'Zurück zum Ork: kein Held');
+  assertEqual(heroOnTurnChange(bosper, previousTurn(bosper)), 'a', 'Zurück zu Alrik');
+  const lateRoll = upsertEntry(bosper, entryFromInitiativeRoll(initiativeRecord('Rondrian', 15, 6, 'c'), 'c', 2));
+  assertEqual(heroOnTurnChange(bosper, lateRoll), null, 'Nachzügler würfelt: gleicher Zug, kein Sprung');
+  assertEqual(heroOnTurnChange(null, alrik), null, 'Kampf gerade geladen: zuletzt gewählter Held bleibt');
+  assertEqual(heroOnTurnChange(alrik, null), null, 'Kampf vorbei');
+  assertEqual(heroOnTurnChange(startCombat(), start), null, 'noch niemand am Zug');
 });
 
 test(COMBAT, 'Nachzügler ändern nicht, wer am Zug ist', () => {

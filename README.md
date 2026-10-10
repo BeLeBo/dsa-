@@ -364,6 +364,10 @@ Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort a
 4. **Start ▶ / Weiter ▶** – wer dran ist, ist hervorgehoben; wer selbst dran ist, sieht „Du bist am Zug!“
    und hat seine Favoriten (Angriffe …) direkt in der Leiste. **Ende** beendet den Kampf für alle.
    (Werte anpassen und Einträge entfernen geht weiterhin im Tab **Gruppe**.)
+   **Meister:** Kommt ein Held an die Reihe, springen Werte und Proben automatisch zu ihm (samt seinen
+   Favoriten in der Kampfleiste). Ist ein Gegner dran, bleibt der zuletzt gezeigte Held stehen. Während
+   eines Zuges kann der Meister frei einen anderen Helden wählen – gesprungen wird erst beim nächsten
+   Zugwechsel.
 
 - **Lebensbalken** unter den Figuren:
   - **Helden:** genauer Balken für alle – so sieht die Gruppe, wie es um jeden steht.

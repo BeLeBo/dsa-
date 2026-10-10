@@ -30,6 +30,20 @@ export function currentEntry(combat) {
   return combat?.entries.find((entry) => entry.id === combat.currentId) ?? null;
 }
 
+/**
+ * Zugwechsel zu einem Helden? Dann dessen ID – der Meister springt mit Werten und Proben zu ihm.
+ * Sonst null: gleicher Zug wie vorher, Gegner/NSC am Zug, Kampf vorbei oder gerade erst geladen
+ * (beim Öffnen des Raums bleibt der zuletzt gewählte Held).
+ * @param {object|null} previous  Kampf vor der Änderung
+ * @param {object|null} next      Kampf danach
+ */
+export function heroOnTurnChange(previous, next) {
+  if (!previous || !next) return null;
+  const entry = currentEntry(next);
+  if (!entry || entry.id === previous.currentId) return null;
+  return entry.kind === ENTRY_KINDS.HERO ? entry.characterId : null;
+}
+
 function makeEntry({ id, kind, name, characterId = null, base, roll, modifier = 0, tiebreak }) {
   return {
     id,

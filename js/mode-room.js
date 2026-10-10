@@ -45,7 +45,7 @@ import { normalizeHero, heroName } from './sheet.js';
 import { isPlainObject, isOlderTimestamp } from './util.js';
 import { toInt, clampConditionLevel } from './rules.js';
 import { toggleKey } from './check-search.js';
-import { heroEntryId } from './combat.js';
+import { heroEntryId, heroOnTurnChange } from './combat.js';
 import { readLocalHero } from './mode-local.js';
 
 /** Wartezeit bis zum nächsten Verbindungsversuch, wenn der Server nicht erreichbar ist. */
@@ -585,6 +585,17 @@ export function startRoomMode(initialSession, { onLeave }) {
       action: { label: 'Würfeln', onClick: () => shell.openCheck({ kind: 'initiative' }) },
     });
     navigator.vibrate?.([100, 60, 100]);
+  });
+
+  // Meister: Kommt ein Held an die Reihe, stehen seine Werte und Proben gleich auf dem
+  // Spielbildschirm. Gewechselt wird nur beim Zugwechsel – dazwischen wählt der Meister frei.
+  let combatBefore = room.get().combat;
+  room.subscribe(() => {
+    const combatNow = room.get().combat;
+    if (combatNow === combatBefore) return;
+    const heroId = heroOnTurnChange(combatBefore, combatNow);
+    combatBefore = combatNow;
+    if (heroId && isMaster() && sync?.id !== heroId) heroActions.select(heroId);
   });
 
   createGroupView(shell.panel(TABS.group.id), {
