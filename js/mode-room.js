@@ -461,6 +461,8 @@ export function startRoomMode(initialSession, { onLeave }) {
       onMapDeleted: mapController.handleMapDeleted,
       onToken: mapController.handleTokenRow,
       onTokenDeleted: mapController.handleTokenDeleted,
+      onDrawing: mapController.handleDrawingRow,
+      onDrawingDeleted: mapController.handleDrawingDeleted,
       onReconnect: mapController.load,
     }).catch(() => null);
   }

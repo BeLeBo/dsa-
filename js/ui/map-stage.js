@@ -7,6 +7,8 @@
  *  - Karte verschieben: Finger, rechte/mittlere Maustaste oder Leertaste + Maus.
  *  - Stelle markieren (Ping): lange drücken, Alt + Klick oder Knopf „Stelle markieren“ und tippen.
  *    Ein Ping leuchtet ein paar Sekunden; liegt er außerhalb des Ausschnitts, rückt die Karte nach.
+ *  - Zeichnen (Knopf „Stift“): Ein Finger bzw. die linke Maustaste malt oder radiert, zwei Finger
+ *    bzw. rechte Maustaste/Leertaste verschieben weiter die Karte. Die Linien liegen auf der Karte.
  *
  * Kartenbild und Raster werden mit der Karte skaliert; die Figuren liegen in einer eigenen
  * Ebene in Bildschirmgröße darüber – so bleiben Namen, Kürzel und Bilder bei jedem Zoom scharf.
@@ -31,6 +33,12 @@ import {
   viewToReveal,
   PING_DURATION_MS,
   TOKEN_COLORS,
+  addStrokePoint,
+  strokePath,
+  drawingsAt,
+  drawingWidth,
+  drawColorValue,
+  MAX_DRAWING_POINTS,
 } from '../map.js';
 
 /** Ab dieser Bewegung (Bildschirmpunkte) ist es kein Antippen mehr. */
@@ -47,6 +55,9 @@ const LONG_PRESS_MS = 550;
 /** Ein Ping so nah am Rand (Bildschirmpunkte) holt die Karte ins Bild. */
 const PING_MARGIN_PX = 48;
 const PAN_ANIMATION_MS = 350;
+/** Zeichnen: Abstand zwischen zwei Punkten einer Linie (Bildschirmpunkte) und Reichweite des Radierers. */
+const MIN_STROKE_STEP_PX = 2;
+const ERASER_RADIUS_PX = 14;
 const ARROW_STEPS = Object.freeze({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] });
 
 function svg(tag, attributes = {}) {
@@ -113,6 +124,11 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
  * @param {(ids: string[]) => void} options.onDeleteSelection  Entf-Taste bei Auswahl
  * @param {() => boolean} options.canPing                Stellen markieren erlaubt (Meister, gezeigte Karte)?
  * @param {(point: {x, y}) => void} options.onPing        Stelle markiert (Kartenpunkte)
+ * @param {() => boolean} options.canDraw                Zeichnen erlaubt (Meister)?
+ * @param {(stroke: {points, color, width}) => void} options.onStroke  Linie fertig (Kartenpunkte)
+ * @param {(ids: string[]) => void} options.onErase       Linien wegradiert
+ * @param {() => void} options.onUndo                     Strg + Z beim Zeichnen
+ * @param {(active: boolean) => void} options.onDrawModeChange  Stift an oder aus
  * @param {(path: string) => Promise<string>} options.loadImage  Bildadresse zu einem Speicherpfad
  */
 export function createMapStage({
@@ -127,11 +143,17 @@ export function createMapStage({
   onDeleteSelection = () => {},
   canPing = () => false,
   onPing = () => {},
+  canDraw = () => false,
+  onStroke = () => {},
+  onErase = () => {},
+  onUndo = () => {},
+  onDrawModeChange = () => {},
   loadImage,
 }) {
   const image = h('img', { class: 'map-image', alt: '', draggable: 'false' });
   const grid = createGridLayer();
-  const stage = h('div', { class: 'map-stage' }, image, grid.element);
+  const drawLayer = svg('svg', { class: 'map-drawings', 'aria-hidden': 'true' });
+  const stage = h('div', { class: 'map-stage' }, image, grid.element, drawLayer);
   const tokenLayer = h('div', { class: 'map-tokens' });
   const pingLayer = h('div', { class: 'map-pings', 'aria-hidden': 'true' });
   const marquee = h('div', { class: 'map-marquee', hidden: true });
@@ -160,6 +182,10 @@ export function createMapStage({
     'aria-pressed': 'false',
     hidden: true,
   });
+  const drawButton = controlButton('Zeichnen (Stift)', ICONS.pen, () => setDrawMode(!drawMode), {
+    'aria-pressed': 'false',
+    hidden: true,
+  });
   const fullscreenButton = controlButton('Vollbild', ICONS.expand, toggleFullscreen, { 'aria-pressed': 'false' });
   const controls = h(
     'div',
@@ -169,6 +195,7 @@ export function createMapStage({
     controlButton('Ganze Karte zeigen', ICONS.fit, () => fit()),
     selectButton,
     pingButton,
+    drawButton,
     fullscreenButton,
   );
   const element = h('div', { class: 'map-frame' }, viewport, controls);
@@ -184,6 +211,13 @@ export function createMapStage({
   let selected = new Set();
   let selectMode = false;
   let pingMode = false;
+  let drawMode = false;
+  /** Stift: Werkzeug ('pen' | 'eraser'), Farbe und Stärke (siehe DRAW_COLORS, DRAW_WIDTHS). */
+  let drawStyle = { tool: 'pen', color: 'rot', width: 'mittel' };
+  let drawings = [];
+  const drawingViews = new Map();
+  /** Linie, die gerade gezeichnet wird: { path, points, color, width }. */
+  let draft = null;
   let pressTimer = null;
   /** Leuchtende Pings { element, point } und ein Ping, der auf eine sichtbare Karte wartet. */
   const pings = new Set();
@@ -278,6 +312,7 @@ export function createMapStage({
 
   /** Knopf „Stelle markieren“: Der nächste Tipp auf die Karte setzt einen Ping. */
   function setPingMode(active) {
+    if (active) setDrawMode(false);
     pingMode = active;
     pingButton.setAttribute('aria-pressed', String(active));
     viewport.classList.toggle('is-ping-mode', active);
@@ -364,7 +399,7 @@ export function createMapStage({
   /** Lange drücken (ohne zu ziehen) setzt einen Ping – auch am Handy, ohne den Knopf. */
   function startLongPress(point) {
     cancelLongPress();
-    if (!canPing()) return;
+    if (!canPing() || drawMode) return;
     pressTimer = setTimeout(() => {
       pressTimer = null;
       if (!gesture || gesture.moved || pointers.size !== 1) return;
@@ -378,11 +413,101 @@ export function createMapStage({
   /** Handy/Tablet: Ein Finger zieht dann einen Auswahlrahmen statt die Karte zu verschieben. */
   function toggleSelectMode() {
     selectMode = !selectMode;
+    if (selectMode) setDrawMode(false);
     selectButton.setAttribute('aria-pressed', String(selectMode));
     viewport.classList.toggle('is-select-mode', selectMode);
   }
 
   new ResizeObserver(onResize).observe(viewport);
+
+  // -------------------------------------------------------------------------
+  // Zeichnen (Ebene auf der Karte, wird mit ihr skaliert)
+  // -------------------------------------------------------------------------
+
+  /** Stift an oder aus. Beim Zeichnen gibt es keine Auswahl, keinen Ping und keinen Rahmen. */
+  function setDrawMode(active) {
+    const next = Boolean(active) && Boolean(map) && canDraw();
+    if (next === drawMode) return;
+    drawMode = next;
+    discardDraft();
+    if (gesture?.kind === 'draw' || gesture?.kind === 'erase') gesture = null;
+    if (drawMode) {
+      setPingMode(false);
+      if (selectMode) toggleSelectMode();
+      setSelection([]);
+    }
+    showErasing(new Set());
+    drawButton.setAttribute('aria-pressed', String(drawMode));
+    viewport.classList.toggle('is-draw-mode', drawMode);
+    viewport.dataset.tool = drawStyle.tool;
+    onDrawModeChange(drawMode);
+  }
+
+  function renderDrawings() {
+    const ids = new Set(drawings.map((drawing) => drawing.id));
+    for (const [id, path] of drawingViews) {
+      if (ids.has(id)) continue;
+      path.remove();
+      drawingViews.delete(id);
+    }
+    for (const drawing of drawings) {
+      if (drawingViews.has(drawing.id)) continue;
+      const path = svg('path', {
+        d: strokePath(drawing.points),
+        stroke: drawColorValue(drawing.color),
+        'stroke-width': drawing.width,
+      });
+      drawingViews.set(drawing.id, path);
+      drawLayer.insertBefore(path, draft?.path ?? null); // die Linie in Arbeit bleibt oben
+    }
+  }
+
+  /** Linien, die der Radierer gerade berührt, blass zeigen. */
+  function showErasing(ids) {
+    for (const [id, path] of drawingViews) path.classList.toggle('is-erasing', ids.has(id));
+  }
+
+  function beginDraft(point) {
+    const color = drawStyle.color;
+    const width = drawingWidth(drawStyle.width, gridValues);
+    const path = svg('path', { class: 'is-draft', stroke: drawColorValue(color), 'stroke-width': width });
+    drawLayer.append(path);
+    draft = { path, points: [point], color, width };
+    path.setAttribute('d', strokePath(draft.points));
+  }
+
+  function extendDraft(screenPoint) {
+    if (!draft) return;
+    const point = clampToMap(screenToMap(view, screenPoint), map);
+    if (!addStrokePoint(draft.points, point, MIN_STROKE_STEP_PX / view.scale)) return;
+    if (draft.points.length >= MAX_DRAWING_POINTS) {
+      // Sehr lange Linie: dieses Stück speichern und nahtlos weiterzeichnen.
+      commitDraft();
+      beginDraft(point);
+      return;
+    }
+    draft.path.setAttribute('d', strokePath(draft.points));
+  }
+
+  function commitDraft() {
+    const finished = draft;
+    draft = null;
+    if (!finished) return;
+    onStroke({ points: finished.points, color: finished.color, width: finished.width });
+    finished.path.remove(); // erst danach: Die gespeicherte Linie steht dann schon da
+  }
+
+  function discardDraft() {
+    draft?.path.remove();
+    draft = null;
+  }
+
+  function eraseAt(screenPoint) {
+    const point = screenToMap(view, screenPoint);
+    const before = gesture.hits.size;
+    for (const id of drawingsAt(drawings, point, ERASER_RADIUS_PX / view.scale)) gesture.hits.add(id);
+    if (gesture.hits.size !== before) showErasing(gesture.hits);
+  }
 
   // -------------------------------------------------------------------------
   // Figuren (Ebene in Bildschirmgröße)
@@ -542,6 +667,16 @@ export function createMapStage({
       gesture = { kind: 'pan', start: point, last: point, moved: false, ping: true };
       return;
     }
+    if (drawMode && !panButton && (!isMouse || event.button === 0)) {
+      if (drawStyle.tool === 'eraser') {
+        gesture = { kind: 'erase', start: point, moved: false, hits: new Set() };
+        eraseAt(point);
+      } else {
+        gesture = { kind: 'draw', start: point, moved: false };
+        beginDraft(clampToMap(screenToMap(view, point), map));
+      }
+      return;
+    }
     const additive = event.shiftKey || event.ctrlKey || event.metaKey || selectMode;
     const tokenElement = panButton ? null : event.target.closest('.map-token');
     const token = tokenElement ? tokenById(tokenElement.dataset.tokenId) : null;
@@ -653,6 +788,9 @@ export function createMapStage({
     } else if (pointers.size === 2) {
       cancelLongPress();
       if (gesture?.kind === 'token' && gesture.moved) cancelTokenDrag();
+      // Zweiter Finger beim Zeichnen: Es wird verschoben/gezoomt, die angefangene Linie verworfen.
+      if (gesture?.kind === 'draw') discardDraft();
+      if (gesture?.kind === 'erase') showErasing(new Set());
       marquee.hidden = true;
       gesture = { kind: 'pinch', startView: view, start: pinchInfo([...pointers.values()]) };
     }
@@ -671,6 +809,16 @@ export function createMapStage({
         zoomLimits(viewportSize(), map),
       );
       applyView();
+      return;
+    }
+    if (gesture.kind === 'draw' || gesture.kind === 'erase') {
+      // Zwischenpunkte, die der Browser zusammengefasst hat, machen die Linie glatter.
+      const samples = event.getCoalescedEvents?.() ?? [];
+      for (const sample of samples.length ? samples : [event]) {
+        const at = localPoint(viewport, sample);
+        if (gesture.kind === 'draw') extendDraft(at);
+        else eraseAt(at);
+      }
       return;
     }
     if (gesture.pinged) return;
@@ -711,6 +859,16 @@ export function createMapStage({
     gesture = null;
     cancelLongPress();
     const cancelled = event.type === 'pointercancel';
+    if (finished.kind === 'draw') {
+      if (cancelled) discardDraft();
+      else commitDraft();
+      return;
+    }
+    if (finished.kind === 'erase') {
+      if (!cancelled && finished.hits.size) onErase([...finished.hits]);
+      showErasing(new Set());
+      return;
+    }
     if (finished.pinged) {
       if (finished.kind === 'token') endDragVisuals(finished.group);
       return; // Lang gedrückt: Ping ist gesetzt, kein Antippen
@@ -759,6 +917,17 @@ export function createMapStage({
       event.preventDefault();
       event.stopPropagation();
       setPingMode(false);
+      return;
+    }
+    if (event.key === 'Escape' && drawMode) {
+      event.preventDefault();
+      event.stopPropagation(); // erst den Stift weglegen, beim nächsten Esc das Vollbild beenden
+      setDrawMode(false);
+      return;
+    }
+    if (drawMode && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      onUndo();
       return;
     }
     if (event.key === 'Escape' && selected.size) {
@@ -863,9 +1032,15 @@ export function createMapStage({
       image.width = map.width;
       image.height = map.height;
       grid.update(map, gridValues);
+      drawLayer.setAttribute('width', map.width);
+      drawLayer.setAttribute('height', map.height);
+      drawLayer.setAttribute('viewBox', `0 0 ${map.width} ${map.height}`);
       selectButton.hidden = !selectable();
       pingButton.hidden = !canPing();
+      drawButton.hidden = !canDraw();
       if (pingMode && !canPing()) setPingMode(false);
+      if (drawMode && !canDraw()) setDrawMode(false);
+      if (changedImage) discardDraft();
       if (changedImage) {
         fitted = false;
         userMoved = false;
@@ -895,6 +1070,19 @@ export function createMapStage({
     },
     /** Ping an einer Stelle der Karte zeigen; reveal: Karte rückt nach, wenn er nicht im Bild ist. */
     showPing,
+    /** Linien des Stifts auf der Karte (siehe normalizeDrawing in map.js). */
+    setDrawings(next) {
+      drawings = next;
+      renderDrawings();
+    },
+    /** Stift an oder aus (z. B. „Fertig“ in der Stiftleiste). */
+    setDrawMode,
+    isDrawing: () => drawMode,
+    /** Werkzeug, Farbe oder Stärke des Stifts ändern. */
+    setDrawStyle(changes) {
+      drawStyle = { ...drawStyle, ...changes };
+      viewport.dataset.tool = drawStyle.tool;
+    },
     /** Auswahl von außen setzen (z. B. „Auswahl aufheben“ im Panel). */
     setSelection,
     selection: () => [...selected],

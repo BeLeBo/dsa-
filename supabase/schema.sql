@@ -7,12 +7,13 @@
 -- Rollen:
 --   Meister  – sieht und bearbeitet alle Helden des Raums, sieht alle Würfe,
 --              führt den Kampf (Initiative), kann das Protokoll leeren,
---              verwaltet Karten und Figuren, speichert Figuren als Vorlagen und markiert
---              Stellen auf der Karte (Ping).
+--              verwaltet Karten und Figuren, speichert Figuren als Vorlagen, markiert
+--              Stellen auf der Karte (Ping) und malt mit dem Stift auf die Karte.
 --   Spieler  – sieht und bearbeitet nur den eigenen Helden (wählt ihn beim Beitreten aus den
 --              Helden des Raums – von den anderen sieht er dabei nur Name, Spezies und Profession),
 --              sieht öffentliche Würfe und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
---              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie.
+--              sieht die gezeigte Karte (mit den Linien des Meisters), stellt die Figur des
+--              eigenen Helden auf und bewegt sie.
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- Meister wird, wer den Raum erstellt oder beim Beitreten „Ich bin Meister“ wählt
 -- (ohne PIN – die Gruppe vertraut sich; den Raumcode kennt ohnehin nur die Gruppe).
@@ -145,6 +146,29 @@ create table if not exists public.figure_templates (
   updated_at timestamptz not null default now()
 );
 create unique index if not exists figure_templates_name on public.figure_templates (room_id, lower(name));
+
+-- Zeichnungen des Meisters (Stift auf der Karte): eine Zeile je Linie. points = [x1, y1, x2, y2, …]
+-- in Kartenpunkten, width = Strichstärke in Kartenpunkten. Sichtbar wie die Karte selbst.
+create table if not exists public.map_drawings (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms (id) on delete cascade,
+  map_id uuid not null references public.maps (id) on delete cascade,
+  color text not null default 'rot'
+    check (color in ('rot', 'gelb', 'gruen', 'blau', 'lila', 'schwarz', 'weiss')),
+  width real not null check (width > 0 and width <= 200),
+  points jsonb not null check (
+    case
+      when jsonb_typeof(points) = 'array' then
+        jsonb_array_length(points) between 2 and 3000
+        and jsonb_array_length(points) % 2 = 0
+        and pg_column_size(points) < 100000
+      else false
+    end
+  ),
+  created_at timestamptz not null default now()
+);
+create index if not exists map_drawings_map on public.map_drawings (map_id, created_at);
+create index if not exists map_drawings_room on public.map_drawings (room_id);
 
 -- -----------------------------------------------------------------------------
 -- Hilfsfunktionen für die Zugriffsregeln
@@ -540,6 +564,26 @@ create trigger tokens_bump_on_hide
   for each row when (old.hidden is distinct from new.hidden)
   execute function private.bump_map_revision();
 
+-- Löscht der Meister Linien (Radierer, Rückgängig, alles löschen), zählt die Karte ebenfalls
+-- hoch – einmal je Karte und Befehl, auch wenn viele Linien auf einmal verschwinden.
+create or replace function private.bump_drawn_maps()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.maps set revision = revision + 1 where id in (select distinct r.map_id from removed r);
+  return null;
+end;
+$$;
+
+drop trigger if exists map_drawings_bump_on_delete on public.map_drawings;
+create trigger map_drawings_bump_on_delete
+  after delete on public.map_drawings
+  referencing old table as removed
+  for each statement execute function private.bump_drawn_maps();
+
 -- Lebensbalken der Helden: Die LeP eines Helden werden auf seine Figuren gespiegelt. So sehen alle
 -- im Raum die Balken der Gruppe, ohne fremde Heldenbögen lesen zu dürfen. Unlesbare Werte werden
 -- zu „leer“ – ein Fehler hier darf das Speichern des Helden nie verhindern.
@@ -932,6 +976,7 @@ create policy "Meister kann das Protokoll leeren" on public.rolls
 alter table public.maps enable row level security;
 alter table public.tokens enable row level security;
 alter table public.figure_templates enable row level security;
+alter table public.map_drawings enable row level security;
 
 drop policy if exists "Karten sehen" on public.maps;
 create policy "Karten sehen" on public.maps
@@ -998,6 +1043,28 @@ create policy "Meister entfernt Figuren" on public.tokens
   for delete to authenticated
   using (public.is_room_master(room_id));
 
+-- Zeichnungen: sichtbar wie die Karte (Spieler: nur auf der gezeigten). Malen und löschen nur der Meister.
+drop policy if exists "Zeichnungen sehen" on public.map_drawings;
+create policy "Zeichnungen sehen" on public.map_drawings
+  for select to authenticated
+  using (
+    public.is_room_master(room_id)
+    or (public.is_room_member(room_id) and public.is_active_map(room_id, map_id))
+  );
+
+drop policy if exists "Meister zeichnet" on public.map_drawings;
+create policy "Meister zeichnet" on public.map_drawings
+  for insert to authenticated
+  with check (
+    public.is_room_master(room_id)
+    and exists (select 1 from public.maps m where m.id = map_id and m.room_id = map_drawings.room_id)
+  );
+
+drop policy if exists "Meister löscht Zeichnungen" on public.map_drawings;
+create policy "Meister löscht Zeichnungen" on public.map_drawings
+  for delete to authenticated
+  using (public.is_room_master(room_id));
+
 -- Gespeicherte Figuren: nur der Meister (Anlegen und Ändern über save_/update_figure_template()).
 drop policy if exists "Meister sieht gespeicherte Figuren" on public.figure_templates;
 create policy "Meister sieht gespeicherte Figuren" on public.figure_templates
@@ -1014,7 +1081,7 @@ create policy "Meister löscht gespeicherte Figuren" on public.figure_templates
 -- -----------------------------------------------------------------------------
 
 revoke all on public.rooms, public.room_members, public.characters, public.rolls from anon, authenticated;
-revoke all on public.maps, public.tokens, public.figure_templates from anon, authenticated;
+revoke all on public.maps, public.tokens, public.figure_templates, public.map_drawings from anon, authenticated;
 
 grant select on public.rooms to authenticated;
 grant update (combat, active_map_id, ping) on public.rooms to authenticated;
@@ -1027,6 +1094,8 @@ grant insert (id, room_id, map_id, character_id, name, image_path, color, size, 
 grant update (character_id, name, image_path, color, size, x, y, hidden, le_current, le_max)
   on public.tokens to authenticated;
 grant select, delete on public.figure_templates to authenticated;
+grant select, delete on public.map_drawings to authenticated;
+grant insert (id, room_id, map_id, color, width, points) on public.map_drawings to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
@@ -1109,7 +1178,7 @@ begin
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     return;
   end if;
-  foreach v_table in array array['rooms', 'characters', 'room_members', 'rolls', 'maps', 'tokens'] loop
+  foreach v_table in array array['rooms', 'characters', 'room_members', 'rolls', 'maps', 'tokens', 'map_drawings'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', v_table);
     exception when duplicate_object then
@@ -1128,7 +1197,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 7;
+  select 8;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

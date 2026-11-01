@@ -8,6 +8,7 @@
  * ist die Karte, die auf diesem Gerät angezeigt wird, `activeMapId` die für alle gezeigte.
  * Auf der gezeigten Karte kann er Stellen markieren (Ping) – alle sehen sie kurz aufleuchten.
  * Figuren kann er für später speichern (Vorlagen des Raums) und wieder aufstellen.
+ * Mit dem Stift malt er auf die angezeigte Karte; die Linien sehen alle, die die Karte sehen.
  */
 import * as serverApi from './map-api.js';
 import { prepareMapImage, prepareTokenImage } from './image.js';
@@ -28,6 +29,8 @@ import {
   normalizePing,
   parseIniBase,
   sortTemplates,
+  normalizeDrawing,
+  flattenPoints,
   MAX_TOKEN_NAME_LENGTH,
   MAX_MAP_NAME_LENGTH,
 } from './map.js';
@@ -102,6 +105,7 @@ export function createMapController({
     activeMapId: null,
     viewMapId: null,
     tokens: [],
+    drawings: [], // Linien des Stifts auf der angezeigten Karte (siehe normalizeDrawing)
     ping: null, // zuletzt markierte Stelle { id, map_id, x, y, own, receivedAt }
     templates: [], // gespeicherte Figuren des Meisters (erst geladen, wenn er sie braucht)
   });
@@ -117,6 +121,32 @@ export function createMapController({
     if (state.get().viewMapId === mapId) state.update({ tokens: tokens.map(withPendingLife) });
   }
 
+  /** Linien, die gerade gespeichert werden (ID → Speichervorgang), und schon gelöschte. */
+  const savingDrawings = new Map();
+  const removedDrawings = new Set();
+
+  /** Linien der Karte laden. Eine Datenbank ohne Zeichnungen (SQL nicht erneut ausgeführt) stört die Karte nicht. */
+  async function loadDrawings(mapId) {
+    let rows = [];
+    try {
+      rows = mapId ? await api.fetchDrawings(mapId) : [];
+    } catch {
+      return;
+    }
+    if (state.get().viewMapId !== mapId) return;
+    const loaded = rows.map(normalizeDrawing).filter((drawing) => drawing && !removedDrawings.has(drawing.id));
+    // Was gerade noch gespeichert wird, fehlt auf dem Server noch – nicht verschwinden lassen.
+    const saving = state
+      .get()
+      .drawings.filter((drawing) => savingDrawings.has(drawing.id) && !loaded.some((row) => row.id === drawing.id));
+    state.update({ drawings: [...loaded, ...saving] });
+  }
+
+  /** Figuren und Linien der Karte laden. */
+  function loadMapContent(mapId) {
+    return Promise.all([loadTokens(mapId), loadDrawings(mapId)]);
+  }
+
   /** Bestimmt die angezeigte Karte neu und lädt ihre Figuren, wenn nötig. */
   async function refreshView({ reloadTokens = false } = {}) {
     const { maps, activeMapId, viewMapId } = state.get();
@@ -127,10 +157,10 @@ export function createMapController({
       isMaster: isMaster(),
     });
     if (next !== viewMapId) {
-      state.update({ viewMapId: next, tokens: [] });
-      await loadTokens(next);
+      state.update({ viewMapId: next, tokens: [], drawings: [] });
+      await loadMapContent(next);
     } else if (reloadTokens) {
-      await loadTokens(next);
+      await loadMapContent(next);
     }
   }
 
@@ -200,8 +230,8 @@ export function createMapController({
     if (!previous) {
       refreshView().catch(() => {});
     } else if (row.id === state.get().viewMapId && row.revision !== previous.revision) {
-      // Figur verborgen oder entfernt – solche Änderungen erfahren Spieler nur so.
-      loadTokens(row.id).catch(() => {});
+      // Figur verborgen oder entfernt, Linien gelöscht – solche Änderungen erfahren Spieler nur so.
+      loadMapContent(row.id).catch(() => {});
     }
   }
 
@@ -230,6 +260,23 @@ export function createMapController({
   function handleTokenDeleted(id) {
     if (state.get().tokens.some((token) => token.id === id))
       state.update({ tokens: withoutId(state.get().tokens, id) });
+  }
+
+  /** Neue Linie (live, auch das Echo der eigenen). */
+  function handleDrawingRow(incoming) {
+    const drawing = normalizeDrawing(incoming);
+    if (!drawing || drawing.map_id !== state.get().viewMapId || removedDrawings.has(drawing.id)) return;
+    const drawings = state.get().drawings;
+    state.update({
+      drawings: drawings.some((entry) => entry.id === drawing.id)
+        ? drawings.map((entry) => (entry.id === drawing.id ? drawing : entry))
+        : [...drawings, drawing],
+    });
+  }
+
+  function handleDrawingDeleted(id) {
+    if (state.get().drawings.some((drawing) => drawing.id === id))
+      state.update({ drawings: withoutId(state.get().drawings, id) });
   }
 
   // -------------------------------------------------------------------------
@@ -727,6 +774,88 @@ export function createMapController({
     await api.sendPing(roomId, next);
   }
 
+  // -------------------------------------------------------------------------
+  // Zeichnen (Meister): sofort sichtbar, dann gespeichert
+  // -------------------------------------------------------------------------
+
+  /**
+   * Meister: Linie auf die angezeigte Karte zeichnen.
+   * @param {{ points: {x, y}[], color: string, width: number }} stroke  Punkte und Stärke in Kartenpunkten
+   */
+  async function addDrawing({ points, color, width }) {
+    const map = viewMap();
+    if (!isMaster() || !map || !points?.length) return null;
+    const drawing = normalizeDrawing({
+      id: newId(),
+      map_id: map.id,
+      color,
+      width,
+      points: flattenPoints(points.map((point) => clampToMap(point, map))),
+    });
+    if (!drawing) return null;
+    state.update({ drawings: [...state.get().drawings, drawing] });
+    const saving = api.createDrawing({
+      id: drawing.id,
+      room_id: roomId,
+      map_id: map.id,
+      color: drawing.color,
+      width: drawing.width,
+      points: flattenPoints(drawing.points),
+    });
+    savingDrawings.set(drawing.id, saving);
+    try {
+      await saving;
+    } catch (error) {
+      state.update({ drawings: withoutId(state.get().drawings, drawing.id) });
+      throw error;
+    } finally {
+      savingDrawings.delete(drawing.id);
+    }
+    return drawing;
+  }
+
+  /** Meister: Linien löschen (Radierer) – sofort weg; klappt es nicht, kommen sie wieder. */
+  async function removeDrawings(ids) {
+    const map = viewMap();
+    const doomed = state.get().drawings.filter((drawing) => ids.includes(drawing.id));
+    if (!isMaster() || !map || doomed.length === 0) return;
+    const doomedIds = doomed.map((drawing) => drawing.id);
+    for (const id of doomedIds) removedDrawings.add(id);
+    state.update({ drawings: state.get().drawings.filter((drawing) => !removedDrawings.has(drawing.id)) });
+    // Eine Linie, die noch gespeichert wird, erst danach löschen – sonst bliebe sie auf dem Server.
+    await Promise.allSettled(doomedIds.map((id) => savingDrawings.get(id)).filter(Boolean));
+    try {
+      await api.deleteDrawings(doomedIds);
+    } catch (error) {
+      for (const id of doomedIds) removedDrawings.delete(id);
+      await loadDrawings(map.id);
+      throw error;
+    }
+  }
+
+  /** Meister: zuletzt gezeichnete Linie der angezeigten Karte entfernen. */
+  function undoDrawing() {
+    const last = state.get().drawings.at(-1);
+    return last ? removeDrawings([last.id]) : Promise.resolve();
+  }
+
+  /** Meister: alle Linien der angezeigten Karte löschen. */
+  async function clearDrawings() {
+    const map = viewMap();
+    if (!isMaster() || !map) return;
+    const ids = state.get().drawings.map((drawing) => drawing.id);
+    for (const id of ids) removedDrawings.add(id);
+    state.update({ drawings: [] });
+    await Promise.allSettled(ids.map((id) => savingDrawings.get(id)).filter(Boolean));
+    try {
+      await api.clearDrawings(map.id);
+    } catch (error) {
+      for (const id of ids) removedDrawings.delete(id);
+      await loadDrawings(map.id);
+      throw error;
+    }
+  }
+
   /** Meister: mehrere Figuren entfernen (Bilder, die niemand mehr nutzt, werden aufgeräumt). */
   async function removeTokens(tokenIds) {
     const tokens = state.get().tokens.filter((token) => tokenIds.includes(token.id));
@@ -749,6 +878,8 @@ export function createMapController({
     handleMapDeleted,
     handleTokenRow,
     handleTokenDeleted,
+    handleDrawingRow,
+    handleDrawingDeleted,
     actions: {
       uploadMap,
       createBuiltMap,
@@ -774,6 +905,10 @@ export function createMapController({
       moveToken,
       moveTokens,
       ping,
+      addDrawing,
+      removeDrawings,
+      undoDrawing,
+      clearDrawings,
       loadTemplates,
       saveTemplate,
       editTemplate,

@@ -13,6 +13,9 @@ const MAP_COLUMNS = 'id, room_id, name, image_path, width, height, grid, has_sce
 const TOKEN_COLUMNS =
   'id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max, updated_at';
 const TEMPLATE_COLUMNS = 'id, room_id, name, image_path, color, size, le_max, ini_base, updated_at';
+const DRAWING_COLUMNS = 'id, room_id, map_id, color, width, points, created_at';
+/** So viele Linien werden höchstens mit einer Anfrage gelöscht (die IDs stehen in der Adresse). */
+const DRAWING_DELETE_CHUNK = 40;
 const IMAGE_CACHE = 'dsa5-bilder';
 const IMAGE_CACHE_HOST = 'https://dsa5-bilder.invalid/';
 const MAX_CACHED_IMAGES = 60;
@@ -177,6 +180,41 @@ export async function moveToken(tokenId, x, y) {
 }
 
 // ---------------------------------------------------------------------------
+// Zeichnungen (Stift des Meisters)
+// ---------------------------------------------------------------------------
+
+/** Linien einer Karte, älteste zuerst (Spieler: nur auf der gezeigten Karte). */
+export async function fetchDrawings(mapId) {
+  const client = await getClient();
+  return unwrap(client.from('map_drawings').select(DRAWING_COLUMNS).eq('map_id', mapId).order('created_at'));
+}
+
+/** Meister: Linie speichern – { id, room_id, map_id, color, width, points: [x1, y1, …] }. */
+export async function createDrawing(row) {
+  const client = await getClient();
+  await unwrap(client.from('map_drawings').insert(row));
+}
+
+/** Meister: einzelne Linien löschen (Radierer, Rückgängig). */
+export async function deleteDrawings(ids) {
+  const client = await getClient();
+  for (let start = 0; start < ids.length; start += DRAWING_DELETE_CHUNK) {
+    await unwrap(
+      client
+        .from('map_drawings')
+        .delete()
+        .in('id', ids.slice(start, start + DRAWING_DELETE_CHUNK)),
+    );
+  }
+}
+
+/** Meister: alle Linien einer Karte löschen. */
+export async function clearDrawings(mapId) {
+  const client = await getClient();
+  await unwrap(client.from('map_drawings').delete().eq('map_id', mapId));
+}
+
+// ---------------------------------------------------------------------------
 // Bilder
 // ---------------------------------------------------------------------------
 
@@ -278,12 +316,13 @@ export function imageUrl(path) {
 
 /**
  * Eigener Kanal für die Karte: Fehlt die Karte im Schema noch (SQL nicht erneut
- * ausgeführt), bleiben Helden, Würfe und Kampf trotzdem live.
+ * ausgeführt), bleiben Helden, Würfe und Kampf trotzdem live. Die Zeichnungen haben
+ * aus demselben Grund noch einen eigenen Kanal.
  * Gelöschte Zeilen melden nur ihre ID (und kommen raumübergreifend an).
  * @returns {Promise<() => void>} Funktion zum Beenden des Abos
  */
 export async function subscribeToMapChanges(roomId, handlers) {
-  const { onMap, onMapDeleted, onToken, onTokenDeleted, onReconnect } = handlers;
+  const { onMap, onMapDeleted, onToken, onTokenDeleted, onDrawing, onDrawingDeleted, onReconnect } = handlers;
   const client = await getClient();
   const inRoom = `room_id=eq.${roomId}`;
   let connectedBefore = false;
@@ -302,5 +341,20 @@ export async function subscribeToMapChanges(roomId, handlers) {
       if (connectedBefore) onReconnect(); // Verpasstes nachholen
       connectedBefore = true;
     });
-  return () => client.removeChannel(channel);
+  let drawingsBefore = false;
+  const drawingChannel = client
+    .channel(`zeichnungen-${roomId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'map_drawings', filter: inRoom }, (payload) => {
+      if (payload.eventType === 'DELETE') onDrawingDeleted?.(payload.old?.id);
+      else onDrawing?.(payload.new);
+    })
+    .subscribe((status) => {
+      if (status !== 'SUBSCRIBED') return;
+      if (drawingsBefore) onReconnect();
+      drawingsBefore = true;
+    });
+  return () => {
+    client.removeChannel(channel);
+    client.removeChannel(drawingChannel);
+  };
 }

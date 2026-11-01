@@ -2204,6 +2204,38 @@ body.map-fullscreen-open {
   cursor: crosshair;
 }
 
+/* Zeichnungen des Meisters (Stift): liegen auf der Karte und werden mit ihr skaliert */
+.map-drawings {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.map-drawings path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.map-drawings path.is-erasing {
+  opacity: 0.25;
+}
+
+.map-viewport.is-draw-mode,
+.map-viewport.is-draw-mode .map-token {
+  cursor: crosshair;
+}
+
+/* Radierer: Kreis in der Größe, in der er Linien erfasst */
+.map-viewport.is-draw-mode[data-tool='eraser'],
+.map-viewport.is-draw-mode[data-tool='eraser'] .map-token {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30'%3E%3Ccircle cx='15' cy='15' r='13' fill='rgb(255 255 255 / 0.35)' stroke='black' stroke-width='1.5'/%3E%3C/svg%3E")
+      15 15,
+    crosshair;
+}
+
 .map-viewport.is-panning {
   cursor: grabbing;
 }
@@ -2778,6 +2810,115 @@ body.map-fullscreen-open {
 
 .map-control:active {
   filter: brightness(0.92);
+}
+
+/* Stiftleiste des Meisters unten auf der Karte */
+.map-draw-bar {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  z-index: 7;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 10px;
+  width: max-content;
+  max-width: calc(100% - 20px);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 0.25);
+  transform: translateX(-50%);
+}
+
+.map-frame.is-fullscreen .map-draw-bar {
+  bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+.draw-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.draw-swatch,
+.draw-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch);
+  height: var(--touch);
+  padding: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.draw-swatch {
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.draw-swatch-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1.5px rgb(0 0 0 / 0.35);
+}
+
+.draw-swatch[aria-pressed='true'] .draw-swatch-dot {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.draw-tool {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.draw-tool[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.draw-tool:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.draw-swatch:active,
+.draw-tool:active {
+  filter: brightness(0.92);
+}
+
+.draw-width-dot {
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.draw-done {
+  margin-left: 4px;
+}
+
+@media (max-width: 639px) {
+  .draw-done {
+    width: var(--touch);
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .draw-done-label {
+    display: none;
+  }
 }
 
 .map-list {

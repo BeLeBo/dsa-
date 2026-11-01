@@ -474,3 +474,113 @@ export function parseIniBase(value) {
 export function sortTemplates(templates) {
   return [...templates].sort((a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' }));
 }
+
+// -----------------------------------------------------------------------------
+// Zeichnen: Der Meister malt mit dem Stift auf die Karte – alle sehen die Linien.
+// Eine Linie: { id, map_id, color, width, points: [{ x, y }, …] } in Kartenpunkten.
+// -----------------------------------------------------------------------------
+
+/** Stiftfarben – kräftig, damit sie auf hellen und dunklen Karten auffallen. */
+export const DRAW_COLORS = Object.freeze([
+  { id: 'rot', name: 'Rot', value: '#e02424' },
+  { id: 'gelb', name: 'Gelb', value: '#facc15' },
+  { id: 'gruen', name: 'Grün', value: '#16a34a' },
+  { id: 'blau', name: 'Blau', value: '#2563eb' },
+  { id: 'lila', name: 'Lila', value: '#9333ea' },
+  { id: 'schwarz', name: 'Schwarz', value: '#111111' },
+  { id: 'weiss', name: 'Weiß', value: '#ffffff' },
+]);
+
+/** Strichstärken als Anteil eines Rasterfelds – so wirken sie auf jeder Karte gleich dick. */
+export const DRAW_WIDTHS = Object.freeze([
+  { id: 'duenn', name: 'Dünn', cells: 0.06 },
+  { id: 'mittel', name: 'Mittel', cells: 0.12 },
+  { id: 'dick', name: 'Dick', cells: 0.25 },
+]);
+
+/** So viele Punkte hat eine Linie höchstens – längere werden beim Zeichnen aufgeteilt. */
+export const MAX_DRAWING_POINTS = 1500;
+export const MAX_DRAWING_WIDTH = 200;
+
+const round1 = (value) => Math.round(value * 10) / 10;
+
+export function drawColorValue(id) {
+  return (DRAW_COLORS.find((color) => color.id === id) ?? DRAW_COLORS[0]).value;
+}
+
+/** Strichstärke in Kartenpunkten für die gewählte Stärke und das Raster der Karte. */
+export function drawingWidth(widthId, grid) {
+  const { cells } = DRAW_WIDTHS.find((entry) => entry.id === widthId) ?? DRAW_WIDTHS[1];
+  return round1(clamp(cells * grid.size, 1, MAX_DRAWING_WIDTH));
+}
+
+/** Punkte für den Server: [x1, y1, x2, y2, …], auf eine Nachkommastelle gerundet. */
+export function flattenPoints(points) {
+  return points.flatMap(({ x, y }) => [round1(x), round1(y)]);
+}
+
+/** Linie vom Server (oder neu gezeichnet) prüfen – null, wenn sie unbrauchbar ist. */
+export function normalizeDrawing(row) {
+  if (!row || typeof row.id !== 'string' || row.id === '') return null;
+  const flat = Array.isArray(row.points) ? row.points : [];
+  if (flat.length < 2 || flat.length % 2 !== 0 || !flat.every(Number.isFinite)) return null;
+  const points = [];
+  for (let index = 0; index < flat.length; index += 2) points.push({ x: flat[index], y: flat[index + 1] });
+  const width = Number(row.width);
+  return {
+    id: row.id,
+    map_id: row.map_id ?? null,
+    color: DRAW_COLORS.some((color) => color.id === row.color) ? row.color : DRAW_COLORS[0].id,
+    width: Number.isFinite(width) && width > 0 ? Math.min(width, MAX_DRAWING_WIDTH) : 4,
+    points,
+  };
+}
+
+/**
+ * Beim Zeichnen: Punkt nur übernehmen, wenn er weit genug vom letzten entfernt ist
+ * (spart Daten, die Linie bleibt trotzdem glatt). Liefert true, wenn er dazugekommen ist.
+ */
+export function addStrokePoint(points, point, minDistance) {
+  const last = points[points.length - 1];
+  if (last && Math.hypot(point.x - last.x, point.y - last.y) < minDistance) return false;
+  points.push({ x: point.x, y: point.y });
+  return true;
+}
+
+/** SVG-Pfad einer Linie, über die Mittelpunkte geglättet. Ein einzelner Punkt wird ein Tupfen. */
+export function strokePath(points) {
+  if (!points?.length) return '';
+  const at = ({ x, y }) => `${round1(x)} ${round1(y)}`;
+  const [first] = points;
+  const last = points[points.length - 1];
+  if (points.length === 1) return `M${at(first)}h0.01`;
+  let path = `M${at(first)}`;
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const point = points[index];
+    const next = points[index + 1];
+    path += `Q${at(point)} ${at({ x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 })}`;
+  }
+  return `${path}L${at(last)}`;
+}
+
+function distanceToSegment(point, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = dx * dx + dy * dy;
+  const t = length === 0 ? 0 : clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / length, 0, 1);
+  return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
+}
+
+/** Radierer: IDs der Linien, die ein Kreis (Mitte, Radius in Kartenpunkten) berührt. */
+export function drawingsAt(drawings, point, radius) {
+  return drawings
+    .filter(({ points, width }) => {
+      const reach = radius + width / 2;
+      if (points.length === 1) return Math.hypot(point.x - points[0].x, point.y - points[0].y) <= reach;
+      for (let index = 1; index < points.length; index += 1) {
+        if (distanceToSegment(point, points[index - 1], points[index]) <= reach) return true;
+      }
+      return false;
+    })
+    .map(({ id }) => id);
+}

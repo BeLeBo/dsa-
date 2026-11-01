@@ -29,6 +29,7 @@ alles live für alle synchronisiert.
 | 14    | Gespeicherte Figuren des Meisters (Vorlagen)                            | ✅ fertig |
 | 15    | Karten-Editor: Karten aus fertigen Objekten bauen oder erstellen lassen | ✅ fertig |
 | 16    | Heldenauswahl: Spieler wählen nach jedem Beitreten ihren Helden         | ✅ fertig |
+| 17    | Stift: Der Meister malt auf die Karte, alle sehen es live               | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -59,8 +60,9 @@ Die App meldet jedes Gerät anonym an – niemand braucht eine E-Mail-Adresse.
 
 Das Skript legt die Tabellen `rooms` (inkl. laufendem Kampf, gezeigter Karte und letztem Ping), `room_members`,
 `characters` (Held als `jsonb`), `rolls` (Würfelprotokoll), `maps` und `tokens` (Karten und Figuren),
-`figure_templates` (gespeicherte Figuren des Meisters) an, dazu den nicht öffentlichen Bildspeicher `karten` (Supabase Storage), die Zugriffsregeln
-(Row Level Security), die Funktionen zum Erstellen/Beitreten und zur Heldenauswahl und die Realtime-Freigaben. Es darf jederzeit erneut
+`figure_templates` (gespeicherte Figuren des Meisters) und `map_drawings` (Linien des Stifts) an, dazu den
+nicht öffentlichen Bildspeicher `karten` (Supabase Storage), die Zugriffsregeln (Row Level Security), die
+Funktionen zum Erstellen/Beitreten und zur Heldenauswahl und die Realtime-Freigaben. Es darf jederzeit erneut
 ausgeführt werden – **nach jedem Update der App bitte einmal erneut ausführen**, damit neue
 Spalten und Regeln dazukommen (bestehende Daten bleiben erhalten).
 
@@ -297,6 +299,16 @@ auf dem Server gespeichert und für den Meister sichtbar.
    Stelle bei jemandem außerhalb des Ausschnitts, gleitet seine Karte dorthin; wer gerade in einem
    anderen Tab ist, bekommt eine Meldung mit **Ansehen**. Auf einer vorbereiteten Karte (nur der
    Meister sieht sie) gibt es keinen Ping.
+9. **Auf die Karte malen (Stift)** – Weg einzeichnen, Falle einkreisen, Pfeil zur Tür: Knopf **✎**
+   (rechts an der Karte) nimmt den Stift in die Hand, unten erscheint die Stiftleiste. Ein Finger bzw.
+   die linke Maustaste malt; **zwei Finger** (bzw. rechte Maustaste oder Leertaste + Maus) verschieben
+   und zoomen die Karte weiter. In der Leiste: **Farbe** (Rot, Gelb, Grün, Blau, Lila, Schwarz, Weiß),
+   **Strichstärke** (dünn, mittel, dick – passend zur Feldgröße), **Radierer** (über Linien wischen),
+   **↶ Rückgängig** (letzte Linie, am Rechner auch Strg + Z), **🗑 Alles löschen** (mit Rückfrage) und
+   **Fertig** (am Handy ✓) bzw. Esc legt den Stift weg. Figuren lassen sich beim Malen nicht
+   verschieben. Jede Linie erscheint, sobald man den Finger hebt, bei allen, die die Karte sehen; auf
+   einer vorbereiteten Karte erst, wenn sie gezeigt wird. Die Linien gehören zur Karte: Sie bleiben,
+   bis der Meister sie löscht, und verschwinden mit der Karte. Farbe und Stärke merkt sich das Gerät.
 
 **Karte selbst bauen (Karten-Editor)**
 
@@ -333,6 +345,7 @@ fragt nach.
 
 **Spieler**
 
+- **Linien des Meisters:** Was der Meister mit dem Stift auf die gezeigte Karte malt, sehen alle sofort.
 - **Meine Figur aufstellen:** Steht die eigene Figur noch nicht auf der gezeigten Karte, stellt man sie
   selbst auf – mit Farbe und auf Wunsch eigenem Bild (sonst das Bild der letzten Figur). Danach ziehen.
 
