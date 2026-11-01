@@ -1655,6 +1655,80 @@ input.num::-webkit-inner-spin-button {
   margin-top: 10px;
 }
 
+/* Heldenauswahl der Spieler nach dem Beitreten */
+.hero-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hero-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hero-pick:active {
+  transform: translateY(1px);
+  filter: brightness(0.92);
+}
+
+.hero-pick.is-mine {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.hero-pick-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hero-pick-name {
+  overflow: hidden;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-pick-text small {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-pick-status {
+  flex: none;
+  max-width: 50%;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.hero-pick.is-mine .hero-pick-status {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.hero-pick.is-free .hero-pick-status {
+  color: var(--success);
+  font-weight: 700;
+}
+
 /* ---------- Gruppe ---------- */
 
 .room-code {

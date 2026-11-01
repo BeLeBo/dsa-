@@ -4,7 +4,8 @@
  */
 import { test, assertEqual, assertTrue } from './harness.js';
 import { mergeJson } from '../js/merge.js';
-import { normalizeRoomCode, validateJoin, validateCreate, inviteLink } from '../js/room.js';
+import { normalizeRoomCode, validateJoin, validateCreate, inviteLink, describeRoomHeroes } from '../js/room.js';
+import { heroOwnerLabel } from '../js/ui/hero-choice.js';
 import {
   toServerError,
   ServerError,
@@ -142,6 +143,54 @@ test(ROOM, 'Einladungslink', () => {
     inviteLink('K7MPQ2', { origin: 'https://gruppe.github.io', pathname: '/dsa/' }),
     'https://gruppe.github.io/dsa/?raum=K7MPQ2',
   );
+});
+
+test(ROOM, 'Heldenauswahl: eigener zuerst, dann freie, dann die anderer', () => {
+  const rows = [
+    { id: 'c', name: 'Zordan', detail: '', owner_name: 'Gerion', owner_role: 'player', mine: false },
+    { id: 'b', name: 'Thorwal', detail: 'Mensch · Söldner', owner_name: null, owner_role: null, mine: false },
+    { id: 'a', name: '  ', detail: null, owner_name: 'Alrik', owner_role: 'player', mine: true },
+    { id: 'd', name: 'Answin', detail: '', owner_name: 'Rahja', owner_role: 'master', mine: false },
+    { id: 'e', name: 'Elfe', detail: '', owner_name: '', owner_role: null, mine: false },
+    { name: 'ohne ID' },
+  ];
+  const heroes = describeRoomHeroes(rows, 'Alrik');
+  assertEqual(
+    heroes.map((entry) => [entry.id, entry.status]),
+    [
+      ['a', 'mine'],
+      ['e', 'free'],
+      ['b', 'free'],
+      ['d', 'taken'],
+      ['c', 'taken'],
+    ],
+  );
+  assertEqual(heroes[0].name, 'Unbenannter Held', 'leerer Name');
+  assertEqual(heroes[0].ownerName, '', 'eigener Held ohne Besitzername');
+  assertEqual(heroes[2].detail, 'Mensch · Söldner');
+  assertEqual(heroes[3].ownerIsMaster, true, 'NSC des Meisters');
+  assertEqual(heroes[4].ownerIsMaster, false);
+  assertEqual(describeRoomHeroes(null, 'Alrik'), [], 'ohne Liste');
+});
+
+test(ROOM, 'Heldenauswahl: gleicher Name = vermutlich anderes Gerät', () => {
+  const rows = [
+    { id: 'a', name: 'Thorwal', owner_name: 'alrik ', owner_role: 'player', mine: false },
+    { id: 'b', name: 'Zordan', owner_name: 'Gerion', owner_role: 'player', mine: false },
+    { id: 'c', name: 'Elfe', owner_name: null, mine: false },
+  ];
+  const [thorwal, zordan, elfe] = describeRoomHeroes(rows, ' Alrik').sort((x, y) => x.id.localeCompare(y.id));
+  assertEqual(thorwal.sameName, true, 'Groß/klein und Leerzeichen egal');
+  assertEqual(zordan.sameName, false);
+  assertEqual(elfe.sameName, false, 'freie Helden brauchen keine Rückfrage');
+  assertEqual(describeRoomHeroes(rows, '')[0].sameName, false, 'ohne eigenen Namen');
+});
+
+test(ROOM, 'Heldenauswahl: Beschriftung, wem der Held gehört', () => {
+  assertEqual(heroOwnerLabel({ status: 'mine' }), 'Dein Held');
+  assertEqual(heroOwnerLabel({ status: 'free' }), 'frei');
+  assertEqual(heroOwnerLabel({ status: 'taken', ownerName: 'Gerion', ownerIsMaster: false }), 'gehört Gerion');
+  assertEqual(heroOwnerLabel({ status: 'taken', ownerName: 'Rahja', ownerIsMaster: true }), 'gehört Rahja (Meister)');
 });
 
 // ---------------------------------------------------------------------------

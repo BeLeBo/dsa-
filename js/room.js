@@ -49,6 +49,36 @@ export function validateCreate({ displayName }) {
   return validateDisplayName(displayName);
 }
 
+const HERO_STATUS_ORDER = { mine: 0, free: 1, taken: 2 };
+
+/**
+ * Heldenauswahl: Zeilen von room_heroes für die Anzeige aufbereiten – eigener Held zuerst,
+ * dann freie, dann die anderer Spieler. `sameName`: Der Held gehört jemandem mit demselben
+ * Namen – vermutlich man selbst auf einem anderen Gerät (dann ohne Rückfrage übernehmen).
+ * @returns {Array<{ id, name, detail, status: 'mine'|'free'|'taken', ownerName, ownerIsMaster, sameName }>}
+ */
+export function describeRoomHeroes(rows, displayName = '') {
+  const me = String(displayName ?? '')
+    .trim()
+    .toLocaleLowerCase('de');
+  return (Array.isArray(rows) ? rows : [])
+    .filter((row) => row?.id)
+    .map((row) => {
+      const ownerName = String(row.owner_name ?? '').trim();
+      const status = row.mine ? 'mine' : ownerName ? 'taken' : 'free';
+      return {
+        id: row.id,
+        name: String(row.name ?? '').trim() || 'Unbenannter Held',
+        detail: String(row.detail ?? '').trim(),
+        status,
+        ownerName: status === 'taken' ? ownerName : '',
+        ownerIsMaster: status === 'taken' && row.owner_role === ROLES.MASTER,
+        sameName: status === 'taken' && me !== '' && ownerName.toLocaleLowerCase('de') === me,
+      };
+    })
+    .sort((a, b) => HERO_STATUS_ORDER[a.status] - HERO_STATUS_ORDER[b.status] || a.name.localeCompare(b.name, 'de'));
+}
+
 /** Einladungslink, der die App mit vorausgefülltem Raumcode öffnet. */
 export function inviteLink(code, { origin, pathname } = window.location) {
   return `${origin}${pathname}?raum=${encodeURIComponent(code)}`;
@@ -58,7 +88,10 @@ export function inviteLink(code, { origin, pathname } = window.location) {
 // Sitzung auf dem Gerät
 // ---------------------------------------------------------------------------
 
-/** { roomId, code, name, role, displayName, userId, characterId } oder null */
+/**
+ * { roomId, code, name, role, displayName, userId, characterId, chooseHero } oder null.
+ * `chooseHero`: Spieler ist gerade beigetreten (oder will wechseln) und wählt seinen Helden.
+ */
 export function loadRoomSession() {
   const session = readJson(SESSION_KEY, null);
   return session?.roomId && session?.code ? session : null;
@@ -115,7 +148,8 @@ export async function joinRoom({ code, displayName, asMaster = false }) {
     }),
   );
   if (rows.length === 0) throw new ServerError('Beitreten fehlgeschlagen. Bitte erneut versuchen.');
-  return sessionFromRow(rows[0], displayName, userId);
+  // Spieler wählen nach jedem Beitreten ihren Helden; der Meister wählt auf dem Spielbildschirm.
+  return { ...sessionFromRow(rows[0], displayName, userId), chooseHero: rows[0].role !== ROLES.MASTER };
 }
 
 export async function leaveRoom(session) {
@@ -153,6 +187,24 @@ export async function updateCombat(roomId, combat) {
   const client = await getClient();
   const rows = await unwrap(client.from('rooms').update({ combat }).eq('id', roomId).select('id'));
   if (rows.length === 0) throw new ServerError('Nur der Meister kann den Kampf führen.');
+}
+
+/** Alle Helden des Raums mit Besitzer – für die Heldenauswahl (Spieler sehen nur Name und Kurzinfo). */
+export async function fetchRoomHeroes(roomId) {
+  const client = await getClient();
+  return unwrap(client.rpc('room_heroes', { p_room_id: roomId }));
+}
+
+/** Helden als eigenen wählen; mit takeOver auch, wenn er gerade jemand anderem gehört. */
+export async function claimCharacter(characterId, { takeOver = false } = {}) {
+  const client = await getClient();
+  await unwrap(client.rpc('claim_character', { p_character_id: characterId, p_take_over: Boolean(takeOver) }));
+}
+
+/** Eigenen Helden freigeben (er bleibt im Raum), z. B. bevor man einen neuen anlegt. */
+export async function releaseCharacter(roomId) {
+  const client = await getClient();
+  await unwrap(client.rpc('release_character', { p_room_id: roomId }));
 }
 
 /** Meister: Helden einer Person im Raum zuweisen (z. B. nach Gerätewechsel). */

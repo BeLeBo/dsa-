@@ -9,8 +9,9 @@
 --              führt den Kampf (Initiative), kann das Protokoll leeren,
 --              verwaltet Karten und Figuren, speichert Figuren als Vorlagen und markiert
 --              Stellen auf der Karte (Ping).
---   Spieler  – sieht und bearbeitet nur den eigenen Helden, sieht öffentliche Würfe
---              und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
+--   Spieler  – sieht und bearbeitet nur den eigenen Helden (wählt ihn beim Beitreten aus den
+--              Helden des Raums – von den anderen sieht er dabei nur Name, Spezies und Profession),
+--              sieht öffentliche Würfe und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
 --              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie.
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- Meister wird, wer den Raum erstellt oder beim Beitreten „Ich bin Meister“ wählt
@@ -349,6 +350,82 @@ begin
     raise exception 'Diese Person hat in diesem Raum bereits einen Helden.' using errcode = '23505';
   end if;
   update public.characters set owner_id = p_user_id where id = p_character_id;
+end;
+$$;
+
+-- Heldenauswahl beim Beitreten: alle Helden des Raums und wem sie gerade gehören – auch für
+-- Spieler, die fremde Helden sonst nicht sehen (hier nur Name, Spezies und Profession).
+-- Gehört ein Held niemandem im Raum (mehr), ist owner_name leer: Er ist frei.
+create or replace function public.room_heroes(p_room_id uuid)
+returns table (id uuid, name text, detail text, owner_name text, owner_role text, mine boolean)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select
+    c.id,
+    btrim(coalesce(c.data -> 'general' ->> 'name', '')),
+    concat_ws(
+      ' · ',
+      nullif(btrim(coalesce(c.data -> 'general' ->> 'species', '')), ''),
+      nullif(btrim(coalesce(c.data -> 'general' ->> 'profession', '')), '')
+    ),
+    m.display_name,
+    m.role,
+    coalesce(c.owner_id = (select auth.uid()), false)
+  from public.characters c
+  left join public.room_members m on m.room_id = c.room_id and m.user_id = c.owner_id
+  where c.room_id = p_room_id and public.is_room_member(p_room_id)
+  order by lower(btrim(coalesce(c.data -> 'general' ->> 'name', ''))), c.id;
+$$;
+
+-- Spieler wählt seinen Helden (beim Beitreten, auf einem neuen Gerät …). Gehört der Held gerade
+-- einer anderen Person im Raum, nur mit p_take_over (die App fragt vorher nach). Ein bisher
+-- eigener anderer Held wird dabei frei – jeder hat je Raum höchstens einen Helden.
+create or replace function public.claim_character(p_character_id uuid, p_take_over boolean default false)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user uuid := private.require_user();
+  v_room uuid;
+  v_owner uuid;
+  v_owner_name text;
+begin
+  select c.room_id, c.owner_id into v_room, v_owner
+  from public.characters c where c.id = p_character_id
+  for update;
+  if v_room is null or not public.is_room_member(v_room) then
+    raise exception 'Diesen Helden gibt es nicht (mehr).' using errcode = 'P0002';
+  end if;
+  if v_owner = v_user then
+    return;
+  end if;
+  select m.display_name into v_owner_name
+  from public.room_members m where m.room_id = v_room and m.user_id = v_owner;
+  if v_owner_name is not null and not coalesce(p_take_over, false) then
+    raise exception 'Diesen Helden spielt inzwischen %.', v_owner_name using errcode = '23505';
+  end if;
+  update public.characters set owner_id = null where room_id = v_room and owner_id = v_user;
+  update public.characters set owner_id = v_user where id = p_character_id;
+end;
+$$;
+
+-- Spieler gibt seinen Helden frei, z. B. bevor er einen neuen anlegt. Der Held bleibt im Raum
+-- (der Meister sieht ihn weiter) und kann später wieder gewählt werden.
+create or replace function public.release_character(p_room_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user uuid := private.require_user();
+begin
+  update public.characters set owner_id = null where room_id = p_room_id and owner_id = v_user;
 end;
 $$;
 
@@ -962,6 +1039,9 @@ revoke all on function public.is_room_master(uuid) from public, anon;
 revoke all on function public.create_room(text, text) from public, anon;
 revoke all on function public.join_room(text, text, boolean) from public, anon;
 revoke all on function public.assign_character(uuid, uuid) from public, anon;
+revoke all on function public.room_heroes(uuid) from public, anon;
+revoke all on function public.claim_character(uuid, boolean) from public, anon;
+revoke all on function public.release_character(uuid) from public, anon;
 revoke all on function public.clear_log(uuid) from public, anon;
 revoke all on function public.is_active_map(uuid, uuid) from public, anon;
 revoke all on function public.room_of_path(text) from public, anon;
@@ -976,6 +1056,9 @@ grant execute on function public.is_room_master(uuid) to authenticated;
 grant execute on function public.create_room(text, text) to authenticated;
 grant execute on function public.join_room(text, text, boolean) to authenticated;
 grant execute on function public.assign_character(uuid, uuid) to authenticated;
+grant execute on function public.room_heroes(uuid) to authenticated;
+grant execute on function public.claim_character(uuid, boolean) to authenticated;
+grant execute on function public.release_character(uuid) to authenticated;
 grant execute on function public.clear_log(uuid) to authenticated;
 grant execute on function public.is_active_map(uuid, uuid) to authenticated;
 grant execute on function public.room_of_path(text) to authenticated;
@@ -1045,7 +1128,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 6;
+  select 7;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;
