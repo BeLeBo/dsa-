@@ -4,6 +4,7 @@
  *
  * Ablauf: anonym anmelden → Mitgliedschaft, Helden und Protokoll laden → eigenen Helden
  * (Spieler) bzw. zuletzt geöffneten Helden (Meister) öffnen → Live-Abo starten.
+ * Nach dem Beitreten wählen Spieler ihren Helden selbst (Held-Tab), statt dass er sich öffnet.
  * Ohne Verbindung wird der zuletzt gespeicherte Stand vom Gerät gezeigt.
  */
 import { createShell, TABS } from './ui/shell.js';
@@ -20,7 +21,7 @@ import { createCombatController } from './room-combat.js';
 import { createMapController } from './room-map.js';
 import { subscribeToMapChanges } from './map-api.js';
 import { describeOutcome } from './format.js';
-import { ensureUser } from './supabase.js';
+import { ensureUser, ServerError } from './supabase.js';
 import {
   ROLES,
   ROLE_NAMES,
@@ -31,6 +32,10 @@ import {
   leaveRoom,
   assignCharacter,
   inviteLink,
+  fetchRoomHeroes,
+  describeRoomHeroes,
+  claimCharacter,
+  releaseCharacter,
 } from './room.js';
 import {
   createCharacterSync,
@@ -72,9 +77,14 @@ export function startRoomMode(initialSession, { onLeave }) {
   let logClearedAt = null;
   const store = createHeroStore(null);
   const room = createObservable({ session, members: [], characters: [], live: false, combat: null });
-  const view = { state: 'connecting', error: '' };
+  // heroes: Helden des Raums für die Auswahl der Spieler (null = noch nicht geladen);
+  // pickError: warum die letzte Auswahl nicht geklappt hat (bleibt beim Neuzeichnen stehen).
+  const view = { state: 'connecting', error: '', heroes: null, heroesError: '', pickError: '' };
 
   const isMaster = () => session.role === ROLES.MASTER;
+  let pickingHero = false; // Auswahl wird gerade übernommen (Server-Antwort steht noch aus)
+  /** Spieler ist gerade beigetreten (oder will wechseln) und wählt seinen Helden selbst. */
+  const choosingHero = () => !isMaster() && (session.chooseHero === true || pickingHero);
 
   const log = createRoomLog({
     roomId: session.roomId,
@@ -138,9 +148,10 @@ export function startRoomMode(initialSession, { onLeave }) {
   const shell = createShell({
     store,
     log,
-    // Die Karte ist der Spielbildschirm. Wer noch keinen Helden hat, beginnt im Held-Tab (anlegen).
+    // Die Karte ist der Spielbildschirm. Wer noch keinen Helden hat oder ihn gerade wählt,
+    // beginnt im Held-Tab (wählen oder anlegen).
     tabs: [TABS.map, TABS.hero, TABS.dice, TABS.log, TABS.group],
-    initialTab: isMaster() || session.characterId ? TABS.map.id : TABS.hero.id,
+    initialTab: isMaster() || (session.characterId && !choosingHero()) ? TABS.map.id : TABS.hero.id,
     title: () => session.name || `Raum ${session.code}`,
     subtitle: () => `${session.name ? `${session.name} · ` : ''}${session.code} · ${ROLE_NAMES[session.role]}`,
     actorName: () => (store.hero ? heroName(store.hero) : session.displayName),
@@ -150,7 +161,12 @@ export function startRoomMode(initialSession, { onLeave }) {
         isMaster: isMaster(),
         localHero: readLocalHero(),
         errorMessage: view.error,
+        heroes: view.heroes,
+        heroesError: view.heroesError,
+        pickError: view.pickError,
         onCreate: createOwnCharacter,
+        onPick: pickHero,
+        onReloadHeroes: loadRoomHeroes,
         onRetry: connect,
         onShowGroup: () => shell.selectTab(TABS.group.id),
       }),
@@ -243,14 +259,95 @@ export function startRoomMode(initialSession, { onLeave }) {
     if (message) showToast(message);
   }
 
+  /** Spieler: eigener Held im Raum (auch wenn er gerade nicht geöffnet ist). */
+  function ownCharacterRow() {
+    return room.get().characters.find((character) => character.owner_id === session.userId) ?? null;
+  }
+
+  /** @returns {Promise<boolean>} false, wenn abgebrochen */
   async function createOwnCharacter(heroData) {
+    view.pickError = '';
+    const previous = isMaster() ? null : ownCharacterRow();
+    if (previous) {
+      // Je Raum hat jeder höchstens einen Helden: Der bisherige wird frei und bleibt im Raum.
+      const question = `Neuen Helden anlegen? „${heroName(normalizeHero(previous.data))}“ bleibt im Raum und kann später wieder gewählt werden.`;
+      if (!(await confirmDialog(question, { confirmLabel: 'Neuen Helden anlegen' }))) return false;
+      await releaseCharacter(session.roomId);
+      room.update({ characters: room.get().characters.filter((character) => character.id !== previous.id) });
+    }
     const row = await createCharacter(session.roomId, normalizeHero(heroData));
     room.update({ characters: upsertById(room.get().characters, row) });
     await openCharacter(row);
+    finishChoosingHero();
     showToast(`„${heroName(store.hero)}“ ist jetzt im Raum.`);
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // Heldenauswahl der Spieler (nach dem Beitreten, „Anderen Helden wählen“)
+  // -------------------------------------------------------------------------
+
+  /** Lädt die Liste für die Heldenauswahl neu – nur nötig, solange kein Held geöffnet ist. */
+  async function loadRoomHeroes() {
+    if (isMaster() || store.hero) return;
+    try {
+      const rows = await fetchRoomHeroes(session.roomId);
+      view.heroes = describeRoomHeroes(rows, session.displayName);
+      view.heroesError = '';
+    } catch (error) {
+      if (error.offline) return;
+      view.heroesError = error.message;
+    }
+    if (!store.hero) shell.renderSheet();
+  }
+
+  function finishChoosingHero() {
+    if (session.chooseHero) updateSession({ chooseHero: false });
+  }
+
+  /** Spieler wählt einen Helden aus der Liste – gehört er jemand anderem, erst nachfragen. */
+  async function pickHero(entry) {
+    if (pickingHero) return;
+    view.pickError = '';
+    if (entry.status === 'taken' && !entry.sameName) {
+      const question = `„${entry.name}“ gehört gerade ${entry.ownerName}. Trotzdem übernehmen? ${entry.ownerName} kann den Helden dann nicht mehr bearbeiten.`;
+      if (!(await confirmDialog(question, { confirmLabel: 'Übernehmen' }))) return;
+    }
+    pickingHero = true; // die Live-Meldung zum neuen Besitzer soll den Helden nicht selbst öffnen
+    try {
+      if (entry.status !== 'mine') await claimCharacter(entry.id, { takeOver: entry.status === 'taken' });
+      await refreshRoster(); // eigener Held (und ein dabei frei gewordener) aktuell
+      const row = room.get().characters.find((character) => character.id === entry.id);
+      if (!row) throw new ServerError('Diesen Helden gibt es nicht (mehr).');
+      await openCharacter(row);
+    } catch (error) {
+      view.pickError = error.message;
+      loadRoomHeroes(); // z. B. hat ihn gerade jemand anderes gewählt
+      throw error;
+    } finally {
+      pickingHero = false;
+    }
+    finishChoosingHero();
+    shell.selectTab(TABS.map.id);
+    showToast(`Du spielst „${heroName(store.hero)}“.`);
+  }
+
+  /** Menü: eigenen Helden schließen (er bleibt der eigene) und neu wählen. */
+  async function chooseAnotherHero() {
+    await sync?.flush().catch(() => {});
+    updateSession({ chooseHero: true });
+    view.heroes = null;
+    view.heroesError = '';
+    await closeCharacter();
+    shell.selectTab(TABS.hero.id);
+    loadRoomHeroes();
   }
 
   async function openInitialCharacter(characters) {
+    if (choosingHero()) {
+      if (sync) await closeCharacter();
+      return;
+    }
     const preferred = isMaster()
       ? characters.find((character) => character.id === session.characterId)
       : characters.find((character) => character.owner_id === session.userId);
@@ -317,6 +414,10 @@ export function startRoomMode(initialSession, { onLeave }) {
     if (sync?.id === row.id) {
       sync.applyRemote(row.data);
     } else if (!isMaster() && !sync && row.owner_id === session.userId) {
+      if (choosingHero()) {
+        loadRoomHeroes(); // Auswahl läuft: nur die Liste auffrischen, nichts von selbst öffnen
+        return;
+      }
       await openCharacter(row);
       showToast('Dir wurde ein Held zugewiesen.');
     }
@@ -325,7 +426,8 @@ export function startRoomMode(initialSession, { onLeave }) {
   function handleCharacterDeleted(id) {
     if (!id) return;
     room.update({ characters: room.get().characters.filter((character) => character.id !== id) });
-    if (sync?.id === id) closeCharacter('Dieser Held wurde gelöscht.');
+    if (sync?.id === id) closeCharacter('Dieser Held wurde gelöscht.').then(loadRoomHeroes);
+    else if (!store.hero) loadRoomHeroes();
   }
 
   async function startLive() {
@@ -333,16 +435,19 @@ export function startRoomMode(initialSession, { onLeave }) {
     stopLive = await subscribeToRoom(session.roomId, {
       onCharacter: handleCharacterRow,
       onCharacterDeleted: handleCharacterDeleted,
-      onMembersChanged: () =>
+      onMembersChanged: () => {
         fetchMembers(session.roomId)
           .then((members) => room.update({ members }))
-          .catch(() => {}),
+          .catch(() => {});
+        loadRoomHeroes(); // wer beitritt oder geht, ändert, wem ein Held gehört
+      },
       onRoll: (row) => log.receive(row),
       onRoom: handleRoomRow,
       onReconnect: () => {
         sync?.resync();
         refreshRoster().catch(() => {});
         log.load().catch(() => {});
+        loadRoomHeroes();
       },
       onLive: (live) => room.update({ live }),
     });
@@ -392,6 +497,7 @@ export function startRoomMode(initialSession, { onLeave }) {
       setViewState('ready');
       await openInitialCharacter(roster.characters);
       if (!sync) shell.setStatus('online');
+      loadRoomHeroes();
       await startLive();
       await log.load();
       await startMapLive();
@@ -545,6 +651,7 @@ export function startRoomMode(initialSession, { onLeave }) {
   function menuItems() {
     const heroItems = store.hero
       ? [
+          ...(isMaster() ? [] : [{ label: 'Anderen Helden wählen …', onClick: chooseAnotherHero }]),
           { label: 'Held exportieren (JSON-Sicherung)', onClick: () => downloadHero(store.hero) },
           { label: 'Held aus Datei ersetzen (Sicherung oder Optolith) …', onClick: replaceFromFile },
         ]

@@ -28,6 +28,7 @@ alles live für alle synchronisiert.
 | 13    | Inventar in eigenen Gruppen                                             | ✅ fertig |
 | 14    | Gespeicherte Figuren des Meisters (Vorlagen)                            | ✅ fertig |
 | 15    | Karten-Editor: Karten aus fertigen Objekten bauen oder erstellen lassen | ✅ fertig |
+| 16    | Heldenauswahl: Spieler wählen nach jedem Beitreten ihren Helden         | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -59,7 +60,7 @@ Die App meldet jedes Gerät anonym an – niemand braucht eine E-Mail-Adresse.
 Das Skript legt die Tabellen `rooms` (inkl. laufendem Kampf, gezeigter Karte und letztem Ping), `room_members`,
 `characters` (Held als `jsonb`), `rolls` (Würfelprotokoll), `maps` und `tokens` (Karten und Figuren),
 `figure_templates` (gespeicherte Figuren des Meisters) an, dazu den nicht öffentlichen Bildspeicher `karten` (Supabase Storage), die Zugriffsregeln
-(Row Level Security), die Funktionen zum Erstellen/Beitreten und die Realtime-Freigaben. Es darf jederzeit erneut
+(Row Level Security), die Funktionen zum Erstellen/Beitreten und zur Heldenauswahl und die Realtime-Freigaben. Es darf jederzeit erneut
 ausgeführt werden – **nach jedem Update der App bitte einmal erneut ausführen**, damit neue
 Spalten und Regeln dazukommen (bestehende Daten bleiben erhalten).
 
@@ -108,8 +109,9 @@ Die Datei `.nojekyll` sorgt dafür, dass GitHub die Dateien unverändert auslief
 
 1. Der Meister öffnet die App → **Neuen Raum erstellen** → Namen eingeben – fertig (kein Passwort nötig).
 2. Unter **Gruppe** → **Einladung teilen** den Link (oder den 6-stelligen Raumcode) an die Gruppe schicken.
-3. Spieler öffnen den Link → Namen eingeben → **Beitreten** → **Neuen Helden anlegen**
-   (oder einen Helden von diesem Gerät, aus einer Sicherung oder aus **Optolith** übernehmen – siehe unten).
+3. Spieler öffnen den Link → Namen eingeben → **Beitreten** → **Wähle deinen Helden**: einen Helden aus
+   dem Raum antippen oder **Neuen Helden anlegen** (oder einen Helden von diesem Gerät, aus einer Sicherung
+   oder aus **Optolith** übernehmen – siehe unten).
 
 ### 8. Als App auf dem Handy installieren (empfohlen)
 
@@ -131,12 +133,22 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
   **Öffnen** im Held-Tab und kann sie dort bearbeiten. Von einem weiteren Gerät tritt der Meister
   mit Raumcode + **Ich bin Meister** bei.
 - **Spieler** sehen und bearbeiten nur ihren eigenen Helden – das erzwingt die Datenbank, nicht nur die App.
+- **Heldenauswahl beim Beitreten:** Nach jedem **Beitreten** wählt ein Spieler im Tab **Held** seinen
+  Helden. Die Liste zeigt alle Helden des Raums (nur Name, Spezies und Profession) und wem sie gerade
+  gehören: **Dein Held** steht oben, dann **frei**e Helden, dann die der anderen („gehört Gerion“). Ein Tipp
+  öffnet den Helden und wechselt zur Karte. Gehört er gerade jemand anderem, fragt die App vorher nach –
+  der andere kann ihn danach nicht mehr bearbeiten; heißt der Besitzer so wie man selbst (man selbst auf
+  einem anderen Gerät), geht es ohne Rückfrage. Darunter: **Neuen Helden anlegen** oder aus einer Datei
+  laden. Jeder hat je Raum einen Helden – wer wechselt oder neu anlegt, gibt den bisherigen frei (er bleibt
+  im Raum und kann später wieder gewählt werden). Später wechseln: **Menü** → **Anderen Helden wählen**.
+  Nach dem Neuladen der App öffnet sich der gewählte Held direkt; der Meister wählt wie bisher auf dem
+  Spielbildschirm.
 - **Gleichzeitige Änderungen:** Zieht der Meister LE ab, während der Spieler Notizen tippt, bleibt
   beides erhalten. Ändern beide genau dasselbe Feld, gewinnt die letzte Eingabe auf dem Gerät, das
   später speichert.
 - **Gerät gewechselt?** Jedes Gerät hat eine eigene anonyme Anmeldung. Auf dem neuen Gerät dem Raum
-  beitreten, dann weist der Meister unter **Gruppe** → **Gehört** den Helden dem neuen Eintrag zu.
-  Alternativ: Held exportieren und auf dem neuen Gerät aus der Datei laden.
+  beitreten und den eigenen Helden aus der Liste wählen – fertig. Der Meister kann ihn auch weiterhin unter
+  **Gruppe** → **Gehört** zuweisen, oder: Held exportieren und auf dem neuen Gerät aus der Datei laden.
 - **Kein Passwort:** Meister wird, wer den Raum erstellt oder beim Beitreten **Ich bin Meister**
   ankreuzt. Das ist bewusst einfach gehalten – wer den Raumcode kennt, gehört zur Gruppe. Den Code
   deshalb nur in der Gruppe teilen.
@@ -190,9 +202,9 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
 - **Protokoll:** alle Würfe mit Heldennamen und Uhrzeit, zum Aufklappen mit allen Einzelwürfeln.
   Im Raum gemeinsam für alle (je nach Sichtbarkeit), ohne Raum nur auf diesem Gerät.
 - **Gruppe** (nur im Raum): Kampf & Initiative, Raumcode, Einladung, Helden, Mitglieder; **Raum verlassen**.
-- **Menü** (letzter Knopf der Tab-Leiste unten): oben Held, Raum, Rolle und Speicherstand; Export/Import,
-  Einladung teilen, Raum verlassen bzw. „Mit einer Gruppe spielen“, App installieren, außerdem die
-  Geräteeinstellungen:
+- **Menü** (letzter Knopf der Tab-Leiste unten): oben Held, Raum, Rolle und Speicherstand; **Anderen
+  Helden wählen** (Spieler im Raum), Export/Import, Einladung teilen, Raum verlassen bzw. „Mit einer
+  Gruppe spielen“, App installieren, außerdem die Geräteeinstellungen:
   - **Farbmodus** Hell / Dunkel / Automatisch (folgt dem Handy). Der helle Modus hat starken Kontrast
     für draußen und helles Licht.
   - **Schriftgröße** Normal / Groß / Sehr groß – vergrößert die ganze App, auch Knöpfe.
@@ -326,8 +338,8 @@ fragt nach.
 
 **Alle – der Spielbildschirm**
 
-Der Tab **Karte** ist der Spielbildschirm und öffnet sich beim Betreten des Raums (wer noch keinen
-Helden hat, beginnt im Tab **Held**). Wer einen Helden geöffnet hat, hat dort alles zum Spielen:
+Der Tab **Karte** ist der Spielbildschirm und öffnet sich beim Betreten des Raums (Spieler wählen nach dem
+Beitreten erst im Tab **Held** ihren Helden). Wer einen Helden geöffnet hat, hat dort alles zum Spielen:
 
 - **„Werte“:** LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder eintippen, Zustände
   (Schmerz, Betäubung …) hoch- und runtersetzen – wie im Heldenbogen, sofort für alle. Die Zustände

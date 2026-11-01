@@ -1,7 +1,8 @@
 /**
  * hero-choice.js – Inhalt des Held-Tabs, solange kein Held geöffnet ist:
- * Held anlegen (neu, vom Gerät übernehmen, aus Datei), Hinweise für den Meister,
- * Verbindungs- und Fehlerzustände.
+ * Spieler wählen ihren Helden aus den Helden des Raums (nach jedem Beitreten) oder legen einen
+ * an (neu, vom Gerät übernehmen, aus Datei); dazu Hinweise für den Meister sowie Verbindungs-
+ * und Fehlerzustände.
  */
 import { h } from './dom.js';
 import { pickHeroFile, showImportReport, IMPORT_HINT } from './hero-file.js';
@@ -11,17 +12,72 @@ function card(title, ...content) {
   return h('section', { class: 'card choice-card' }, h('h2', {}, title), content);
 }
 
+/** Kurztext, wem ein Held gehört (siehe describeRoomHeroes in room.js). */
+export function heroOwnerLabel(entry) {
+  if (entry.status === 'mine') return 'Dein Held';
+  if (entry.status === 'free') return 'frei';
+  return `gehört ${entry.ownerName}${entry.ownerIsMaster ? ' (Meister)' : ''}`;
+}
+
+function renderPickList({ heroes, heroesError, onPick, onReloadHeroes }) {
+  if (heroesError) {
+    return h(
+      'div',
+      { class: 'stack' },
+      h('p', { class: 'error-text' }, `Die Helden des Raums konnten nicht geladen werden: ${heroesError}`),
+      h('button', { type: 'button', class: 'btn', onclick: onReloadHeroes }, 'Erneut laden'),
+    );
+  }
+  if (!heroes) return h('p', { class: 'section-hint' }, 'Lade die Helden des Raums …');
+  if (heroes.length === 0) return h('p', {}, 'Im Raum gibt es noch keine Helden. Lege deinen an:');
+  return h(
+    'div',
+    { class: 'hero-pick-list' },
+    heroes.map((entry) =>
+      h(
+        'button',
+        { type: 'button', class: `hero-pick is-${entry.status}`, onclick: () => onPick(entry) },
+        h(
+          'span',
+          { class: 'hero-pick-text' },
+          h('span', { class: 'hero-pick-name' }, entry.name),
+          entry.detail ? h('small', {}, entry.detail) : null,
+        ),
+        h('span', { class: 'hero-pick-status' }, heroOwnerLabel(entry)),
+      ),
+    ),
+  );
+}
+
 /**
  * @param {object} options
  * @param {'connecting'|'ready'|'offline'|'error'} options.state
  * @param {boolean} options.isMaster
  * @param {object|null} options.localHero   Held aus dem Modus „Ohne Raum“ auf diesem Gerät
  * @param {string} [options.errorMessage]
- * @param {(heroData: object) => Promise} options.onCreate
+ * @param {Array|null} [options.heroes]     Spieler: Helden des Raums (describeRoomHeroes), null = lädt
+ * @param {string} [options.heroesError]    Spieler: Fehler beim Laden der Helden
+ * @param {string} [options.pickError]      Spieler: warum die letzte Auswahl nicht geklappt hat
+ * @param {(heroData: object) => Promise<boolean|void>} options.onCreate  false = abgebrochen
+ * @param {(entry: object) => Promise} [options.onPick]  Spieler: Helden aus der Liste wählen
+ * @param {() => void} [options.onReloadHeroes]
  * @param {() => void} options.onRetry
  * @param {() => void} options.onShowGroup
  */
-export function renderHeroChoice({ state, isMaster, localHero, errorMessage, onCreate, onRetry, onShowGroup }) {
+export function renderHeroChoice({
+  state,
+  isMaster,
+  localHero,
+  errorMessage,
+  heroes = null,
+  heroesError = '',
+  pickError = '',
+  onCreate,
+  onPick,
+  onReloadHeroes,
+  onRetry,
+  onShowGroup,
+}) {
   if (state === 'connecting') {
     return card('Verbinde mit dem Raum …', h('p', { class: 'section-hint' }, 'Einen Moment bitte.'));
   }
@@ -44,20 +100,30 @@ export function renderHeroChoice({ state, isMaster, localHero, errorMessage, onC
     );
   }
 
-  const status = h('p', { class: 'error-text', hidden: true, role: 'alert' });
-  /** loadHero liefert { hero, report } (report nur beim Import aus Optolith) oder null. */
-  const create = async (loadHero) => {
+  const status = h('p', { class: 'error-text', hidden: !pickError, role: 'alert' }, pickError);
+  let busy = false;
+  /** Führt eine Auswahl aus – nie zwei gleichzeitig; Fehler stehen unter der Liste. */
+  const act = async (action) => {
+    if (busy) return;
+    busy = true;
     status.hidden = true;
     try {
-      const loaded = await loadHero();
-      if (!loaded) return;
-      await onCreate(loaded.hero);
-      showImportReport(loaded.report);
+      await action();
     } catch (error) {
       status.textContent = error.message;
       status.hidden = false;
+    } finally {
+      busy = false;
     }
   };
+  /** loadHero liefert { hero, report } (report nur beim Import aus Optolith) oder null. */
+  const create = (loadHero) =>
+    act(async () => {
+      const loaded = await loadHero();
+      if (!loaded) return;
+      if ((await onCreate(loaded.hero)) === false) return;
+      showImportReport(loaded.report);
+    });
 
   const options = h(
     'div',
@@ -92,15 +158,14 @@ export function renderHeroChoice({ state, isMaster, localHero, errorMessage, onC
       status,
     );
   }
+  const hasHeroes = Array.isArray(heroes) && heroes.length > 0;
   return card(
-    'Dein Held in diesem Raum',
-    h('p', {}, 'Du hast hier noch keinen Helden.'),
-    options,
+    'Wähle deinen Helden',
+    h('p', {}, 'Mit welchem Helden spielst du in diesem Raum?'),
+    renderPickList({ heroes, heroesError, onPick: (entry) => act(() => onPick(entry)), onReloadHeroes }),
     status,
-    h(
-      'p',
-      { class: 'section-hint' },
-      'Du spielst schon auf einem anderen Gerät? Dann kann der Meister dir deinen Helden unter „Gruppe“ zuweisen.',
-    ),
+    hasHeroes ? h('h3', {}, 'Oder neuen Helden') : null,
+    options,
+    h('p', { class: 'section-hint' }, 'Wechseln kannst du später im Menü unter „Anderen Helden wählen“.'),
   );
 }
