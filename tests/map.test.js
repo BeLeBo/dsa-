@@ -41,6 +41,13 @@ import {
   MAX_GRID_SIZE,
   MAX_ZOOM,
   TOKEN_COLORS,
+  DRAW_COLORS,
+  drawingWidth,
+  flattenPoints,
+  normalizeDrawing,
+  addStrokePoint,
+  strokePath,
+  drawingsAt,
 } from '../js/map.js';
 import { createMapController, chooseViewMap, mapTabs } from '../js/room-map.js';
 
@@ -345,7 +352,7 @@ let roomCounter = 0;
 /** Attrappe der Serverfunktionen (map-api.js) mit einer kleinen Datenbank im Speicher. */
 function fakeApi(overrides = {}) {
   const calls = [];
-  const db = { maps: [], tokens: [], templates: [] };
+  const db = { maps: [], tokens: [], templates: [], drawings: [] };
   let counter = 0;
   const api = {
     calls,
@@ -416,6 +423,19 @@ function fakeApi(overrides = {}) {
     deleteTemplate: async (templateId) => {
       calls.push(['deleteTemplate', templateId]);
       db.templates = db.templates.filter((entry) => entry.id !== templateId);
+    },
+    fetchDrawings: async (mapId) => db.drawings.filter((row) => row.map_id === mapId).map((row) => ({ ...row })),
+    createDrawing: async (row) => {
+      calls.push(['createDrawing', row]);
+      db.drawings.push({ ...row });
+    },
+    deleteDrawings: async (ids) => {
+      calls.push(['deleteDrawings', ids]);
+      db.drawings = db.drawings.filter((row) => !ids.includes(row.id));
+    },
+    clearDrawings: async (mapId) => {
+      calls.push(['clearDrawings', mapId]);
+      db.drawings = db.drawings.filter((row) => row.map_id !== mapId);
     },
     ...overrides,
   };
@@ -1240,3 +1260,254 @@ test(
     cleanup();
   },
 );
+
+// ---------------------------------------------------------------------------
+// Zeichnen: Stift des Meisters
+// ---------------------------------------------------------------------------
+
+const DRAW = 'Karte: Zeichnen (Stift)';
+
+test(DRAW, 'Strichstärke richtet sich nach dem Raster', () => {
+  assertEqual(drawingWidth('duenn', GRID), 3);
+  assertEqual(drawingWidth('mittel', GRID), 6);
+  assertEqual(drawingWidth('dick', GRID), 12.5);
+  assertEqual(drawingWidth('unbekannt', GRID), 6, 'unbekannt → mittel');
+  assertEqual(drawingWidth('duenn', { size: 10 }), 1, 'nie dünner als 1 Punkt');
+});
+
+test(DRAW, 'Linien vom Server prüfen, Punkte für den Server runden', () => {
+  assertEqual(
+    flattenPoints([
+      { x: 1.234, y: 5.678 },
+      { x: 10, y: 20 },
+    ]),
+    [1.2, 5.7, 10, 20],
+  );
+  const drawing = normalizeDrawing({ id: 'd1', map_id: 'm1', color: 'blau', width: 6, points: [1, 2, 3, 4] });
+  assertEqual(drawing, {
+    id: 'd1',
+    map_id: 'm1',
+    color: 'blau',
+    width: 6,
+    points: [
+      { x: 1, y: 2 },
+      { x: 3, y: 4 },
+    ],
+  });
+  assertEqual(normalizeDrawing({ id: 'd', color: 'pink', width: 6, points: [1, 2] }).color, 'rot', 'Farbe → Rot');
+  assertEqual(normalizeDrawing({ id: 'd', width: 9999, points: [1, 2] }).width, 200, 'Stärke begrenzt');
+  assertEqual(normalizeDrawing({ id: 'd', width: -1, points: [1, 2] }).width, 4, 'unbrauchbare Stärke');
+  assertEqual(normalizeDrawing({ id: 'd', points: [1, 2, 3] }), null, 'ungerade Anzahl');
+  assertEqual(normalizeDrawing({ id: 'd', points: [1, Number.NaN] }), null, 'keine Zahl');
+  assertEqual(normalizeDrawing({ id: 'd', points: [] }), null, 'leer');
+  assertEqual(normalizeDrawing({ points: [1, 2] }), null, 'ohne ID');
+  assertEqual(normalizeDrawing(null), null);
+  assertEqual(DRAW_COLORS.length, 7);
+});
+
+test(DRAW, 'Beim Zeichnen nur Punkte mit genug Abstand übernehmen', () => {
+  const points = [];
+  assertTrue(addStrokePoint(points, { x: 0, y: 0 }, 2), 'erster Punkt');
+  assertTrue(!addStrokePoint(points, { x: 1, y: 1 }, 2), 'zu nah');
+  assertTrue(addStrokePoint(points, { x: 3, y: 0 }, 2), 'weit genug');
+  assertEqual(points, [
+    { x: 0, y: 0 },
+    { x: 3, y: 0 },
+  ]);
+});
+
+test(DRAW, 'SVG-Pfad: Tupfen, gerade Linie, geglättete Linie', () => {
+  assertEqual(strokePath([]), '');
+  assertEqual(strokePath([{ x: 5, y: 6 }]), 'M5 6h0.01');
+  assertEqual(
+    strokePath([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+    ]),
+    'M0 0L10 0',
+  );
+  assertEqual(
+    strokePath([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+    ]),
+    'M0 0Q10 0 10 5L10 10',
+  );
+});
+
+test(DRAW, 'Radierer trifft Linien in der Nähe – die Strichstärke zählt mit', () => {
+  const drawings = [
+    {
+      id: 'quer',
+      width: 4,
+      points: [
+        { x: 0, y: 100 },
+        { x: 200, y: 100 },
+      ],
+    },
+    {
+      id: 'dick',
+      width: 40,
+      points: [
+        { x: 0, y: 160 },
+        { x: 200, y: 160 },
+      ],
+    },
+    { id: 'tupfen', width: 10, points: [{ x: 500, y: 500 }] },
+  ];
+  assertEqual(drawingsAt(drawings, { x: 100, y: 108 }, 8), ['quer'], 'knapp daneben (8 + 2)');
+  assertEqual(drawingsAt(drawings, { x: 100, y: 115 }, 8), [], 'zu weit weg');
+  assertEqual(drawingsAt(drawings, { x: 100, y: 135 }, 8), ['dick'], 'dicke Linie reicht weiter');
+  assertEqual(drawingsAt(drawings, { x: 260, y: 100 }, 8), [], 'hinter dem Ende');
+  assertEqual(drawingsAt(drawings, { x: 506, y: 506 }, 5), ['tupfen']);
+});
+
+test(CONTROLLER, 'Zeichnen: Linie sofort sichtbar, dann gespeichert; Echo doppelt sie nicht', async () => {
+  const { controller, api, roomId, cleanup } = mapController();
+  addMap(api, 'm1');
+  await controller.load();
+  const drawing = await controller.actions.addDrawing({
+    points: [
+      { x: 10.04, y: 20 },
+      { x: 2000, y: -5 },
+    ],
+    color: 'gelb',
+    width: 6,
+  });
+  const [, row] = api.calls.find((call) => call[0] === 'createDrawing');
+  assertEqual([row.room_id, row.map_id, row.color, row.width], [roomId, 'm1', 'gelb', 6]);
+  assertEqual(row.points, [10, 20, 1000, 0], 'gerundet und auf die Karte begrenzt');
+  assertEqual(row.id, drawing.id, 'ID vom Gerät – das Echo erkennt sich wieder');
+  controller.handleDrawingRow({ ...row, created_at: 'x' });
+  assertEqual(controller.state.get().drawings.length, 1, 'Echo ersetzt, statt zu doppeln');
+  controller.handleDrawingRow({ ...row, id: 'fremd', map_id: 'm9' });
+  assertEqual(controller.state.get().drawings.length, 1, 'Linie einer anderen Karte: nicht hier');
+  controller.handleDrawingRow({ ...row, id: 'zweite' });
+  assertEqual(
+    controller.state.get().drawings.map((entry) => entry.id),
+    [drawing.id, 'zweite'],
+    'neue Linie live (z. B. zweites Gerät des Meisters)',
+  );
+  controller.handleDrawingDeleted('zweite');
+  assertEqual(controller.state.get().drawings.length, 1);
+  cleanup();
+});
+
+test(CONTROLLER, 'Zeichnen: Speichern scheitert → Linie verschwindet wieder, Fehler wird gemeldet', async () => {
+  const api = fakeApi({
+    createDrawing: async () => {
+      throw new Error('kaputt');
+    },
+  });
+  const { controller, cleanup } = mapController({ api });
+  addMap(api, 'm1');
+  await controller.load();
+  let message = '';
+  await controller.actions
+    .addDrawing({ points: [{ x: 1, y: 1 }], color: 'rot', width: 3 })
+    .catch((error) => (message = error.message));
+  assertEqual(message, 'kaputt');
+  assertEqual(controller.state.get().drawings, []);
+  cleanup();
+});
+
+test(CONTROLLER, 'Zeichnen: Rückgängig, Radierer und alles löschen', async () => {
+  const { controller, api, cleanup } = mapController();
+  addMap(api, 'm1');
+  api.db.drawings.push(
+    { id: 'a', map_id: 'm1', color: 'rot', width: 3, points: [0, 0] },
+    { id: 'b', map_id: 'm1', color: 'rot', width: 3, points: [5, 5] },
+    { id: 'c', map_id: 'm1', color: 'rot', width: 3, points: [9, 9] },
+  );
+  await controller.load();
+  assertEqual(controller.state.get().drawings.length, 3, 'beim Laden da');
+  await controller.actions.undoDrawing();
+  assertEqual(
+    controller.state.get().drawings.map((entry) => entry.id),
+    ['a', 'b'],
+    'Rückgängig: die zuletzt gezeichnete',
+  );
+  await controller.actions.removeDrawings(['a']);
+  assertEqual(
+    api.calls.filter((call) => call[0] === 'deleteDrawings'),
+    [
+      ['deleteDrawings', ['c']],
+      ['deleteDrawings', ['a']],
+    ],
+  );
+  controller.handleDrawingRow({ id: 'a', map_id: 'm1', color: 'rot', width: 3, points: [0, 0] });
+  assertEqual(
+    controller.state.get().drawings.map((entry) => entry.id),
+    ['b'],
+    'verspätetes Echo einer gelöschten Linie holt sie nicht zurück',
+  );
+  await controller.actions.clearDrawings();
+  assertEqual(controller.state.get().drawings, []);
+  assertEqual(api.db.drawings, [], 'auf dem Server alle weg');
+  cleanup();
+});
+
+test(CONTROLLER, 'Zeichnen: Löschen wartet, bis die Linie gespeichert ist', async () => {
+  let release;
+  const order = [];
+  const api = fakeApi({
+    createDrawing: (row) =>
+      new Promise((resolve) => {
+        release = () => {
+          order.push('gespeichert');
+          resolve(row);
+        };
+      }),
+    deleteDrawings: async (ids) => order.push(`gelöscht ${ids.length}`),
+  });
+  const { controller, cleanup } = mapController({ api });
+  addMap(api, 'm1');
+  await controller.load();
+  const adding = controller.actions.addDrawing({ points: [{ x: 1, y: 1 }], color: 'rot', width: 3 });
+  const undoing = controller.actions.undoDrawing();
+  assertEqual(controller.state.get().drawings, [], 'sofort weg');
+  await wait(0);
+  assertEqual(order, [], 'noch nicht gelöscht – Speichern läuft');
+  release();
+  await Promise.all([adding, undoing]);
+  assertEqual(order, ['gespeichert', 'gelöscht 1']);
+  cleanup();
+});
+
+test(CONTROLLER, 'Zeichnen: Spieler laden Linien, malen aber nicht; Revision lädt neu', async () => {
+  const { controller, api, roomId, cleanup } = mapController({ master: false });
+  addMap(api, 'm1');
+  api.db.drawings.push({ id: 'a', map_id: 'm1', color: 'rot', width: 3, points: [0, 0] });
+  controller.handleRoomRow({ active_map_id: 'm1' });
+  await controller.load();
+  assertEqual(controller.state.get().drawings.length, 1);
+  await controller.actions.addDrawing({ points: [{ x: 1, y: 1 }], color: 'rot', width: 3 });
+  await controller.actions.clearDrawings();
+  assertEqual(
+    api.calls.filter((call) => call[0] === 'createDrawing' || call[0] === 'clearDrawings'),
+    [],
+    'Spieler zeichnen und löschen nicht',
+  );
+  api.db.drawings = []; // Meister hat gelöscht – Spieler erfahren es über die Revision
+  controller.handleMapRow({ ...api.db.maps[0], room_id: roomId, revision: 1 });
+  await wait(0);
+  assertEqual(controller.state.get().drawings, []);
+  cleanup();
+});
+
+test(CONTROLLER, 'Zeichnen: Datenbank ohne Zeichnungen – Karte und Figuren laden trotzdem', async () => {
+  const api = fakeApi({
+    fetchDrawings: async () => {
+      throw new Error('relation map_drawings does not exist');
+    },
+  });
+  const { controller, cleanup } = mapController({ api });
+  addMap(api, 'm1');
+  api.db.tokens.push({ id: 't1', map_id: 'm1', name: 'A', x: 0, y: 0 });
+  await controller.load();
+  assertEqual(controller.state.get().status, 'ready');
+  assertEqual(controller.state.get().tokens.length, 1);
+  assertEqual(controller.state.get().drawings, []);
+  cleanup();
+});

@@ -1,7 +1,8 @@
 /**
  * map-view.js – Tab „Karte“ im Raum, der Spielbildschirm: die Karte mit allen Figuren, live für
  * alle; daneben (Handy: als Schubladen) links die Werte, rechts die Proben des eigenen Helden.
- * Meister: mehrere Karten offen (Tabs), Raster einstellen, Figuren aufstellen und bearbeiten.
+ * Meister: mehrere Karten offen (Tabs), Raster einstellen, Figuren aufstellen und bearbeiten,
+ * mit dem Stift auf die Karte malen.
  * Spieler: sehen die gezeigte Karte, stellen ihre Figur auf und ziehen sie.
  */
 import { h, icon, ICONS, setChildren } from './dom.js';
@@ -13,6 +14,7 @@ import { openMapEditor } from './map-editor-view.js';
 import { mapTabs } from '../room-map.js';
 import { heroName } from '../sheet.js';
 import { createMapInspector } from './map-inspector.js';
+import { createDrawBar } from './map-draw-bar.js';
 import { createVitalsPanel, createChecksPanel, createHeroPicker, poolSummary } from './play-panels.js';
 import { createRecentRolls } from './play-log.js';
 import { createCombatStrip } from './play-combat.js';
@@ -215,8 +217,30 @@ export function createMapView(
     // Ping: nur auf der Karte, die alle sehen.
     canPing: () => isMaster() && Boolean(controller.viewMap()) && isShownMap(controller.viewMap()),
     onPing: (point) => controller.actions.ping(point).catch((error) => showError(error, 'Ping nicht gesendet')),
+    // Stift: nur der Meister – auf jeder Karte, auch einer vorbereiteten.
+    canDraw: () => isMaster() && Boolean(controller.viewMap()),
+    onStroke: (stroke) =>
+      controller.actions.addDrawing(stroke).catch((error) => showError(error, 'Linie nicht gespeichert')),
+    onErase: (ids) =>
+      controller.actions.removeDrawings(ids).catch((error) => showError(error, 'Linien nicht gelöscht')),
+    onUndo: () => undoDrawing(),
+    onDrawModeChange: (active) => drawBar.setOpen(active),
     loadImage: imageUrl,
   });
+  const undoDrawing = () =>
+    controller.actions.undoDrawing().catch((error) => showError(error, 'Nicht rückgängig gemacht'));
+  const drawBar = createDrawBar({
+    onChange: (style) => stage.setDrawStyle(style),
+    onUndo: undoDrawing,
+    onClear: async () => {
+      const question = 'Alle Linien auf dieser Karte löschen? Das sehen auch die Spieler.';
+      if (!(await confirmDialog(question, { confirmLabel: 'Alles löschen', danger: true }))) return;
+      await run('Linien nicht gelöscht', () => controller.actions.clearDrawings());
+    },
+    onClose: () => stage.setDrawMode(false),
+  });
+  stage.setDrawStyle(drawBar.style());
+  stage.element.append(drawBar.element);
   const inspector = createMapInspector({
     selectedTokens: () => {
       const ids = new Set(isMaster() ? stage.selection() : []);
@@ -563,7 +587,7 @@ export function createMapView(
                 'details',
                 { class: 'map-tips' },
                 h('summary', {}, 'Tipps'),
-                ' Figur antippen: Werte ändern, bearbeiten. Mehrere markieren: Rahmen ziehen (Maus) oder Knopf „Auswählen“ – dann gemeinsam ziehen. Karte verschieben mit der rechten Maustaste. Stelle für alle markieren (Ping): lange drücken, Alt + Klick oder Knopf 📍.',
+                ' Figur antippen: Werte ändern, bearbeiten. Mehrere markieren: Rahmen ziehen (Maus) oder Knopf „Auswählen“ – dann gemeinsam ziehen. Karte verschieben mit der rechten Maustaste. Stelle für alle markieren (Ping): lange drücken, Alt + Klick oder Knopf 📍. Auf die Karte malen: Knopf ✎ (Stift) – zwei Finger bzw. rechte Maustaste verschieben dabei die Karte.',
               ),
             )
           : h(
@@ -701,6 +725,8 @@ export function createMapView(
     if (map) {
       stage.setMap(map, normalizeGrid(map.grid, map));
       stage.setTokens(state.tokens);
+      stage.setDrawings(state.drawings);
+      drawBar.setCount(state.drawings.length);
       updateHighlight();
       renderPing(state, map);
       gridPanel.refresh();
