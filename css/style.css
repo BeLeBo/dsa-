@@ -2185,6 +2185,13 @@ body.map-fullscreen-open {
   -webkit-user-drag: none;
 }
 
+/* Schärfe-Ebene: sichtbarer Ausschnitt in Bildschirmauflösung über dem Kartenbild (siehe map-detail.js) */
+.map-sharp {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
 .map-grid {
   position: absolute;
   inset: 0;
@@ -2198,6 +2205,11 @@ body.map-fullscreen-open {
 
 .map-grid[data-color='hell'] path {
   stroke: rgb(255 255 255 / 0.75);
+}
+
+/* Sehr feines Raster (Stadtkarten), weit herausgezoomt: Linien erst beim Hineinzoomen zeigen */
+.map-grid.is-dense {
+  visibility: hidden;
 }
 
 .map-viewport.is-select-mode {
@@ -3512,6 +3524,11 @@ a.btn {
 }
 
 /* Knöpfe für die Schubladen (nur am Handy) */
+/* Beim Malen gehört der untere Kartenrand der Stiftleiste */
+.map-game.is-drawing .play-toggle {
+  display: none;
+}
+
 .play-toggle {
   position: absolute;
   bottom: 10px;

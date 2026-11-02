@@ -73,7 +73,10 @@ function imagePicker(label, hint) {
 // ---------------------------------------------------------------------------
 
 function uploadForm(actions, onDone) {
-  const picker = imagePicker('Bild (JPG, PNG oder WebP)', 'Große Bilder werden automatisch verkleinert.');
+  const picker = imagePicker(
+    'Bild (JPG, PNG oder WebP)',
+    'Große Bilder (z. B. Stadtkarten) behalten ihre volle Auflösung – zum Hineinzoomen bis in die Gassen. Das Hochladen dauert dann etwas länger.',
+  );
   const fileInput = picker.input;
   const nameInput = h('input', { type: 'text', name: 'name', maxlength: MAX_MAP_NAME_LENGTH, autocomplete: 'off' });
   fileInput.addEventListener('change', () => {
@@ -90,9 +93,18 @@ function uploadForm(actions, onDone) {
         return;
       }
       try {
-        const map = await actions.uploadMap(file, nameInput.value || mapNameFromFile(file.name));
+        // Große Karten: Detailkacheln in voller Auflösung – Fortschritt im Knopf zeigen.
+        const onProgress = (done, total) => {
+          upload.textContent = `volle Auflösung ${done} / ${total} …`;
+        };
+        const map = await actions.uploadMap(file, nameInput.value || mapNameFromFile(file.name), { onProgress });
         onDone(); // erst schließen: Meldungen in einem Dialog verschwinden mit ihm
-        showToast(`Karte „${map.name || 'Karte'}“ hochgeladen – nur du siehst sie, bis du sie zeigst.`);
+        showToast(
+          map.detailFailed
+            ? `Karte „${map.name || 'Karte'}“ hochgeladen – die volle Auflösung ließ sich nicht speichern (Bild zu groß für dieses Gerät?). Nur du siehst sie, bis du sie zeigst.`
+            : `Karte „${map.name || 'Karte'}“ hochgeladen – nur du siehst sie, bis du sie zeigst.`,
+          { duration: map.detailFailed ? 10000 : undefined },
+        );
       } catch (error) {
         showError(error, 'Hochladen fehlgeschlagen');
       }

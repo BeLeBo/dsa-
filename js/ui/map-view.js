@@ -1,9 +1,9 @@
 /**
  * map-view.js – Tab „Karte“ im Raum, der Spielbildschirm: die Karte mit allen Figuren, live für
  * alle; daneben (Handy: als Schubladen) links die Werte, rechts die Proben des eigenen Helden.
- * Meister: mehrere Karten offen (Tabs), Raster einstellen, Figuren aufstellen und bearbeiten,
- * mit dem Stift auf die Karte malen.
+ * Meister: mehrere Karten offen (Tabs), Raster einstellen, Figuren aufstellen und bearbeiten.
  * Spieler: sehen die gezeigte Karte, stellen ihre Figur auf und ziehen sie.
+ * Alle: mit dem Stift auf die Karte malen (Spieler nur auf die gezeigte).
  */
 import { h, icon, ICONS, setChildren } from './dom.js';
 import { showToast, showError } from './toast.js';
@@ -19,7 +19,7 @@ import { createVitalsPanel, createChecksPanel, createHeroPicker, poolSummary } f
 import { createRecentRolls } from './play-log.js';
 import { createCombatStrip } from './play-combat.js';
 import { confirmDialog } from './dialog.js';
-import { imageUrl } from '../map-api.js';
+import { imageUrl, tileBlob } from '../map-api.js';
 import { currentEntry } from '../combat.js';
 import {
   normalizeGrid,
@@ -46,7 +46,7 @@ function numberInput(label, { step, min, max }) {
 }
 
 function stepperField(label, onStep) {
-  const input = h('input', { type: 'number', class: 'num', inputmode: 'decimal', step: 1 });
+  const input = h('input', { type: 'number', class: 'num', inputmode: 'decimal', step: 'any' });
   const button = (text, delta, name) =>
     h(
       'button',
@@ -72,12 +72,17 @@ function createGridPanel(controller, onToggle) {
   const change = (changes) => controller.actions.updateGrid(changes);
   const stepBy = (key, delta) => {
     const values = current();
-    if (values) change({ [key]: values.grid[key] + delta });
+    if (!values) return;
+    // Feine Raster (Stadtkarten) in halben Schritten, sonst in ganzen.
+    const size = values.grid.size;
+    const fine = key === 'size' && (size < 10 || (size === 10 && delta < 0));
+    const step = fine ? delta * 0.5 : delta;
+    change({ [key]: values.grid[key] + step });
   };
 
   const show = h('input', { type: 'checkbox', onchange: (event) => change({ show: event.target.checked }) });
   const size = stepperField('Feldgröße (Punkte)', (delta) => stepBy('size', delta));
-  const cells = numberInput('Felder in der Breite', { step: 0.5, min: 1, max: 500 });
+  const cells = numberInput('Felder in der Breite', { step: 0.5, min: 1, max: 5000 });
   const offsetX = stepperField('Versatz waagrecht', (delta) => stepBy('offsetX', delta));
   const offsetY = stepperField('Versatz senkrecht', (delta) => stepBy('offsetY', delta));
   let colorControl = h('div');
@@ -106,7 +111,7 @@ function createGridPanel(controller, onToggle) {
     h(
       'p',
       { class: 'section-hint' },
-      'Hat das Kartenbild schon Kästchen? Dann Feldgröße (oder Anzahl Felder) und Versatz so einstellen, dass die Linien übereinander liegen.',
+      'Hat das Kartenbild schon Kästchen? Dann Feldgröße (oder Anzahl Felder) und Versatz so einstellen, dass die Linien übereinander liegen. Stadtkarte? Ein feines Raster (kleine Feldgröße) lässt dich bis in die Gassen hineinzoomen – die Linien erscheinen dann erst beim Hineinzoomen.',
     ),
     h('div', { class: 'map-grid-fields' }, size.element, cells.element, offsetX.element, offsetY.element),
     h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Linienfarbe'), colorControl),
@@ -217,15 +222,22 @@ export function createMapView(
     // Ping: nur auf der Karte, die alle sehen.
     canPing: () => isMaster() && Boolean(controller.viewMap()) && isShownMap(controller.viewMap()),
     onPing: (point) => controller.actions.ping(point).catch((error) => showError(error, 'Ping nicht gesendet')),
-    // Stift: nur der Meister – auf jeder Karte, auch einer vorbereiteten.
-    canDraw: () => isMaster() && Boolean(controller.viewMap()),
+    // Stift: der Meister auf jeder Karte (auch einer vorbereiteten), Spieler auf der gezeigten.
+    canDraw: () => controller.canDraw(),
+    canErase: (drawing) => controller.canRemoveDrawing(drawing),
     onStroke: (stroke) =>
       controller.actions.addDrawing(stroke).catch((error) => showError(error, 'Linie nicht gespeichert')),
     onErase: (ids) =>
       controller.actions.removeDrawings(ids).catch((error) => showError(error, 'Linien nicht gelöscht')),
     onUndo: () => undoDrawing(),
-    onDrawModeChange: (active) => drawBar.setOpen(active),
+    onDrawModeChange: (active) => {
+      drawBar.setOpen(active);
+      // Am Handy liegen die Knöpfe „Werte“ und „Proben“ sonst über der Stiftleiste.
+      game.classList.toggle('is-drawing', active);
+      if (active) openDrawer(null);
+    },
     loadImage: imageUrl,
+    loadTile: tileBlob,
   });
   const undoDrawing = () =>
     controller.actions.undoDrawing().catch((error) => showError(error, 'Nicht rückgängig gemacht'));
@@ -233,11 +245,15 @@ export function createMapView(
     onChange: (style) => stage.setDrawStyle(style),
     onUndo: undoDrawing,
     onClear: async () => {
-      const question = 'Alle Linien auf dieser Karte löschen? Das sehen auch die Spieler.';
-      if (!(await confirmDialog(question, { confirmLabel: 'Alles löschen', danger: true }))) return;
+      const question = isMaster()
+        ? 'Alle Linien auf dieser Karte löschen – auch die der Spieler?'
+        : 'Deine Linien auf dieser Karte löschen?';
+      const confirmLabel = isMaster() ? 'Alles löschen' : 'Löschen';
+      if (!(await confirmDialog(question, { confirmLabel, danger: true }))) return;
       await run('Linien nicht gelöscht', () => controller.actions.clearDrawings());
     },
     onClose: () => stage.setDrawMode(false),
+    isMaster,
   });
   stage.setDrawStyle(drawBar.style());
   stage.element.append(drawBar.element);
@@ -620,7 +636,7 @@ export function createMapView(
         'p',
         { class: 'section-hint' },
         mine
-          ? 'Ziehe deine Figur, um sie zu bewegen. Tippe sie an für deine Werte.'
+          ? 'Ziehe deine Figur, um sie zu bewegen. Tippe sie an für deine Werte. Mit ✎ malst du auf die Karte.'
           : openHeroId()
             ? 'Stell deine Figur mit „Meine Figur aufstellen“ auf die Karte – oder der Meister macht es.'
             : 'Lege im Tab „Held“ deinen Helden an, dann kannst du deine Figur aufstellen.',
@@ -726,7 +742,10 @@ export function createMapView(
       stage.setMap(map, normalizeGrid(map.grid, map));
       stage.setTokens(state.tokens);
       stage.setDrawings(state.drawings);
-      drawBar.setCount(state.drawings.length);
+      drawBar.setCounts({
+        own: state.drawings.filter(controller.isOwnDrawing).length,
+        removable: state.drawings.filter(controller.canRemoveDrawing).length,
+      });
       updateHighlight();
       renderPing(state, map);
       gridPanel.refresh();

@@ -10,6 +10,7 @@ import './map.test.js';
 import './optolith.test.js';
 import './check-search.test.js';
 import './map-editor.test.js';
+import './detail.test.js';
 
 const results = await runTests();
 window.testResults = results;

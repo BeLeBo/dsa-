@@ -181,6 +181,7 @@ export function startRoomMode(initialSession, { onLeave }) {
     roomId: session.roomId,
     isMaster,
     characters: () => room.get().characters,
+    userId: () => session.userId ?? null,
     onShown: (map) => {
       shell.notifyTab(TABS.map.id);
       showToast(`Der Meister zeigt jetzt eine Karte: „${map.name || 'Karte'}“.`, {

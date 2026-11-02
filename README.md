@@ -30,6 +30,7 @@ alles live für alle synchronisiert.
 | 15    | Karten-Editor: Karten aus fertigen Objekten bauen oder erstellen lassen | ✅ fertig |
 | 16    | Heldenauswahl: Spieler wählen nach jedem Beitreten ihren Helden         | ✅ fertig |
 | 17    | Stift: Der Meister malt auf die Karte, alle sehen es live               | ✅ fertig |
+| 18    | Spieler malen mit; Zoom bis in die Gassen, volle Auflösung, Schärfe     | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -247,8 +248,13 @@ auf dem Server gespeichert und für den Meister sichtbar.
 **Meister**
 
 1. Tab **Karte** → **Karte hochladen** (JPG, PNG oder WebP, z. B. Dungeon, Taverne, Landkarte).
-   Große Bilder verkleinert die App automatisch (längste Seite 3000 Punkte, höchstens 5 MB).
-   Handyfotos im HEIC-Format bitte vorher als JPG speichern.
+   **Große Bilder (z. B. Stadtkarten) behalten ihre volle Auflösung** – bis 10 000 Punkte an der
+   längsten Seite (höchstens 64 Millionen Bildpunkte; größere werden darauf verkleinert). Die App
+   speichert dazu ein Vorschaubild (3000 Punkte) und die volle Auflösung in **Detailkacheln**; beim
+   Hineinzoomen lädt jedes Gerät nur die Kacheln, die gerade zu sehen sind – so bleibt es auch am Handy
+   flott. Während des Hochladens zählt der Knopf mit („volle Auflösung 12 / 60 …“). Sehr große Bilder
+   lieber am Rechner hochladen: Ist das Bild für das Gerät zu groß, gibt es die Karte in normaler
+   Auflösung (mit Hinweis). Handyfotos im HEIC-Format bitte vorher als JPG speichern.
 2. Eine neue Karte sieht zunächst **nur der Meister** („Vorbereitung“) – in Ruhe Figuren aufstellen,
    dann **Allen zeigen**. **Mehrere Karten offen:** Über der Karte stehen Tabs – die gezeigte Karte mit
    Auge 👁, daneben die Karten, die du gerade vorbereitest. Ein Tipp wechselt hin und her, × schließt
@@ -258,6 +264,10 @@ auf dem Server gespeichert und für den Meister sichtbar.
 3. **Raster:** an/aus, Feldgröße (oder „Felder in der Breite“), Versatz und Linienfarbe. Hat das Bild
    schon Kästchen, die Werte so einstellen, dass die Linien übereinander liegen. Bei sichtbarem
    Raster rasten Figuren beim Ablegen in die Felder ein (große Figuren mit 2 × 2 Feldern auf die Linien).
+   **Stadtkarten:** Ein feines Raster (Feldgröße bis hinunter zu 2 Punkten, unter 10 in halben
+   Schritten) macht die Figuren klein genug für Gassen und lässt tiefer hineinzoomen – so weit, dass
+   ein Feld bis zu 240 Bildschirmpunkte groß wird. Weit herausgezoomt blendet die App die Rasterlinien
+   aus (sonst wären sie nur ein grauer Schleier); Figuren bleiben dabei immer mindestens 12 Punkte groß.
 4. **+ Figur:** Name, Anzahl (mehrere werden nummeriert: Ork 1, Ork 2 …), **Lebensenergie (LeP)** für
    Gegner und NSC (jede Figur startet mit vollen LeP, leer = ohne LeP), Größe (½ bis 4 × 4 Felder),
    Farbe, optional ein Bild (wird quadratisch zugeschnitten) und **Verborgen** – verborgene Figuren
@@ -299,16 +309,18 @@ auf dem Server gespeichert und für den Meister sichtbar.
    Stelle bei jemandem außerhalb des Ausschnitts, gleitet seine Karte dorthin; wer gerade in einem
    anderen Tab ist, bekommt eine Meldung mit **Ansehen**. Auf einer vorbereiteten Karte (nur der
    Meister sieht sie) gibt es keinen Ping.
-9. **Auf die Karte malen (Stift)** – Weg einzeichnen, Falle einkreisen, Pfeil zur Tür: Knopf **✎**
-   (rechts an der Karte) nimmt den Stift in die Hand, unten erscheint die Stiftleiste. Ein Finger bzw.
-   die linke Maustaste malt; **zwei Finger** (bzw. rechte Maustaste oder Leertaste + Maus) verschieben
-   und zoomen die Karte weiter. In der Leiste: **Farbe** (Rot, Gelb, Grün, Blau, Lila, Schwarz, Weiß),
-   **Strichstärke** (dünn, mittel, dick – passend zur Feldgröße), **Radierer** (über Linien wischen),
-   **↶ Rückgängig** (letzte Linie, am Rechner auch Strg + Z), **🗑 Alles löschen** (mit Rückfrage) und
-   **Fertig** (am Handy ✓) bzw. Esc legt den Stift weg. Figuren lassen sich beim Malen nicht
+9. **Auf die Karte malen (Stift)** – Weg einzeichnen, Falle einkreisen, Pfeil zur Tür (auch die
+   Spieler können malen, siehe unten): Knopf **✎** (rechts an der Karte) nimmt den Stift in die Hand,
+   unten erscheint die Stiftleiste. Ein Finger bzw. die linke Maustaste malt; **zwei Finger** (bzw.
+   rechte Maustaste oder Leertaste + Maus) verschieben und zoomen die Karte weiter. In der Leiste:
+   **Farbe** (Rot, Gelb, Grün, Blau, Lila, Schwarz, Weiß), **Strichstärke** (dünn, mittel, dick –
+   passend zur Feldgröße), **Radierer** (über Linien wischen), **↶ Rückgängig** (eigene letzte Linie,
+   am Rechner auch Strg + Z), **🗑 Alles löschen** (alle Linien, auch die der Spieler – mit Rückfrage)
+   und **Fertig** (am Handy ✓) bzw. Esc legt den Stift weg. Figuren lassen sich beim Malen nicht
    verschieben. Jede Linie erscheint, sobald man den Finger hebt, bei allen, die die Karte sehen; auf
    einer vorbereiteten Karte erst, wenn sie gezeigt wird. Die Linien gehören zur Karte: Sie bleiben,
-   bis der Meister sie löscht, und verschwinden mit der Karte. Farbe und Stärke merkt sich das Gerät.
+   bis sie gelöscht werden, und verschwinden mit der Karte. Der Radierer des Meisters erfasst alle
+   Linien. Farbe und Stärke merkt sich das Gerät.
 
 **Karte selbst bauen (Karten-Editor)**
 
@@ -345,7 +357,11 @@ fragt nach.
 
 **Spieler**
 
-- **Linien des Meisters:** Was der Meister mit dem Stift auf die gezeigte Karte malt, sehen alle sofort.
+- **Malen:** Auch Spieler haben den Stift **✎** – auf der gezeigten Karte, mit derselben Stiftleiste
+  wie der Meister. Was jemand malt, sehen alle sofort. Rückgängig, Radierer und **Meine Linien
+  löschen** wirken bei Spielern nur auf die eigenen Linien; die Linien des Meisters und der anderen
+  bleiben. Solange der Stift aktiv ist, verschwinden am Handy die Knöpfe „Werte“ und „Proben“ –
+  **Fertig** bringt sie zurück.
 - **Meine Figur aufstellen:** Steht die eigene Figur noch nicht auf der gezeigten Karte, stellt man sie
   selbst auf – mit Farbe und auf Wunsch eigenem Bild (sonst das Bild der letzten Figur). Danach ziehen.
 
@@ -405,7 +421,14 @@ Beitreten erst im Tab **Held** ihren Helden). Wer einen Helden geöffnet hat, ha
 - Karte mit einem Finger verschieben, mit zwei Fingern (oder Mausrad, Knöpfe + und −) zoomen,
   ◎ zeigt die ganze Karte, ⛶ schaltet auf Vollbild. Mit der Maus verschiebt man die Karte mit der
   rechten (oder mittleren) Taste bzw. mit gedrückter Leertaste – beim Meister zieht die linke Taste ja
-  den Auswahlrahmen.
+  den Auswahlrahmen. Hineinzoomen geht bis achtfach – mit feinem Raster weiter (siehe **Raster**).
+- **Scharf beim Hineinzoomen:** Kurz nach dem Zoomen zeichnet die App den sichtbaren Ausschnitt in
+  Bildschirmauflösung neu – bei großen Karten aus den Detailkacheln (volle Auflösung). Reicht auch
+  die nicht (oder bei älteren Karten ohne Detailkacheln), rechnet sie den Ausschnitt **automatisch
+  hoch und schärft ihn nach**: Linien, Hauskanten und Schrift werden klarer, ohne helle Ränder. Das
+  gilt für alle Karten, auch für schon hochgeladene. Was im Bild nicht drin ist (z. B. einzelne Gassen
+  auf einer grob gezeichneten Stadtkarte), kann das Hochrechnen aber nicht erfinden – für richtig
+  scharfe Gassen eine hochaufgelöste Karte hochladen.
 - Figuren, Namen und Figurenbilder bleiben auch stark vergrößert scharf (sie werden in echter
   Bildschirmgröße gezeichnet, nicht mit der Karte hochskaliert). Figurenbilder werden mit bis zu
   512 × 512 Punkten gespeichert; ältere, kleinere Bilder einfach neu hochladen („Figur bearbeiten“).
@@ -414,7 +437,8 @@ Beitreten erst im Tab **Held** ihren Helden). Wer einen Helden geöffnet hat, ha
   die Pfeiltasten eine ausgewählte Figur um ein Feld.
 - Alles erscheint sofort bei allen. Läuft ein Kampf, leuchtet die Figur, die am Zug ist
   (Helden über den Helden, Gegner über den Namen – z. B. „Ork 1“ im Kampf und auf der Karte).
-- Bilder werden nach dem ersten Laden auf dem Gerät gespeichert und nicht erneut heruntergeladen.
+- Bilder werden nach dem ersten Laden auf dem Gerät gespeichert und nicht erneut heruntergeladen
+  (Detailkacheln in einem eigenen Speicher, damit sie die Karten- und Figurenbilder nicht verdrängen).
   Die Karte selbst braucht eine Verbindung; ohne Netz zeigt der Tab einen Hinweis.
 
 ## Fehlerbehebung
