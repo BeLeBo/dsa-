@@ -12,8 +12,8 @@
 --   Spieler  – sieht und bearbeitet nur den eigenen Helden (wählt ihn beim Beitreten aus den
 --              Helden des Raums – von den anderen sieht er dabei nur Name, Spezies und Profession),
 --              sieht öffentliche Würfe und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
---              sieht die gezeigte Karte (mit den Linien des Meisters), stellt die Figur des
---              eigenen Helden auf und bewegt sie.
+--              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie,
+--              malt mit dem Stift auf die gezeigte Karte (löscht nur die eigenen Linien).
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- Meister wird, wer den Raum erstellt oder beim Beitreten „Ich bin Meister“ wählt
 -- (ohne PIN – die Gruppe vertraut sich; den Raumcode kennt ohnehin nur die Gruppe).
@@ -104,6 +104,11 @@ create index if not exists maps_room on public.maps (room_id);
 alter table public.maps add column if not exists scene jsonb
   check (scene is null or (jsonb_typeof(scene) = 'object' and pg_column_size(scene) < 200000));
 alter table public.maps add column if not exists has_scene boolean generated always as (scene is not null) stored;
+-- Große Karten behalten ihre volle Auflösung als Detailkacheln im Speicher (siehe js/map-detail.js):
+-- { path, tile, ext, levels: [{ scale, width, height, cols, rows }] }. Leer = nur das Kartenbild.
+-- Solche Karten rechnen in Punkten der vollen Auflösung; das Kartenbild ist dann die Vorschau.
+alter table public.maps add column if not exists detail jsonb
+  check (detail is null or (jsonb_typeof(detail) = 'object' and pg_column_size(detail) < 4000));
 
 -- Karte, die gerade alle sehen (null = keine). Nur der Meister ändert sie.
 alter table public.rooms add column if not exists active_map_id uuid references public.maps (id) on delete set null;
@@ -147,7 +152,7 @@ create table if not exists public.figure_templates (
 );
 create unique index if not exists figure_templates_name on public.figure_templates (room_id, lower(name));
 
--- Zeichnungen des Meisters (Stift auf der Karte): eine Zeile je Linie. points = [x1, y1, x2, y2, …]
+-- Zeichnungen (Stift auf der Karte): eine Zeile je Linie. points = [x1, y1, x2, y2, …]
 -- in Kartenpunkten, width = Strichstärke in Kartenpunkten. Sichtbar wie die Karte selbst.
 create table if not exists public.map_drawings (
   id uuid primary key default gen_random_uuid(),
@@ -169,6 +174,9 @@ create table if not exists public.map_drawings (
 );
 create index if not exists map_drawings_map on public.map_drawings (map_id, created_at);
 create index if not exists map_drawings_room on public.map_drawings (room_id);
+-- Wer die Linie gemalt hat: Spieler löschen nur ihre eigenen. Ältere Linien (leer) stammen vom Meister.
+alter table public.map_drawings add column if not exists created_by uuid default auth.uid()
+  references auth.users (id) on delete set null;
 
 -- -----------------------------------------------------------------------------
 -- Hilfsfunktionen für die Zugriffsregeln
@@ -989,13 +997,21 @@ create policy "Karten sehen" on public.maps
 drop policy if exists "Meister legt Karten an" on public.maps;
 create policy "Meister legt Karten an" on public.maps
   for insert to authenticated
-  with check (public.is_room_master(room_id) and public.room_of_path(image_path) = room_id);
+  with check (
+    public.is_room_master(room_id)
+    and public.room_of_path(image_path) = room_id
+    and (detail is null or public.room_of_path(detail ->> 'path') = room_id)
+  );
 
 drop policy if exists "Meister bearbeitet Karten" on public.maps;
 create policy "Meister bearbeitet Karten" on public.maps
   for update to authenticated
   using (public.is_room_master(room_id))
-  with check (public.is_room_master(room_id) and public.room_of_path(image_path) = room_id);
+  with check (
+    public.is_room_master(room_id)
+    and public.room_of_path(image_path) = room_id
+    and (detail is null or public.room_of_path(detail ->> 'path') = room_id)
+  );
 
 drop policy if exists "Meister löscht Karten" on public.maps;
 create policy "Meister löscht Karten" on public.maps
@@ -1043,7 +1059,8 @@ create policy "Meister entfernt Figuren" on public.tokens
   for delete to authenticated
   using (public.is_room_master(room_id));
 
--- Zeichnungen: sichtbar wie die Karte (Spieler: nur auf der gezeigten). Malen und löschen nur der Meister.
+-- Zeichnungen: sichtbar wie die Karte (Spieler: nur auf der gezeigten). Malen: der Meister überall,
+-- Spieler auf der gezeigten Karte. Löschen: der Meister alle Linien, Spieler ihre eigenen.
 drop policy if exists "Zeichnungen sehen" on public.map_drawings;
 create policy "Zeichnungen sehen" on public.map_drawings
   for select to authenticated
@@ -1053,17 +1070,23 @@ create policy "Zeichnungen sehen" on public.map_drawings
   );
 
 drop policy if exists "Meister zeichnet" on public.map_drawings;
-create policy "Meister zeichnet" on public.map_drawings
+drop policy if exists "Auf die Karte malen" on public.map_drawings;
+create policy "Auf die Karte malen" on public.map_drawings
   for insert to authenticated
   with check (
-    public.is_room_master(room_id)
+    created_by = (select auth.uid())
     and exists (select 1 from public.maps m where m.id = map_id and m.room_id = map_drawings.room_id)
+    and (
+      public.is_room_master(room_id)
+      or (public.is_room_member(room_id) and public.is_active_map(room_id, map_id))
+    )
   );
 
 drop policy if exists "Meister löscht Zeichnungen" on public.map_drawings;
-create policy "Meister löscht Zeichnungen" on public.map_drawings
+drop policy if exists "Zeichnungen löschen" on public.map_drawings;
+create policy "Zeichnungen löschen" on public.map_drawings
   for delete to authenticated
-  using (public.is_room_master(room_id));
+  using (public.is_room_master(room_id) or created_by = (select auth.uid()));
 
 -- Gespeicherte Figuren: nur der Meister (Anlegen und Ändern über save_/update_figure_template()).
 drop policy if exists "Meister sieht gespeicherte Figuren" on public.figure_templates;
@@ -1086,7 +1109,7 @@ revoke all on public.maps, public.tokens, public.figure_templates, public.map_dr
 grant select on public.rooms to authenticated;
 grant update (combat, active_map_id, ping) on public.rooms to authenticated;
 grant select, delete on public.maps to authenticated;
-grant insert (id, room_id, name, image_path, width, height, grid, scene) on public.maps to authenticated;
+grant insert (id, room_id, name, image_path, width, height, grid, scene, detail) on public.maps to authenticated;
 grant update (name, grid, image_path, width, height, scene) on public.maps to authenticated;
 grant select, delete on public.tokens to authenticated;
 grant insert (id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max)
@@ -1197,7 +1220,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 8;
+  select 9;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

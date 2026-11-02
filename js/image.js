@@ -1,9 +1,11 @@
 /**
- * image.js – Bilder vor dem Hochladen vorbereiten: Karten verkleinern, Figurenbilder
- * quadratisch zuschneiden, gebaute Karten umwandeln. Spart Speicher und Datenvolumen am Handy.
+ * image.js – Bilder vor dem Hochladen vorbereiten: Karten als Vorschaubild (verkleinert) und –
+ * bei großen Bildern – zusätzlich in voller Auflösung als Detailkacheln, Figurenbilder quadratisch
+ * zuschneiden, gebaute Karten umwandeln. Spart Speicher und Datenvolumen am Handy.
  * Ergebnis ist WebP; Browser ohne WebP-Unterstützung liefern JPEG (Karte) bzw. PNG (Figur).
  */
 import { scaledSize, MAP_MAX_EDGE, TOKEN_IMAGE_EDGE } from './map.js';
+import { detailSize, planDetailLevels, TILE_SIZE } from './map-detail.js';
 
 /** Obergrenze des Speichers je Bild (siehe schema.sql). */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -68,25 +70,68 @@ function draw(image, source, width, height, background) {
   return canvas;
 }
 
+/** Vorschaubild einer Karte: höchstens MAP_MAX_EDGE Punkte (notfalls kleiner, bis es unter die Speichergrenze passt). */
+async function mapPreview(image) {
+  const source = { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight };
+  let edge = MAP_MAX_EDGE;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    const { width, height } = scaledSize(source.width, source.height, edge);
+    const blob = await encode(draw(image, source, width, height, '#ffffff'), 'image/jpeg');
+    if (blob.size <= MAX_IMAGE_BYTES) return { blob, width, height };
+    edge = Math.round(Math.max(width, height) * SHRINK_FACTOR);
+  }
+  throw new ImageError('Das Bild ist zu groß. Bitte ein kleineres Bild wählen.');
+}
+
 /**
- * Karte: auf höchstens MAP_MAX_EDGE Punkte verkleinern (und notfalls weiter, bis sie
- * unter die Speichergrenze passt).
- * @returns {Promise<{ blob: Blob, width: number, height: number }>}
+ * Detailkacheln einer großen Karte, eine nach der anderen (Stufe 0 = volle Auflösung, dann
+ * halbiert – siehe map-detail.js). Jede Kachel höchstens TILE_SIZE × TILE_SIZE Punkte.
+ * @returns {AsyncGenerator<{ levelIndex, col, row, blob }>}
  */
-export async function prepareMapImage(file) {
+async function* mapTiles(image, full, levels) {
+  const ratio = image.naturalWidth / full.width; // Bildpunkte des Originals je Kartenpunkt
+  for (const [levelIndex, level] of levels.entries()) {
+    const perTilePixel = ratio / level.scale; // Originalpunkte je Kachelpunkt
+    for (let row = 0; row < level.rows; row += 1) {
+      for (let col = 0; col < level.cols; col += 1) {
+        const x = col * TILE_SIZE;
+        const y = row * TILE_SIZE;
+        const width = Math.min(TILE_SIZE, level.width - x);
+        const height = Math.min(TILE_SIZE, level.height - y);
+        const source = {
+          x: x * perTilePixel,
+          y: y * perTilePixel,
+          width: Math.min(width * perTilePixel, image.naturalWidth - x * perTilePixel),
+          height: Math.min(height * perTilePixel, image.naturalHeight - y * perTilePixel),
+        };
+        const blob = await encode(draw(image, source, width, height, '#ffffff'), 'image/jpeg');
+        yield { levelIndex, col, row, blob };
+      }
+    }
+  }
+}
+
+/**
+ * Karte zum Hochladen vorbereiten: Vorschaubild (höchstens MAP_MAX_EDGE Punkte) und – wenn das Bild
+ * deutlich größer ist – seine volle Auflösung als Detailkacheln. So bleiben große Stadtkarten
+ * beim Hineinzoomen scharf, ohne dass ein Handy je das ganze Bild laden muss.
+ * Nach dem Hochladen der Kacheln release() aufrufen (gibt das entpackte Bild frei).
+ * @returns {Promise<{ blob, width, height, detail: null | { width, height, levels, tiles() }, release() }>}
+ */
+export async function prepareMapUpload(file) {
   const { image, release } = await decode(file);
   try {
-    const source = { x: 0, y: 0, width: image.naturalWidth, height: image.naturalHeight };
-    let edge = MAP_MAX_EDGE;
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-      const { width, height } = scaledSize(source.width, source.height, edge);
-      const blob = await encode(draw(image, source, width, height, '#ffffff'), 'image/jpeg');
-      if (blob.size <= MAX_IMAGE_BYTES) return { blob, width, height };
-      edge = Math.round(Math.max(width, height) * SHRINK_FACTOR);
+    const preview = await mapPreview(image);
+    const full = detailSize(image.naturalWidth, image.naturalHeight);
+    const levels = planDetailLevels(full.width, full.height, preview.width);
+    if (levels.length === 0) {
+      release();
+      return { ...preview, detail: null, release: () => {} };
     }
-    throw new ImageError('Das Bild ist zu groß. Bitte ein kleineres Bild wählen.');
-  } finally {
+    return { ...preview, detail: { ...full, levels, tiles: () => mapTiles(image, full, levels) }, release };
+  } catch (error) {
     release();
+    throw error;
   }
 }
 

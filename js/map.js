@@ -30,8 +30,9 @@ export const GRID_COLORS = Object.freeze([
   { id: 'hell', name: 'Hell' },
 ]);
 
-export const MIN_GRID_SIZE = 10;
-export const MAX_GRID_SIZE = 400;
+/** Feldgröße in Kartenpunkten. Sehr kleine Felder: Stadtkarten, auf denen man in Gassen spielt. */
+export const MIN_GRID_SIZE = 2;
+export const MAX_GRID_SIZE = 1000;
 /** Längste Seite einer Karte nach dem Verkleinern (Bildpunkte). */
 export const MAP_MAX_EDGE = 3000;
 /** Figurenbilder werden quadratisch auf diese Kantenlänge gebracht (scharf auch stark vergrößert). */
@@ -42,8 +43,13 @@ export const MAX_MAP_NAME_LENGTH = 60;
 /** Grenzen für die LeP von Gegnern/NSC (wie in der Datenbank). */
 export const MIN_TOKEN_LIFE = -999;
 export const MAX_TOKEN_LIFE = 9999;
-/** Stärkste Vergrößerung: ein Kartenpunkt = 4 Bildschirmpunkte. */
-export const MAX_ZOOM = 4;
+/** „Ganze Karte“ vergrößert kleine Bilder höchstens so stark. */
+export const MAX_FIT_ZOOM = 4;
+/** Hineinzoomen: mindestens bis ein Kartenpunkt 8 Bildschirmpunkte groß ist … */
+export const MAX_ZOOM = 8;
+/** … und bei feinem Raster so weit, dass ein Feld so groß wird (Gassen auf Stadtkarten) – mit Obergrenze. */
+export const MAX_CELL_SCREEN_PX = 240;
+export const MAX_ZOOM_LIMIT = 120;
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round2 = (value) => Math.round(value * 100) / 100;
@@ -354,7 +360,7 @@ export function fitView(viewport, map, padding = 12) {
   const scale = Math.min(
     (viewport.width - 2 * padding) / map.width,
     (viewport.height - 2 * padding) / map.height,
-    MAX_ZOOM,
+    MAX_FIT_ZOOM,
   );
   const safeScale = scale > 0 ? scale : 1;
   return {
@@ -364,10 +370,14 @@ export function fitView(viewport, map, padding = 12) {
   };
 }
 
-/** Kleinste und größte erlaubte Vergrößerung. */
-export function zoomLimits(viewport, map) {
+/**
+ * Kleinste und größte erlaubte Vergrößerung. Mit Raster: so weit hinein, dass ein Feld bis zu
+ * MAX_CELL_SCREEN_PX groß wird – auf Stadtkarten mit feinem Raster also bis in die Gassen.
+ */
+export function zoomLimits(viewport, map, grid = null) {
   const fit = fitView(viewport, map, 0).scale;
-  return { min: Math.min(fit / 2, 1), max: MAX_ZOOM };
+  const byCell = grid?.size > 0 ? MAX_CELL_SCREEN_PX / grid.size : 0;
+  return { min: Math.min(fit / 2, 1), max: Math.min(MAX_ZOOM_LIMIT, Math.max(MAX_ZOOM, byCell)) };
 }
 
 /**
@@ -476,8 +486,9 @@ export function sortTemplates(templates) {
 }
 
 // -----------------------------------------------------------------------------
-// Zeichnen: Der Meister malt mit dem Stift auf die Karte – alle sehen die Linien.
-// Eine Linie: { id, map_id, color, width, points: [{ x, y }, …] } in Kartenpunkten.
+// Zeichnen: Meister und Spieler malen mit dem Stift auf die Karte – alle sehen die Linien.
+// Eine Linie: { id, map_id, color, width, points: [{ x, y }, …], created_by } in Kartenpunkten;
+// created_by ist die Nutzer-ID des Zeichners (leer bei älteren Linien des Meisters).
 // -----------------------------------------------------------------------------
 
 /** Stiftfarben – kräftig, damit sie auf hellen und dunklen Karten auffallen. */
@@ -533,6 +544,7 @@ export function normalizeDrawing(row) {
     color: DRAW_COLORS.some((color) => color.id === row.color) ? row.color : DRAW_COLORS[0].id,
     width: Number.isFinite(width) && width > 0 ? Math.min(width, MAX_DRAWING_WIDTH) : 4,
     points,
+    created_by: typeof row.created_by === 'string' && row.created_by !== '' ? row.created_by : null,
   };
 }
 

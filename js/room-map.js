@@ -8,10 +8,12 @@
  * ist die Karte, die auf diesem Gerät angezeigt wird, `activeMapId` die für alle gezeigte.
  * Auf der gezeigten Karte kann er Stellen markieren (Ping) – alle sehen sie kurz aufleuchten.
  * Figuren kann er für später speichern (Vorlagen des Raums) und wieder aufstellen.
- * Mit dem Stift malt er auf die angezeigte Karte; die Linien sehen alle, die die Karte sehen.
+ * Mit dem Stift malen der Meister (auf jeder Karte) und die Spieler (auf der gezeigten Karte);
+ * die Linien sehen alle, die die Karte sehen. Spieler löschen nur ihre eigenen Linien.
  */
 import * as serverApi from './map-api.js';
-import { prepareMapImage, prepareTokenImage } from './image.js';
+import { prepareMapUpload, prepareTokenImage } from './image.js';
+import { TILE_SIZE, tileCount, tilePath, allTilePaths, normalizeDetail } from './map-detail.js';
 import { createObservable } from './store.js';
 import { readJson, writeJson } from './storage.js';
 import { isOlderTimestamp, newId } from './util.js';
@@ -37,6 +39,8 @@ import {
 
 /** Rasteränderungen werden gesammelt und nach dieser Pause gespeichert. */
 export const GRID_SAVE_DELAY_MS = 600;
+/** So viele Detailkacheln werden gleichzeitig hochgeladen. */
+const TILE_UPLOADS_AT_ONCE = 4;
 
 function upsertById(list, row) {
   const index = list.findIndex((entry) => entry.id === row.id);
@@ -77,21 +81,23 @@ export function chooseViewMap({ maps, activeMapId, preferredMapId, isMaster }) {
  * @param {string} options.roomId
  * @param {() => boolean} options.isMaster
  * @param {() => object[]} options.characters  sichtbare Helden (Zeilen vom Server)
+ * @param {() => string|null} [options.userId]  Nutzer-ID dieses Geräts (eigene Linien erkennen)
  * @param {(map: object) => void} options.onShown  Meister zeigt eine neue Karte (für Spieler)
  * @param {(ping: object) => void} options.onPing  neuer Ping eines anderen Geräts auf der angezeigten Karte
  * @param {(error: Error) => void} options.onError Fehler beim Speichern im Hintergrund
  * @param {object} [options.api]  Serverfunktionen (für Tests austauschbar)
- * @param {object} [options.images] { prepareMapImage, prepareTokenImage } (für Tests austauschbar)
+ * @param {object} [options.images] { prepareMapUpload, prepareTokenImage } (für Tests austauschbar)
  */
 export function createMapController({
   roomId,
   isMaster,
   characters,
+  userId = () => null,
   onShown = () => {},
   onPing = () => {},
   onError = () => {},
   api = serverApi,
-  images = { prepareMapImage, prepareTokenImage },
+  images = { prepareMapUpload, prepareTokenImage },
 }) {
   const preferenceKey = `dsa5.karte.${roomId}`;
   /** Geöffnete Karten des Meisters (Tabs) – je Gerät gemerkt. */
@@ -305,14 +311,88 @@ export function createMapController({
     return map;
   }
 
-  async function uploadMap(file, name) {
-    const prepared = await images.prepareMapImage(file);
-    return addMap(prepared.blob, {
-      name,
-      width: prepared.width,
-      height: prepared.height,
-      grid: defaultGrid(prepared.width, prepared.height),
-    });
+  /**
+   * Detailkacheln einer großen Karte hochladen (mehrere gleichzeitig). Scheitert eine, werden
+   * die schon hochgeladenen wieder gelöscht.
+   * @returns {Promise<object>} Detailangaben für die Karte (siehe normalizeDetail)
+   */
+  async function uploadDetail(prepared, onProgress) {
+    const folder = `${roomId}/kacheln/${newId()}`;
+    const total = tileCount(prepared.levels);
+    const uploaded = [];
+    const pending = new Set();
+    let failure = null; // erster Fehler eines Uploads – egal, wann er passiert
+    let ext = null;
+    onProgress(0, total);
+    try {
+      for await (const tile of prepared.tiles()) {
+        if (failure) throw failure;
+        const tileExt = tile.blob.type === 'image/webp' ? 'webp' : 'jpg';
+        ext ??= tileExt;
+        if (tileExt !== ext) throw new Error('Die Kacheln haben unterschiedliche Bildformate.');
+        const path = tilePath({ path: folder, ext }, tile.levelIndex, tile.col, tile.row);
+        const job = api
+          .uploadTile(path, tile.blob)
+          .then(
+            () => {
+              uploaded.push(path);
+              onProgress(uploaded.length, total);
+            },
+            (error) => {
+              failure ??= error;
+            },
+          )
+          .finally(() => pending.delete(job));
+        pending.add(job);
+        if (pending.size >= TILE_UPLOADS_AT_ONCE) await Promise.race(pending);
+      }
+      await Promise.all(pending);
+      if (failure) throw failure;
+      return { path: folder, tile: TILE_SIZE, ext, levels: prepared.levels };
+    } catch (error) {
+      await Promise.all([...pending]);
+      await api.removeTiles(uploaded).catch(() => {});
+      throw error;
+    }
+  }
+
+  /**
+   * Bild hochladen und Karte anlegen. Große Bilder behalten ihre volle Auflösung als
+   * Detailkacheln; die Karte rechnet dann in Punkten der vollen Auflösung. Klappt das Hochladen
+   * der Kacheln nicht, gibt es die Karte in normaler Auflösung (`detailFailed: true`).
+   * @param {{ onProgress?: (done: number, total: number) => void }} [options]  Kacheln hochgeladen
+   */
+  async function uploadMap(file, name, { onProgress = () => {} } = {}) {
+    const prepared = await images.prepareMapUpload(file);
+    let detail = null;
+    let detailFailed = false;
+    try {
+      if (prepared.detail) {
+        try {
+          detail = await uploadDetail(prepared.detail, onProgress);
+        } catch (error) {
+          if (error.offline) throw error;
+          detailFailed = true;
+        }
+      }
+    } finally {
+      prepared.release();
+    }
+    const width = detail ? prepared.detail.width : prepared.width;
+    const height = detail ? prepared.detail.height : prepared.height;
+    try {
+      const map = await addMap(prepared.blob, {
+        name,
+        width,
+        height,
+        grid: defaultGrid(width, height),
+        ...(detail ? { detail } : {}),
+      });
+      return detailFailed ? { ...map, detailFailed } : map;
+    } catch (error) {
+      if (detail) api.removeTiles(allTilePaths(detail)).catch(() => {});
+      throw error;
+    }
   }
 
   /**
@@ -394,6 +474,8 @@ export function createMapController({
     if (!map) return;
     const tokens = mapId === state.get().viewMapId ? state.get().tokens : await api.fetchTokens(mapId);
     await api.deleteMap(mapId);
+    const detail = normalizeDetail(map.detail, map);
+    if (detail) api.removeTiles(allTilePaths(detail)).catch(onError);
     rememberOpen(state.get().openMapIds.filter((id) => id !== mapId));
     state.update({
       maps: withoutId(state.get().maps, mapId),
@@ -775,22 +857,38 @@ export function createMapController({
   }
 
   // -------------------------------------------------------------------------
-  // Zeichnen (Meister): sofort sichtbar, dann gespeichert
+  // Zeichnen: sofort sichtbar, dann gespeichert
   // -------------------------------------------------------------------------
 
+  /** Eigene Linie? Ältere Linien ohne Zeichner hat der Meister gemalt. */
+  function isOwnDrawing(drawing) {
+    if (drawing.created_by) return drawing.created_by === userId();
+    return isMaster();
+  }
+
+  /** Darf dieses Gerät die Linie löschen? Der Meister alle, Spieler nur ihre eigenen. */
+  const canRemoveDrawing = (drawing) => isMaster() || isOwnDrawing(drawing);
+
+  /** Malen: der Meister auf jeder Karte, Spieler nur auf der gezeigten. */
+  function canDraw() {
+    const map = viewMap();
+    return Boolean(map) && (isMaster() || map.id === state.get().activeMapId);
+  }
+
   /**
-   * Meister: Linie auf die angezeigte Karte zeichnen.
+   * Linie auf die angezeigte Karte zeichnen.
    * @param {{ points: {x, y}[], color: string, width: number }} stroke  Punkte und Stärke in Kartenpunkten
    */
   async function addDrawing({ points, color, width }) {
     const map = viewMap();
-    if (!isMaster() || !map || !points?.length) return null;
+    if (!canDraw() || !points?.length) return null;
     const drawing = normalizeDrawing({
       id: newId(),
       map_id: map.id,
       color,
       width,
       points: flattenPoints(points.map((point) => clampToMap(point, map))),
+      created_by: userId(),
     });
     if (!drawing) return null;
     state.update({ drawings: [...state.get().drawings, drawing] });
@@ -814,11 +912,11 @@ export function createMapController({
     return drawing;
   }
 
-  /** Meister: Linien löschen (Radierer) – sofort weg; klappt es nicht, kommen sie wieder. */
+  /** Linien löschen (Radierer) – sofort weg; klappt es nicht, kommen sie wieder. Spieler: nur eigene. */
   async function removeDrawings(ids) {
     const map = viewMap();
-    const doomed = state.get().drawings.filter((drawing) => ids.includes(drawing.id));
-    if (!isMaster() || !map || doomed.length === 0) return;
+    const doomed = state.get().drawings.filter((drawing) => ids.includes(drawing.id) && canRemoveDrawing(drawing));
+    if (!map || doomed.length === 0) return;
     const doomedIds = doomed.map((drawing) => drawing.id);
     for (const id of doomedIds) removedDrawings.add(id);
     state.update({ drawings: state.get().drawings.filter((drawing) => !removedDrawings.has(drawing.id)) });
@@ -833,22 +931,27 @@ export function createMapController({
     }
   }
 
-  /** Meister: zuletzt gezeichnete Linie der angezeigten Karte entfernen. */
+  /** Die eigene, zuletzt gezeichnete Linie der angezeigten Karte entfernen. */
   function undoDrawing() {
-    const last = state.get().drawings.at(-1);
+    const last = state.get().drawings.findLast(isOwnDrawing);
     return last ? removeDrawings([last.id]) : Promise.resolve();
   }
 
-  /** Meister: alle Linien der angezeigten Karte löschen. */
+  /** Linien der angezeigten Karte löschen: der Meister alle, Spieler ihre eigenen. */
   async function clearDrawings() {
     const map = viewMap();
-    if (!isMaster() || !map) return;
-    const ids = state.get().drawings.map((drawing) => drawing.id);
+    if (!map) return;
+    const master = isMaster();
+    if (!master && !userId()) return;
+    const ids = state
+      .get()
+      .drawings.filter((drawing) => master || isOwnDrawing(drawing))
+      .map((drawing) => drawing.id);
     for (const id of ids) removedDrawings.add(id);
-    state.update({ drawings: [] });
+    state.update({ drawings: state.get().drawings.filter((drawing) => !removedDrawings.has(drawing.id)) });
     await Promise.allSettled(ids.map((id) => savingDrawings.get(id)).filter(Boolean));
     try {
-      await api.clearDrawings(map.id);
+      await api.clearDrawings(map.id, master ? {} : { createdBy: userId() });
     } catch (error) {
       for (const id of ids) removedDrawings.delete(id);
       await loadDrawings(map.id);
@@ -880,6 +983,9 @@ export function createMapController({
     handleTokenDeleted,
     handleDrawingRow,
     handleDrawingDeleted,
+    canDraw,
+    isOwnDrawing,
+    canRemoveDrawing,
     actions: {
       uploadMap,
       createBuiltMap,

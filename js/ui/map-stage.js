@@ -12,6 +12,9 @@
  *
  * Kartenbild und Raster werden mit der Karte skaliert; die Figuren liegen in einer eigenen
  * Ebene in Bildschirmgröße darüber – so bleiben Namen, Kürzel und Bilder bei jedem Zoom scharf.
+ * Zoomt man weiter hinein, als das Kartenbild Auflösung hat, zeichnet die Schärfe-Ebene den
+ * sichtbaren Ausschnitt nach dem Zoomen neu: aus den Detailkacheln großer Karten oder
+ * hochgerechnet und nachgeschärft (siehe map-detail.js).
  * Kennt weder Server noch Rollen.
  */
 import { h, icon, ICONS } from './dom.js';
@@ -40,6 +43,16 @@ import {
   drawColorValue,
   MAX_DRAWING_POINTS,
 } from '../map.js';
+import {
+  planSharpLayer,
+  normalizeDetail,
+  tilesInRegion,
+  tilePath,
+  sharpenAmount,
+  visibleRegion,
+  MAX_SHARPEN_PIXELS,
+} from '../map-detail.js';
+import { unsharpMask } from '../sharpen.js';
 
 /** Ab dieser Bewegung (Bildschirmpunkte) ist es kein Antippen mehr. */
 const DRAG_THRESHOLD_PX = 6;
@@ -47,6 +60,10 @@ const WHEEL_ZOOM_SPEED = 0.0015;
 const BUTTON_ZOOM_FACTOR = 1.4;
 /** Kleiner dargestellte Felder (Bildschirmpunkte): Namen nur noch bei wichtigen Figuren. */
 const COMPACT_CELL_PX = 26;
+/** Kleiner dargestellte Felder: keine Rasterlinien (sonst nur noch ein grauer Schleier). */
+const MIN_GRID_LINE_CELL_PX = 8;
+/** Figuren werden nie kleiner gezeichnet – auch auf Stadtkarten mit winzigen Feldern noch zu sehen. */
+const MIN_TOKEN_SCREEN_PX = 12;
 /** Zu Beginn wird so weit vergrößert, dass die eigene Figur gut zu sehen ist. */
 const READABLE_CELL_PX = 36;
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -58,6 +75,10 @@ const PAN_ANIMATION_MS = 350;
 /** Zeichnen: Abstand zwischen zwei Punkten einer Linie (Bildschirmpunkte) und Reichweite des Radierers. */
 const MIN_STROKE_STEP_PX = 2;
 const ERASER_RADIUS_PX = 14;
+/** Schärfe-Ebene: so lange nach dem letzten Verschieben/Zoomen warten, dann neu zeichnen. */
+const SHARP_SETTLE_MS = 160;
+/** So viele Detailkacheln bleiben entpackt im Speicher (je bis zu 4 MB). */
+const MAX_TILE_BITMAPS = 24;
 const ARROW_STEPS = Object.freeze({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] });
 
 function svg(tag, attributes = {}) {
@@ -124,12 +145,14 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
  * @param {(ids: string[]) => void} options.onDeleteSelection  Entf-Taste bei Auswahl
  * @param {() => boolean} options.canPing                Stellen markieren erlaubt (Meister, gezeigte Karte)?
  * @param {(point: {x, y}) => void} options.onPing        Stelle markiert (Kartenpunkte)
- * @param {() => boolean} options.canDraw                Zeichnen erlaubt (Meister)?
+ * @param {() => boolean} options.canDraw                Zeichnen erlaubt?
+ * @param {(drawing: object) => boolean} options.canErase  Darf der Radierer diese Linie löschen?
  * @param {(stroke: {points, color, width}) => void} options.onStroke  Linie fertig (Kartenpunkte)
  * @param {(ids: string[]) => void} options.onErase       Linien wegradiert
  * @param {() => void} options.onUndo                     Strg + Z beim Zeichnen
  * @param {(active: boolean) => void} options.onDrawModeChange  Stift an oder aus
  * @param {(path: string) => Promise<string>} options.loadImage  Bildadresse zu einem Speicherpfad
+ * @param {(path: string) => Promise<Blob>} [options.loadTile]  Detailkachel großer Karten laden
  */
 export function createMapStage({
   canMove,
@@ -144,16 +167,19 @@ export function createMapStage({
   canPing = () => false,
   onPing = () => {},
   canDraw = () => false,
+  canErase = () => true,
   onStroke = () => {},
   onErase = () => {},
   onUndo = () => {},
   onDrawModeChange = () => {},
   loadImage,
+  loadTile = null,
 }) {
   const image = h('img', { class: 'map-image', alt: '', draggable: 'false' });
+  const sharpCanvas = h('canvas', { class: 'map-sharp', 'aria-hidden': 'true', hidden: true });
   const grid = createGridLayer();
   const drawLayer = svg('svg', { class: 'map-drawings', 'aria-hidden': 'true' });
-  const stage = h('div', { class: 'map-stage' }, image, grid.element, drawLayer);
+  const stage = h('div', { class: 'map-stage' }, image, sharpCanvas, grid.element, drawLayer);
   const tokenLayer = h('div', { class: 'map-tokens' });
   const pingLayer = h('div', { class: 'map-pings', 'aria-hidden': 'true' });
   const marquee = h('div', { class: 'map-marquee', hidden: true });
@@ -218,6 +244,15 @@ export function createMapStage({
   const drawingViews = new Map();
   /** Linie, die gerade gezeichnet wird: { path, points, color, width }. */
   let draft = null;
+  /** Detailstufen der Karte (normalizeDetail) und was die Schärfe-Ebene gerade zeigt. */
+  let detail = null;
+  let sharpTimer = 0;
+  let sharpToken = 0;
+  let sharpShown = null;
+  let workCanvas = null;
+  /** Entpackte Detailkacheln (älteste zuerst) und gerade ladende. */
+  const tileBitmaps = new Map();
+  const tileLoads = new Map();
   let pressTimer = null;
   /** Leuchtende Pings { element, point } und ein Ping, der auf eine sichtbare Karte wartet. */
   const pings = new Set();
@@ -242,9 +277,12 @@ export function createMapStage({
     view = clampView(view, viewportSize(), map);
     stage.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
     stage.style.setProperty('--inverse-scale', String(1 / view.scale));
-    tokenLayer.classList.toggle('is-compact', Boolean(gridValues) && gridValues.size * view.scale < COMPACT_CELL_PX);
+    const cellPx = gridValues ? gridValues.size * view.scale : Infinity;
+    tokenLayer.classList.toggle('is-compact', cellPx < COMPACT_CELL_PX);
+    grid.element.classList.toggle('is-dense', cellPx < MIN_GRID_LINE_CELL_PX);
     for (const entry of tokenViews.values()) placeToken(entry);
     for (const entry of pings) placePing(entry);
+    scheduleSharp();
   }
 
   /** Ganze Karte zeigen (Knopf). */
@@ -274,7 +312,7 @@ export function createMapStage({
         x: mine.reduce((sum, token) => sum + token.x, 0) / mine.length,
         y: mine.reduce((sum, token) => sum + token.y, 0) / mine.length,
       };
-      const scale = Math.min(zoomLimits(size, map).max, readable);
+      const scale = Math.min(zoomLimits(size, map, gridValues).max, readable);
       view = { scale, x: size.width / 2 - center.x * scale, y: size.height / 2 - center.y * scale };
     }
     applyView();
@@ -283,7 +321,7 @@ export function createMapStage({
   function zoomBy(factor, point = { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 }) {
     if (!map || !hasSize()) return;
     userMoved = true;
-    view = zoomAt(view, factor, point, zoomLimits(viewportSize(), map));
+    view = zoomAt(view, factor, point, zoomLimits(viewportSize(), map, gridValues));
     applyView();
   }
 
@@ -421,6 +459,186 @@ export function createMapStage({
   new ResizeObserver(onResize).observe(viewport);
 
   // -------------------------------------------------------------------------
+  // Schärfe-Ebene: beim Hineinzoomen den sichtbaren Ausschnitt in Bildschirmauflösung
+  // (Detailkacheln oder hochgerechnet und nachgeschärft). Während Gesten wird sie mit der
+  // Karte mitskaliert, kurz danach neu gezeichnet.
+  // -------------------------------------------------------------------------
+
+  /** Bildpunkte des Vorschaubilds je Kartenpunkt (0, solange es nicht geladen ist). */
+  const baseScale = () => (map && image.naturalWidth > 0 && image.complete ? image.naturalWidth / map.width : 0);
+
+  function scheduleSharp(delay = SHARP_SETTLE_MS) {
+    clearTimeout(sharpTimer);
+    sharpTimer = setTimeout(() => renderSharp().catch(() => hideSharp()), delay);
+  }
+
+  function hideSharp() {
+    sharpToken += 1;
+    sharpShown = null;
+    sharpCanvas.hidden = true;
+  }
+
+  const contains = (outer, inner) =>
+    inner.x >= outer.x - 0.5 &&
+    inner.y >= outer.y - 0.5 &&
+    inner.x + inner.width <= outer.x + outer.width + 0.5 &&
+    inner.y + inner.height <= outer.y + outer.height + 0.5;
+
+  function releaseTiles() {
+    for (const bitmap of tileBitmaps.values()) bitmap.close?.();
+    tileBitmaps.clear();
+  }
+
+  /** Kachel laden und entpacken; die ältesten fallen heraus – nie die gerade gebrauchten. */
+  function loadTileBitmap(path, keep) {
+    if (tileBitmaps.has(path) || !loadTile) return Promise.resolve();
+    if (!tileLoads.has(path)) {
+      const forDetail = detail;
+      const loading = loadTile(path)
+        .then((blob) => createImageBitmap(blob))
+        .then((bitmap) => {
+          if (detail !== forDetail) return bitmap.close?.(); // inzwischen andere Karte
+          tileBitmaps.set(path, bitmap);
+          trimTiles(keep);
+        })
+        .finally(() => tileLoads.delete(path));
+      tileLoads.set(path, loading);
+    }
+    return tileLoads.get(path);
+  }
+
+  function trimTiles(keep) {
+    for (const [path, bitmap] of tileBitmaps) {
+      if (tileBitmaps.size <= Math.max(MAX_TILE_BITMAPS, keep.size)) break;
+      if (keep.has(path)) continue;
+      bitmap.close?.();
+      tileBitmaps.delete(path);
+    }
+  }
+
+  /** Zuletzt benutzte Kacheln ans Ende (sie fallen zuletzt heraus). */
+  function useTile(path) {
+    const bitmap = tileBitmaps.get(path);
+    if (!bitmap) return null;
+    tileBitmaps.delete(path);
+    tileBitmaps.set(path, bitmap);
+    return bitmap;
+  }
+
+  /** Zeichnet den Plan mit dem, was schon da ist: Vorschaubild als Grund, Kacheln darüber. */
+  function drawSharp(plan, tiles) {
+    const { region } = plan;
+    const scaleOfBase = baseScale();
+    const fromBase = (target, width, height) => {
+      const sx = Math.max(0, region.x * scaleOfBase);
+      const sy = Math.max(0, region.y * scaleOfBase);
+      const sw = Math.min(image.naturalWidth - sx, region.width * scaleOfBase);
+      const sh = Math.min(image.naturalHeight - sy, region.height * scaleOfBase);
+      if (sw > 0 && sh > 0) target.drawImage(image, sx, sy, sw, sh, 0, 0, width, height);
+    };
+    if (sharpCanvas.width !== plan.width) sharpCanvas.width = plan.width;
+    if (sharpCanvas.height !== plan.height) sharpCanvas.height = plan.height;
+    const context = sharpCanvas.getContext('2d');
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    if (plan.sharpen) {
+      // Ausschnitt in Bildpunkten der Quelle zusammensetzen, schärfen, dann hochrechnen.
+      const { crop } = plan;
+      workCanvas ??= document.createElement('canvas');
+      workCanvas.width = crop.width;
+      workCanvas.height = crop.height;
+      const work = workCanvas.getContext('2d', { willReadFrequently: true });
+      work.imageSmoothingEnabled = true;
+      work.imageSmoothingQuality = 'high';
+      fromBase(work, crop.width, crop.height);
+      for (const tile of tiles) {
+        const bitmap = useTile(tile.path);
+        if (bitmap) work.drawImage(bitmap, tile.pixels.x - crop.x, tile.pixels.y - crop.y);
+      }
+      if (crop.width * crop.height <= MAX_SHARPEN_PIXELS) {
+        const pixels = work.getImageData(0, 0, crop.width, crop.height);
+        unsharpMask(pixels.data, crop.width, crop.height, sharpenAmount(plan.source.magnification));
+        work.putImageData(pixels, 0, 0);
+      }
+      context.drawImage(workCanvas, 0, 0, crop.width, crop.height, 0, 0, plan.width, plan.height);
+    } else {
+      // Die Detailstufe reicht: Kacheln direkt in Bildschirmauflösung zeichnen.
+      fromBase(context, plan.width, plan.height);
+      const factor = plan.width / region.width;
+      for (const tile of tiles) {
+        const bitmap = useTile(tile.path);
+        if (!bitmap) continue;
+        const left = Math.round((tile.map.x - region.x) * factor);
+        const top = Math.round((tile.map.y - region.y) * factor);
+        const right = Math.round((tile.map.x + tile.map.width - region.x) * factor);
+        const bottom = Math.round((tile.map.y + tile.map.height - region.y) * factor);
+        context.drawImage(bitmap, 0, 0, tile.pixels.width, tile.pixels.height, left, top, right - left, bottom - top);
+      }
+    }
+    Object.assign(sharpCanvas.style, {
+      left: `${region.x}px`,
+      top: `${region.y}px`,
+      width: `${region.width}px`,
+      height: `${region.height}px`,
+    });
+    sharpCanvas.hidden = false;
+  }
+
+  async function renderSharp() {
+    if (!map || !hasSize() || !baseScale()) {
+      hideSharp();
+      return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const size = viewportSize();
+    const plan = planSharpLayer({
+      view,
+      viewport: size,
+      map,
+      dpr,
+      baseScale: baseScale(),
+      levels: detail?.levels ?? [],
+    });
+    if (!plan) {
+      hideSharp();
+      return;
+    }
+    // Gleicher Zoom und der sichtbare Teil liegt noch im gezeichneten Bereich: nichts zu tun.
+    const key = [map.id, map.image_path, detail?.path, plan.source.level, (view.scale * dpr).toFixed(5)].join('|');
+    const visible = visibleRegion(view, size, map, 0);
+    if (sharpShown?.key === key && sharpShown.complete && visible && contains(sharpShown.region, visible)) return;
+    sharpToken += 1;
+    const token = sharpToken;
+    const level = plan.source.level === null ? null : detail.levels[plan.source.level];
+    const tiles = level
+      ? tilesInRegion(level, detail.tile, plan.region).map((tile) => ({
+          ...tile,
+          path: tilePath(detail, plan.source.level, tile.col, tile.row),
+        }))
+      : [];
+    const keep = new Set(tiles.map((tile) => tile.path));
+    const missing = tiles.filter((tile) => !tileBitmaps.has(tile.path));
+    drawSharp(plan, tiles);
+    sharpShown = { key, region: plan.region, complete: missing.length === 0 };
+    if (missing.length === 0) return;
+    // Fehlende Kacheln laden; sobald welche da sind, neu zeichnen.
+    let redraw = 0;
+    await Promise.allSettled(
+      missing.map((tile) =>
+        loadTileBitmap(tile.path, keep).then(() => {
+          if (token !== sharpToken) return;
+          cancelAnimationFrame(redraw);
+          redraw = requestAnimationFrame(() => token === sharpToken && drawSharp(plan, tiles));
+        }),
+      ),
+    );
+    if (token !== sharpToken) return;
+    cancelAnimationFrame(redraw);
+    drawSharp(plan, tiles);
+    sharpShown = { key, region: plan.region, complete: true };
+  }
+
+  // -------------------------------------------------------------------------
   // Zeichnen (Ebene auf der Karte, wird mit ihr skaliert)
   // -------------------------------------------------------------------------
 
@@ -505,7 +723,8 @@ export function createMapStage({
   function eraseAt(screenPoint) {
     const point = screenToMap(view, screenPoint);
     const before = gesture.hits.size;
-    for (const id of drawingsAt(drawings, point, ERASER_RADIUS_PX / view.scale)) gesture.hits.add(id);
+    const erasable = drawings.filter(canErase);
+    for (const id of drawingsAt(erasable, point, ERASER_RADIUS_PX / view.scale)) gesture.hits.add(id);
     if (gesture.hits.size !== before) showErasing(gesture.hits);
   }
 
@@ -533,7 +752,7 @@ export function createMapStage({
   /** Setzt eine Figur an ihre Position (entry.position in Kartenpunkten) auf dem Bildschirm. */
   function placeToken(entry) {
     if (!gridValues) return;
-    const diameter = tokenDiameter(entry.token.size, gridValues) * view.scale;
+    const diameter = Math.max(MIN_TOKEN_SCREEN_PX, tokenDiameter(entry.token.size, gridValues) * view.scale);
     const center = mapToScreen(view, entry.position);
     entry.element.style.width = `${diameter}px`;
     entry.element.style.height = `${diameter}px`;
@@ -806,7 +1025,7 @@ export function createMapStage({
         gesture.startView,
         gesture.start,
         pinchInfo([...pointers.values()]),
-        zoomLimits(viewportSize(), map),
+        zoomLimits(viewportSize(), map, gridValues),
       );
       applyView();
       return;
@@ -1013,7 +1232,11 @@ export function createMapStage({
       .then((url) => {
         if (!stillCurrent()) return;
         image.src = url;
-        return image.decode().then(() => stillCurrent() && showStatus(''));
+        return image.decode().then(() => {
+          if (!stillCurrent()) return;
+          showStatus('');
+          scheduleSharp(0); // jetzt kann die Schärfe-Ebene zeichnen
+        });
       })
       .catch((error) => {
         if (stillCurrent()) showStatus(`Kartenbild nicht geladen: ${error.message}`, () => loadMapImage(current));
@@ -1040,6 +1263,12 @@ export function createMapStage({
       drawButton.hidden = !canDraw();
       if (pingMode && !canPing()) setPingMode(false);
       if (drawMode && !canDraw()) setDrawMode(false);
+      const nextDetail = normalizeDetail(map.detail, map);
+      if (changedImage || nextDetail?.path !== detail?.path) {
+        hideSharp();
+        releaseTiles();
+      }
+      detail = nextDetail;
       if (changedImage) discardDraft();
       if (changedImage) {
         fitted = false;

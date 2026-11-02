@@ -10,15 +10,22 @@ import { newId } from './util.js';
 
 export const IMAGE_BUCKET = 'karten';
 const MAP_COLUMNS = 'id, room_id, name, image_path, width, height, grid, has_scene, revision, created_at';
+/** Mit Detailstufen großer Karten (Datenbank ab Schema 9). */
+const MAP_COLUMNS_WITH_DETAIL = `${MAP_COLUMNS}, detail`;
 const TOKEN_COLUMNS =
   'id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max, updated_at';
 const TEMPLATE_COLUMNS = 'id, room_id, name, image_path, color, size, le_max, ini_base, updated_at';
-const DRAWING_COLUMNS = 'id, room_id, map_id, color, width, points, created_at';
+const DRAWING_COLUMNS = 'id, room_id, map_id, color, width, points, created_by, created_at';
 /** So viele Linien werden höchstens mit einer Anfrage gelöscht (die IDs stehen in der Adresse). */
 const DRAWING_DELETE_CHUNK = 40;
 const IMAGE_CACHE = 'dsa5-bilder';
 const IMAGE_CACHE_HOST = 'https://dsa5-bilder.invalid/';
 const MAX_CACHED_IMAGES = 60;
+/** Detailkacheln großer Karten: eigener Gerätespeicher, damit sie die anderen Bilder nicht verdrängen. */
+const TILE_CACHE = 'dsa5-kacheln';
+const MAX_CACHED_TILES = 400;
+/** So viele Dateien löscht eine Anfrage an den Speicher höchstens. */
+const REMOVE_CHUNK = 100;
 const EXTENSIONS = Object.freeze({ 'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png' });
 
 function requireRows(rows, message) {
@@ -30,15 +37,26 @@ function requireRows(rows, message) {
 // Karten
 // ---------------------------------------------------------------------------
 
+/** Kennt die Datenbank die Detailstufen? Sonst (schema.sql noch nicht erneut ausgeführt) ohne laden. */
+let detailColumn = true;
+const mapColumns = () => (detailColumn ? MAP_COLUMNS_WITH_DETAIL : MAP_COLUMNS);
+
 /** Sichtbare Karten des Raums (Meister: alle, Spieler: nur die gezeigte). */
 export async function fetchMaps(roomId) {
   const client = await getClient();
-  return unwrap(client.from('maps').select(MAP_COLUMNS).eq('room_id', roomId).order('created_at'));
+  const select = () => client.from('maps').select(mapColumns()).eq('room_id', roomId).order('created_at');
+  try {
+    return await unwrap(select());
+  } catch (error) {
+    if (!error.schema || !detailColumn) throw error;
+    detailColumn = false; // ältere Datenbank: Karten trotzdem zeigen
+    return unwrap(select());
+  }
 }
 
 export async function createMap(fields) {
   const client = await getClient();
-  return unwrap(client.from('maps').insert(fields).select(MAP_COLUMNS).single());
+  return unwrap(client.from('maps').insert(fields).select(mapColumns()).single());
 }
 
 /** Meister: Szene einer selbst gebauten Karte (für den Karten-Editor; sonst nicht mitgeladen). */
@@ -51,7 +69,7 @@ export async function fetchMapScene(mapId) {
 /** Meister: Name oder Raster ändern – bei gebauten Karten auch Bild und Szene. */
 export async function updateMap(mapId, changes) {
   const client = await getClient();
-  const rows = await unwrap(client.from('maps').update(changes).eq('id', mapId).select(MAP_COLUMNS));
+  const rows = await unwrap(client.from('maps').update(changes).eq('id', mapId).select(mapColumns()));
   return requireRows(rows, 'Nur der Meister kann Karten ändern.')[0];
 }
 
@@ -183,19 +201,19 @@ export async function moveToken(tokenId, x, y) {
 // Zeichnungen (Stift des Meisters)
 // ---------------------------------------------------------------------------
 
-/** Linien einer Karte, älteste zuerst (Spieler: nur auf der gezeigten Karte). */
+/** Linien einer Karte, älteste zuerst (Spieler sehen nur die der gezeigten Karte). */
 export async function fetchDrawings(mapId) {
   const client = await getClient();
   return unwrap(client.from('map_drawings').select(DRAWING_COLUMNS).eq('map_id', mapId).order('created_at'));
 }
 
-/** Meister: Linie speichern – { id, room_id, map_id, color, width, points: [x1, y1, …] }. */
+/** Linie speichern – { id, room_id, map_id, color, width, points: [x1, y1, …] }; der Zeichner kommt vom Server. */
 export async function createDrawing(row) {
   const client = await getClient();
   await unwrap(client.from('map_drawings').insert(row));
 }
 
-/** Meister: einzelne Linien löschen (Radierer, Rückgängig). */
+/** Einzelne Linien löschen (Radierer, Rückgängig) – Spieler dürfen nur ihre eigenen. */
 export async function deleteDrawings(ids) {
   const client = await getClient();
   for (let start = 0; start < ids.length; start += DRAWING_DELETE_CHUNK) {
@@ -208,19 +226,20 @@ export async function deleteDrawings(ids) {
   }
 }
 
-/** Meister: alle Linien einer Karte löschen. */
-export async function clearDrawings(mapId) {
+/** Alle Linien einer Karte löschen – mit createdBy nur die eines Zeichners (Spieler: die eigenen). */
+export async function clearDrawings(mapId, { createdBy = null } = {}) {
   const client = await getClient();
-  await unwrap(client.from('map_drawings').delete().eq('map_id', mapId));
+  const query = client.from('map_drawings').delete().eq('map_id', mapId);
+  await unwrap(createdBy ? query.eq('created_by', createdBy) : query);
 }
 
 // ---------------------------------------------------------------------------
 // Bilder
 // ---------------------------------------------------------------------------
 
-async function openImageCache() {
+async function openImageCache(name = IMAGE_CACHE) {
   try {
-    return 'caches' in globalThis ? await caches.open(IMAGE_CACHE) : null;
+    return 'caches' in globalThis ? await caches.open(name) : null;
   } catch {
     return null; // z. B. privates Fenster: dann eben ohne Gerätespeicher
   }
@@ -228,28 +247,56 @@ async function openImageCache() {
 
 const cacheKey = (path) => new Request(`${IMAGE_CACHE_HOST}${encodeURI(path)}`);
 
-async function readCachedImage(path) {
-  const cache = await openImageCache();
+async function readCachedImage(path, name = IMAGE_CACHE) {
+  const cache = await openImageCache(name);
   const response = await cache?.match(cacheKey(path)).catch(() => null);
   return response ? response.blob() : null;
 }
 
 /** Legt ein Bild im Gerätespeicher ab; die ältesten fallen heraus, wenn es zu viele werden. */
-async function rememberImage(path, blob) {
-  const cache = await openImageCache();
+async function rememberImage(path, blob, name = IMAGE_CACHE, limit = MAX_CACHED_IMAGES) {
+  const cache = await openImageCache(name);
   if (!cache) return;
   try {
     await cache.put(cacheKey(path), new Response(blob, { headers: { 'content-type': blob.type } }));
     const keys = await cache.keys();
-    await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_CACHED_IMAGES)).map((key) => cache.delete(key)));
+    await Promise.all(keys.slice(0, Math.max(0, keys.length - limit)).map((key) => cache.delete(key)));
   } catch {
     // Speicher voll: Bild wird beim nächsten Mal wieder geladen.
   }
 }
 
-async function forgetImages(paths) {
-  const cache = await openImageCache();
+async function forgetImages(paths, name = IMAGE_CACHE) {
+  const cache = await openImageCache(name);
   await Promise.all(paths.map((path) => cache?.delete(cacheKey(path)).catch(() => false)));
+}
+
+/** Meister: Detailkachel einer großen Karte unter ihrem festen Pfad hochladen. */
+export async function uploadTile(path, blob) {
+  const client = await getClient();
+  await unwrap(
+    client.storage.from(IMAGE_BUCKET).upload(path, blob, { contentType: blob.type, cacheControl: '31536000' }),
+  );
+}
+
+/** Meister: Detailkacheln löschen (Karte gelöscht oder Hochladen abgebrochen). */
+export async function removeTiles(paths) {
+  if (paths.length === 0) return;
+  const client = await getClient();
+  for (let start = 0; start < paths.length; start += REMOVE_CHUNK) {
+    await unwrap(client.storage.from(IMAGE_BUCKET).remove(paths.slice(start, start + REMOVE_CHUNK)));
+  }
+  await forgetImages(paths, TILE_CACHE);
+}
+
+/** Detailkachel zum Anzeigen: erst aus dem Gerätespeicher, sonst vom Server. */
+export async function tileBlob(path) {
+  const cached = await readCachedImage(path, TILE_CACHE);
+  if (cached) return cached;
+  const client = await getClient();
+  const blob = await unwrap(client.storage.from(IMAGE_BUCKET).download(path));
+  rememberImage(path, blob, TILE_CACHE, MAX_CACHED_TILES); // im Hintergrund
+  return blob;
 }
 
 /** Meister: Bild in den Raumordner hochladen. Liefert den Pfad im Speicher. */

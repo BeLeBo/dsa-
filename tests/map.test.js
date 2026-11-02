@@ -40,6 +40,8 @@ import {
   MIN_GRID_SIZE,
   MAX_GRID_SIZE,
   MAX_ZOOM,
+  MAX_FIT_ZOOM,
+  MAX_ZOOM_LIMIT,
   TOKEN_COLORS,
   DRAW_COLORS,
   drawingWidth,
@@ -50,6 +52,7 @@ import {
   drawingsAt,
 } from '../js/map.js';
 import { createMapController, chooseViewMap, mapTabs } from '../js/room-map.js';
+import { planDetailLevels, allTilePaths } from '../js/map-detail.js';
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -60,7 +63,7 @@ const close = (actual, expected, label) =>
 
 test('Karte: Raster', 'Neue Karte: etwa 30 Felder auf der längeren Seite, Raster aus', () => {
   assertEqual(defaultGrid(3000, 2000), { show: false, size: 100, offsetX: 0, offsetY: 0, color: 'dunkel' });
-  assertEqual(defaultGrid(100, 100).size, MIN_GRID_SIZE, 'nie kleiner als das Minimum');
+  assertEqual(defaultGrid(30, 30).size, MIN_GRID_SIZE, 'nie kleiner als das Minimum');
 });
 
 test('Karte: Raster', 'Gespeicherte Werte werden vervollständigt und begrenzt', () => {
@@ -306,8 +309,8 @@ test('Karte: Ansicht', 'Einpassen: ganze Karte mittig', () => {
   assertEqual(view, { scale: 0.4, x: 0, y: 40 });
   assertEqual(
     fitView({ width: 4000, height: 4000 }, { width: 10, height: 10 }, 0).scale,
-    MAX_ZOOM,
-    'höchstens MAX_ZOOM',
+    MAX_FIT_ZOOM,
+    'kleine Karten höchstens MAX_FIT_ZOOM',
   );
 });
 
@@ -325,6 +328,13 @@ test('Karte: Ansicht', 'Zoomen hält den Punkt unter dem Finger fest und bleibt 
   assertEqual(screenToMap(zoomed, { x: 100, y: 50 }), { x: 100, y: 50 }, 'Punkt bleibt');
   assertEqual(zoomAt(view, 100, { x: 0, y: 0 }, limits).scale, MAX_ZOOM, 'nicht über MAX_ZOOM');
   assertEqual(zoomAt(view, 0.001, { x: 0, y: 0 }, limits).scale, limits.min, 'nicht unter Minimum');
+});
+
+test('Karte: Ansicht', 'Feines Raster: weiter hineinzoomen bis in die Gassen – mit Obergrenze', () => {
+  const viewport = { width: 400, height: 400 };
+  assertEqual(zoomLimits(viewport, MAP, { size: 100 }).max, MAX_ZOOM, 'grobes Raster: wie immer');
+  assertEqual(zoomLimits(viewport, MAP, { size: 3 }).max, 80, 'Feld 3 Punkte → bis 240 Bildschirmpunkte');
+  assertEqual(zoomLimits(viewport, MAP, { size: 0.5 }).max, MAX_ZOOM_LIMIT, 'nie grenzenlos');
 });
 
 test('Karte: Ansicht', 'Zwei Finger: auseinander = größer, Mitte wandert mit', () => {
@@ -433,17 +443,48 @@ function fakeApi(overrides = {}) {
       calls.push(['deleteDrawings', ids]);
       db.drawings = db.drawings.filter((row) => !ids.includes(row.id));
     },
-    clearDrawings: async (mapId) => {
-      calls.push(['clearDrawings', mapId]);
-      db.drawings = db.drawings.filter((row) => row.map_id !== mapId);
+    uploadTile: async (path, blob) => {
+      calls.push(['uploadTile', path, blob.type]);
+      db.tiles = [...(db.tiles ?? []), path];
+    },
+    removeTiles: async (paths) => {
+      calls.push(['removeTiles', paths]);
+      db.tiles = (db.tiles ?? []).filter((path) => !paths.includes(path));
+    },
+    clearDrawings: async (mapId, { createdBy = null } = {}) => {
+      calls.push(['clearDrawings', mapId, createdBy]);
+      db.drawings = db.drawings.filter((row) => row.map_id !== mapId || (createdBy && row.created_by !== createdBy));
     },
     ...overrides,
   };
   return api;
 }
 
+/** Großes Bild (2200 × 1760): Vorschau 1000 × 800 plus eine Detailstufe mit 3 × 2 Kacheln. */
+const BIG_LEVELS = planDetailLevels(2200, 1760, 1000);
+const bigImage = () => Object.assign(new Blob(['x']), { big: true, released: false });
+
 const fakeImages = {
-  prepareMapImage: async () => ({ blob: new Blob(['x'], { type: 'image/webp' }), width: 1000, height: 800 }),
+  prepareMapUpload: async (file) => {
+    const preview = { blob: new Blob(['x'], { type: 'image/webp' }), width: 1000, height: 800 };
+    if (!file?.big) return { ...preview, detail: null, release: () => {} };
+    async function* tiles() {
+      for (const [levelIndex, level] of BIG_LEVELS.entries()) {
+        for (let row = 0; row < level.rows; row += 1) {
+          for (let col = 0; col < level.cols; col += 1) {
+            yield { levelIndex, col, row, blob: new Blob(['k'], { type: file.tileType ?? 'image/webp' }) };
+          }
+        }
+      }
+    }
+    return {
+      ...preview,
+      detail: { width: 2200, height: 1760, levels: BIG_LEVELS, tiles },
+      release: () => {
+        file.released = true;
+      },
+    };
+  },
   prepareTokenImage: async () => new Blob(['x'], { type: 'image/webp' }),
 };
 
@@ -451,6 +492,7 @@ function mapController({
   master = true,
   api = fakeApi(),
   characters = [],
+  userId = master ? 'meister' : 'spieler',
   onShown = () => {},
   onPing = () => {},
   onError = () => {},
@@ -461,6 +503,7 @@ function mapController({
     roomId,
     isMaster: () => master,
     characters: () => characters,
+    userId: () => userId,
     onShown,
     onPing,
     onError,
@@ -1293,7 +1336,9 @@ test(DRAW, 'Linien vom Server prüfen, Punkte für den Server runden', () => {
       { x: 1, y: 2 },
       { x: 3, y: 4 },
     ],
+    created_by: null,
   });
+  assertEqual(normalizeDrawing({ id: 'd', points: [1, 2], created_by: 'u1' }).created_by, 'u1', 'Zeichner');
   assertEqual(normalizeDrawing({ id: 'd', color: 'pink', width: 6, points: [1, 2] }).color, 'rot', 'Farbe → Rot');
   assertEqual(normalizeDrawing({ id: 'd', width: 9999, points: [1, 2] }).width, 200, 'Stärke begrenzt');
   assertEqual(normalizeDrawing({ id: 'd', width: -1, points: [1, 2] }).width, 4, 'unbrauchbare Stärke');
@@ -1475,24 +1520,108 @@ test(CONTROLLER, 'Zeichnen: Löschen wartet, bis die Linie gespeichert ist', asy
   cleanup();
 });
 
-test(CONTROLLER, 'Zeichnen: Spieler laden Linien, malen aber nicht; Revision lädt neu', async () => {
+test(CONTROLLER, 'Zeichnen: Spieler malen auf der gezeigten Karte, löschen nur ihre eigenen Linien', async () => {
+  const { controller, api, cleanup } = mapController({ master: false, userId: 'alrik' });
+  addMap(api, 'm1');
+  api.db.drawings.push(
+    { id: 'meister', map_id: 'm1', color: 'rot', width: 3, points: [0, 0], created_by: 'rahja' },
+    { id: 'alt', map_id: 'm1', color: 'rot', width: 3, points: [5, 5], created_by: null },
+    { id: 'gerion', map_id: 'm1', color: 'blau', width: 3, points: [9, 9], created_by: 'gerion' },
+  );
+  controller.handleRoomRow({ active_map_id: 'm1' });
+  await controller.load();
+  assertTrue(controller.canDraw(), 'auf der gezeigten Karte darf der Spieler malen');
+  const mine = await controller.actions.addDrawing({ points: [{ x: 1, y: 1 }], color: 'gelb', width: 3 });
+  assertEqual(mine.created_by, 'alrik', 'eigene Linie sofort als eigene erkannt');
+  assertEqual(
+    controller.state.get().drawings.map((drawing) => [drawing.id, controller.canRemoveDrawing(drawing)]),
+    [
+      ['meister', false],
+      ['alt', false],
+      ['gerion', false],
+      [mine.id, true],
+    ],
+    'Spieler löschen nur eigene Linien – auch alte des Meisters nicht',
+  );
+  await controller.actions.removeDrawings(['meister', 'gerion']);
+  assertEqual(
+    api.calls.filter((call) => call[0] === 'deleteDrawings'),
+    [],
+    'fremde Linien: kein Löschauftrag',
+  );
+  await controller.actions.undoDrawing();
+  assertEqual(
+    api.calls.filter((call) => call[0] === 'deleteDrawings'),
+    [['deleteDrawings', [mine.id]]],
+    'Rückgängig nimmt die eigene letzte Linie, nicht die neueste fremde',
+  );
+  await controller.actions.addDrawing({ points: [{ x: 2, y: 2 }], color: 'gelb', width: 3 });
+  await controller.actions.clearDrawings();
+  assertEqual(
+    api.calls.find((call) => call[0] === 'clearDrawings'),
+    ['clearDrawings', 'm1', 'alrik'],
+  );
+  assertEqual(
+    controller.state.get().drawings.map((drawing) => drawing.id),
+    ['meister', 'alt', 'gerion'],
+    'Löschen: nur die eigenen Linien sind weg',
+  );
+  cleanup();
+});
+
+test(CONTROLLER, 'Zeichnen: Meister löscht alle Linien, Rückgängig nimmt seine eigene', async () => {
+  const { controller, api, cleanup } = mapController({ userId: 'rahja' });
+  addMap(api, 'm1');
+  api.db.drawings.push(
+    { id: 'alt', map_id: 'm1', color: 'rot', width: 3, points: [5, 5], created_by: null },
+    { id: 'eigen', map_id: 'm1', color: 'rot', width: 3, points: [0, 0], created_by: 'rahja' },
+    { id: 'spieler', map_id: 'm1', color: 'blau', width: 3, points: [9, 9], created_by: 'alrik' },
+  );
+  await controller.load();
+  assertTrue(controller.state.get().drawings.every(controller.canRemoveDrawing), 'der Meister darf jede Linie löschen');
+  assertEqual(
+    controller.state
+      .get()
+      .drawings.filter(controller.isOwnDrawing)
+      .map((drawing) => drawing.id),
+    ['alt', 'eigen'],
+    'alte Linien ohne Zeichner zählen als seine',
+  );
+  await controller.actions.undoDrawing();
+  assertEqual(
+    controller.state.get().drawings.map((drawing) => drawing.id),
+    ['alt', 'spieler'],
+    'Rückgängig: seine letzte Linie, nicht die des Spielers',
+  );
+  await controller.actions.clearDrawings();
+  assertEqual(
+    api.calls.find((call) => call[0] === 'clearDrawings'),
+    ['clearDrawings', 'm1', null],
+  );
+  assertEqual(controller.state.get().drawings, []);
+  cleanup();
+});
+
+test(CONTROLLER, 'Zeichnen: Spieler malen nicht auf anderen Karten; Revision lädt neu', async () => {
   const { controller, api, roomId, cleanup } = mapController({ master: false });
   addMap(api, 'm1');
-  api.db.drawings.push({ id: 'a', map_id: 'm1', color: 'rot', width: 3, points: [0, 0] });
+  api.db.drawings.push({ id: 'a', map_id: 'm1', color: 'rot', width: 3, points: [0, 0], created_by: 'rahja' });
   controller.handleRoomRow({ active_map_id: 'm1' });
   await controller.load();
   assertEqual(controller.state.get().drawings.length, 1);
-  await controller.actions.addDrawing({ points: [{ x: 1, y: 1 }], color: 'rot', width: 3 });
-  await controller.actions.clearDrawings();
-  assertEqual(
-    api.calls.filter((call) => call[0] === 'createDrawing' || call[0] === 'clearDrawings'),
-    [],
-    'Spieler zeichnen und löschen nicht',
-  );
   api.db.drawings = []; // Meister hat gelöscht – Spieler erfahren es über die Revision
   controller.handleMapRow({ ...api.db.maps[0], room_id: roomId, revision: 1 });
   await wait(0);
   assertEqual(controller.state.get().drawings, []);
+  controller.handleRoomRow({ active_map_id: null }, { live: true });
+  await wait(0);
+  assertTrue(!controller.canDraw(), 'ohne gezeigte Karte kein Stift');
+  await controller.actions.addDrawing({ points: [{ x: 1, y: 1 }], color: 'rot', width: 3 });
+  assertEqual(
+    api.calls.filter((call) => call[0] === 'createDrawing'),
+    [],
+    'nichts gespeichert',
+  );
   cleanup();
 });
 
@@ -1509,5 +1638,94 @@ test(CONTROLLER, 'Zeichnen: Datenbank ohne Zeichnungen – Karte und Figuren lad
   assertEqual(controller.state.get().status, 'ready');
   assertEqual(controller.state.get().tokens.length, 1);
   assertEqual(controller.state.get().drawings, []);
+  cleanup();
+});
+
+// ---------------------------------------------------------------------------
+// Große Karten: volle Auflösung als Detailkacheln
+// ---------------------------------------------------------------------------
+
+test(CONTROLLER, 'Große Karte: Kacheln hochladen, Karte in voller Auflösung anlegen', async () => {
+  const { controller, api, roomId, cleanup } = mapController();
+  await controller.load();
+  const file = bigImage();
+  const progress = [];
+  const map = await controller.actions.uploadMap(file, 'Gareth', {
+    onProgress: (done, total) => progress.push([done, total]),
+  });
+  const uploads = api.calls.filter((call) => call[0] === 'uploadTile');
+  assertEqual(uploads.length, 6, 'alle Kacheln hochgeladen');
+  assertEqual([map.width, map.height], [2200, 1760], 'Karte rechnet in voller Auflösung');
+  assertEqual(map.grid.size, Math.round(2200 / 30), 'Raster passend zur vollen Größe');
+  assertEqual(map.detail.levels, BIG_LEVELS);
+  assertEqual(map.detail.ext, 'webp');
+  assertTrue(map.detail.path.startsWith(`${roomId}/kacheln/`), 'Kacheln im Ordner des Raums');
+  assertEqual(
+    uploads.map((call) => call[1]).sort(),
+    allTilePaths(map.detail).sort(),
+    'genau die Pfade, die die Karte später lädt',
+  );
+  assertEqual(progress[0], [0, 6]);
+  assertEqual(progress.at(-1), [6, 6]);
+  assertTrue(file.released, 'entpacktes Bild wieder freigegeben');
+  assertTrue(!map.detailFailed);
+  cleanup();
+});
+
+test(CONTROLLER, 'Große Karte: Kachel scheitert → Karte in normaler Auflösung, Kacheln aufgeräumt', async () => {
+  let count = 0;
+  const api = fakeApi({
+    uploadTile: async (path) => {
+      count += 1;
+      if (count === 4) throw new Error('Speicher voll');
+      api.db.tiles = [...(api.db.tiles ?? []), path];
+    },
+  });
+  const { controller, cleanup } = mapController({ api });
+  await controller.load();
+  const file = bigImage();
+  const map = await controller.actions.uploadMap(file, 'Gareth');
+  assertTrue(map.detailFailed, 'gemeldet');
+  assertEqual([map.width, map.height, map.detail ?? null], [1000, 800, null], 'normale Auflösung, keine Kacheln');
+  assertEqual(api.db.tiles, [], 'hochgeladene Kacheln wieder gelöscht');
+  assertTrue(file.released);
+  cleanup();
+});
+
+test(CONTROLLER, 'Große Karte: offline → kein halbes Hochladen', async () => {
+  const api = fakeApi({
+    uploadTile: async () => {
+      throw Object.assign(new Error('Keine Verbindung'), { offline: true });
+    },
+  });
+  const { controller, cleanup } = mapController({ api });
+  await controller.load();
+  let message = '';
+  await controller.actions.uploadMap(bigImage(), 'Gareth').catch((error) => (message = error.message));
+  assertEqual(message, 'Keine Verbindung');
+  assertEqual(controller.state.get().maps, [], 'keine Karte angelegt');
+  cleanup();
+});
+
+test(CONTROLLER, 'Große Karte: Anlegen scheitert oder Karte gelöscht → Kacheln weg', async () => {
+  const failing = fakeApi({
+    createMap: async () => {
+      throw new Error('Serverfehler');
+    },
+  });
+  const first = mapController({ api: failing });
+  await first.controller.load();
+  await first.controller.actions.uploadMap(bigImage(), 'Gareth').catch(() => {});
+  await wait(0);
+  assertEqual(failing.db.tiles, [], 'Kacheln nach gescheitertem Anlegen gelöscht');
+  first.cleanup();
+
+  const { controller, api, cleanup } = mapController();
+  await controller.load();
+  const map = await controller.actions.uploadMap(bigImage(), 'Gareth');
+  assertEqual(api.db.tiles.length, 6);
+  await controller.actions.removeMap(map.id);
+  await wait(0);
+  assertEqual(api.db.tiles, [], 'Kacheln mit der Karte gelöscht');
   cleanup();
 });

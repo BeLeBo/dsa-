@@ -1,7 +1,7 @@
 /**
- * map-draw-bar.js – Stiftleiste des Meisters unten auf der Karte: Farbe, Strichstärke, Radierer,
- * Rückgängig, alles löschen und „Fertig“. Erscheint nur, solange der Stift aktiv ist.
- * Die Wahl (Farbe, Stärke) merkt sich das Gerät.
+ * map-draw-bar.js – Stiftleiste unten auf der Karte: Farbe, Strichstärke, Radierer, Rückgängig,
+ * löschen und „Fertig“. Erscheint nur, solange der Stift aktiv ist. Der Meister löscht alle Linien,
+ * Spieler nur ihre eigenen. Die Wahl (Farbe, Stärke) merkt sich das Gerät.
  */
 import { h, icon, ICONS } from './dom.js';
 import { readJson, writeJson } from '../storage.js';
@@ -25,8 +25,9 @@ export function storedDrawStyle() {
  * @param {() => void} options.onUndo
  * @param {() => void} options.onClear
  * @param {() => void} options.onClose  „Fertig“: Stift weglegen
+ * @param {() => boolean} [options.isMaster]  Meister löscht alle Linien, Spieler nur ihre eigenen
  */
-export function createDrawBar({ onChange, onUndo, onClear, onClose }) {
+export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = () => true }) {
   let style = storedDrawStyle();
 
   const choose = (changes) => {
@@ -148,10 +149,16 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose }) {
       element.hidden = !open;
       if (open && style.tool !== 'pen') choose({ tool: 'pen' });
     },
-    /** Rückgängig und Löschen nur, wenn es Linien gibt. */
-    setCount(count) {
-      undoButton.disabled = count === 0;
-      clearButton.disabled = count === 0;
+    /**
+     * Rückgängig nur mit eigenen Linien, Löschen nur mit Linien, die man löschen darf.
+     * @param {{ own: number, removable: number }} counts
+     */
+    setCounts({ own, removable }) {
+      undoButton.disabled = own === 0;
+      clearButton.disabled = removable === 0;
+      const label = isMaster() ? 'Alle Linien auf dieser Karte löschen' : 'Meine Linien auf dieser Karte löschen';
+      clearButton.setAttribute('aria-label', label);
+      clearButton.title = isMaster() ? 'Alles löschen' : 'Meine Linien löschen';
     },
   };
 }
