@@ -13,7 +13,8 @@
 --              Helden des Raums – von den anderen sieht er dabei nur Name, Spezies und Profession),
 --              sieht öffentliche Würfe und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
 --              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie,
---              malt mit dem Stift auf die gezeigte Karte (löscht nur die eigenen Linien).
+--              malt mit dem Stift auf die gezeigte Karte (löscht nur die eigenen Linien),
+--              beendet im Kampf den eigenen Zug.
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- Meister wird, wer den Raum erstellt oder beim Beitreten „Ich bin Meister“ wählt
 -- (ohne PIN – die Gruppe vertraut sich; den Raumcode kennt ohnehin nur die Gruppe).
@@ -478,6 +479,55 @@ declare
   v_user uuid := private.require_user();
 begin
   update public.characters set owner_id = null where room_id = p_room_id and owner_id = v_user;
+end;
+$$;
+
+-- Spieler beendet seinen eigenen Zug im Kampf: Nur wer gerade am Zug ist (sein Held), darf zum
+-- Nächsten weiterschalten – und nur, solange der Zug noch derselbe ist (zweimal tippen oder der
+-- Meister war schneller: nichts passiert doppelt). Den Nächsten rechnet die App wie beim Meister aus,
+-- damit die Reihenfolge auf allen Geräten gleich ist; hier wird geprüft, dass es ihn gibt.
+create or replace function public.end_turn(p_room_id uuid, p_current_id text, p_next_id text, p_round integer)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_combat jsonb;
+  v_round integer;
+begin
+  perform private.require_user();
+  if not public.is_room_member(p_room_id) then
+    raise exception 'Du bist nicht (mehr) Mitglied dieses Raums.' using errcode = '42501';
+  end if;
+  select r.combat into v_combat from public.rooms r where r.id = p_room_id for update;
+  if v_combat is null then
+    raise exception 'Es läuft gerade kein Kampf.' using errcode = 'P0002';
+  end if;
+  if v_combat ->> 'currentId' is distinct from p_current_id then
+    raise exception 'Der Zug hat inzwischen gewechselt.' using errcode = '22023';
+  end if;
+  if not public.is_room_master(p_room_id) and not exists (
+    select 1
+    from jsonb_array_elements(v_combat -> 'entries') as e
+    join public.characters c on c.id::text = e ->> 'characterId'
+    where e ->> 'id' = p_current_id
+      and e ->> 'kind' = 'held'
+      and c.room_id = p_room_id
+      and c.owner_id = (select auth.uid())
+  ) then
+    raise exception 'Nur wer am Zug ist, kann seinen Zug beenden.' using errcode = '42501';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(v_combat -> 'entries') as e where e ->> 'id' = p_next_id) then
+    raise exception 'Diesen Eintrag gibt es im Kampf nicht (mehr).' using errcode = '22023';
+  end if;
+  v_round := coalesce((v_combat ->> 'round')::integer, 1);
+  if p_round is null or p_round not in (v_round, v_round + 1) then
+    raise exception 'Ungültige Kampfrunde.' using errcode = '22023';
+  end if;
+  v_combat := jsonb_set(jsonb_set(v_combat, '{currentId}', to_jsonb(p_next_id)), '{round}', to_jsonb(p_round));
+  update public.rooms set combat = v_combat where id = p_room_id;
+  return v_combat;
 end;
 $$;
 
@@ -1155,6 +1205,7 @@ revoke all on function public.room_heroes(uuid) from public, anon;
 revoke all on function public.claim_character(uuid, boolean) from public, anon;
 revoke all on function public.release_character(uuid) from public, anon;
 revoke all on function public.clear_log(uuid) from public, anon;
+revoke all on function public.end_turn(uuid, text, text, integer) from public, anon;
 revoke all on function public.is_active_map(uuid, uuid) from public, anon;
 revoke all on function public.room_of_path(text) from public, anon;
 revoke all on function public.move_token(uuid, double precision, double precision) from public, anon;
@@ -1172,6 +1223,7 @@ grant execute on function public.room_heroes(uuid) to authenticated;
 grant execute on function public.claim_character(uuid, boolean) to authenticated;
 grant execute on function public.release_character(uuid) to authenticated;
 grant execute on function public.clear_log(uuid) to authenticated;
+grant execute on function public.end_turn(uuid, text, text, integer) to authenticated;
 grant execute on function public.is_active_map(uuid, uuid) to authenticated;
 grant execute on function public.room_of_path(text) to authenticated;
 grant execute on function public.move_token(uuid, double precision, double precision) to authenticated;
@@ -1240,7 +1292,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 10;
+  select 11;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

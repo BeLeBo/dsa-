@@ -207,6 +207,17 @@ export async function releaseCharacter(roomId) {
   await unwrap(client.rpc('release_character', { p_room_id: roomId }));
 }
 
+/**
+ * Spieler: eigenen Zug beenden. Der Server prüft, dass der eigene Held noch am Zug ist, und
+ * schaltet für alle auf `nextId` (in Kampfrunde `round`) weiter. Liefert den neuen Kampfstand.
+ */
+export async function endTurn(roomId, { currentId, nextId, round }) {
+  const client = await getClient();
+  return unwrap(
+    client.rpc('end_turn', { p_room_id: roomId, p_current_id: currentId, p_next_id: nextId, p_round: round }),
+  );
+}
+
 /** Meister: Helden einer Person im Raum zuweisen (z. B. nach Gerätewechsel). */
 export async function assignCharacter(characterId, userId) {
   const client = await getClient();

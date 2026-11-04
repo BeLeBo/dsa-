@@ -5,7 +5,7 @@
  */
 import { h } from './dom.js';
 import { confirmDialog } from './dialog.js';
-import { orderedEntries, currentEntry, heroEntryId } from '../combat.js';
+import { orderedEntries, currentEntry, heroEntryId, isHeroTurn } from '../combat.js';
 import { formatModifier } from '../format.js';
 import { heroName, initiativeBaseOf, normalizeHero } from '../sheet.js';
 
@@ -192,7 +192,17 @@ export function renderCombatCard({
             current ? 'Weiter ▶' : 'Start ▶',
           ),
         )
-      : null,
+      : isHeroTurn(combat, myCharacterId)
+        ? h(
+            'div',
+            { class: 'button-row' },
+            h(
+              'button',
+              { type: 'button', class: 'btn btn-primary btn-large', onclick: () => actions.endOwnTurn() },
+              'Zug beenden ▶',
+            ),
+          )
+        : null,
     order.length
       ? h(
           'ol',

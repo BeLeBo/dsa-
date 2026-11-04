@@ -18,6 +18,7 @@ import {
   heroEntryId,
   isHeroInitiativeRoll,
   heroOnTurnChange,
+  isHeroTurn,
 } from '../js/combat.js';
 import { canSee, VISIBILITY } from '../js/log.js';
 import { createRoomLog, rowToRecord } from '../js/room-log.js';
@@ -289,7 +290,7 @@ test(LOG, 'Laden: neueste zuerst, nur Meister darf leeren', async () => {
 
 const CONTROL = 'Kampf-Steuerung im Raum (room-combat.js, mit Attrappen)';
 
-function controller({ isMaster = true, myCharacterId = null, save = null } = {}) {
+function controller({ isMaster = true, myCharacterId = null, save = null, endTurn = null } = {}) {
   const room = createObservable({ combat: null, characters: [{ id: 'a', data: createHero() }] });
   const saved = [];
   const turns = [];
@@ -307,6 +308,7 @@ function controller({ isMaster = true, myCharacterId = null, save = null } = {})
       throw error;
     },
     save: save ?? (async (_roomId, combat) => saved.push(combat)),
+    endTurn: endTurn ?? (async () => null),
   });
   return { room, saved, turns, added, control };
 }
@@ -411,4 +413,77 @@ test(CONTROL, 'Gegner von der Karte: nach Art gruppiert, Helden und schon Kämpf
     { group: 'Wache', names: ['Wache'] },
   ]);
   assertEqual(enemiesFromTokens([], null), []);
+});
+
+test(CONTROL, 'Spieler beendet den eigenen Zug: sofort weiter, der Server schaltet für alle', async () => {
+  const calls = [];
+  const { room, control } = controller({
+    isMaster: false,
+    myCharacterId: 'a',
+    endTurn: async (roomId, change) => {
+      calls.push([roomId, change]);
+      return { ...room.get().combat, fromServer: true }; // Server schaltet genau wie angefragt
+    },
+  });
+  let combat = upsertEntry(startCombat(), entryFromInitiativeRoll(initiativeRecord('Alrik', 12, 5, 'a'), 'a', 1));
+  combat = upsertEntry(combat, createNpcEntries({ name: 'Ork', base: 8 }, fixedRolls([1, 3]))[0]);
+  combat = advanceTurn(combat); // Alrik ist dran (höhere Initiative)
+  control.handleRoomRow({ combat });
+  assertTrue(isHeroTurn(combat, 'a'), 'Alrik am Zug');
+  const ending = control.actions.endOwnTurn();
+  assertEqual(currentEntry(room.get().combat).name, 'Ork', 'sofort ist der Nächste dran');
+  await ending;
+  assertEqual(calls, [['raum', { currentId: 'held:a', nextId: combat.entries[1].id, round: 1 }]]);
+  assertTrue(room.get().combat.fromServer, 'danach gilt der Stand vom Server');
+  await control.actions.endOwnTurn();
+  assertEqual(calls.length, 1, 'nicht mehr am Zug: nichts zu beenden');
+});
+
+test(CONTROL, 'Zug beenden: nach dem Letzten beginnt die nächste Runde; abgelehnt → zurück', async () => {
+  const errors = [];
+  const room = createObservable({ combat: null, characters: [] });
+  const control = createCombatController({
+    roomId: 'raum',
+    room,
+    log: { add: () => {} },
+    isMaster: () => false,
+    heroFor: () => createHero(),
+    myCharacterId: () => 'a',
+    onYourTurn: () => {},
+    onError: (error) => errors.push(error.message),
+    save: async () => {},
+    endTurn: async (roomId, change) => {
+      if (change.round !== 2) throw new Error('falsche Runde');
+      throw new Error('Der Zug hat inzwischen gewechselt.');
+    },
+  });
+  const combat = advanceTurn(
+    upsertEntry(startCombat(), entryFromInitiativeRoll(initiativeRecord('Alrik', 12, 5, 'a'), 'a', 1)),
+  );
+  room.update({ combat });
+  await control.actions.endOwnTurn();
+  assertEqual(
+    errors,
+    ['Der Zug hat inzwischen gewechselt.'],
+    'einziger Eintrag: nächste Runde angefragt, Fehler gemeldet',
+  );
+  assertEqual(room.get().combat, combat, 'abgelehnt: wieder der Stand vorher');
+});
+
+test(CONTROL, 'Fremden Zug kann niemand beenden', async () => {
+  let called = false;
+  const { room, control } = controller({
+    isMaster: false,
+    myCharacterId: 'b',
+    endTurn: async () => {
+      called = true;
+    },
+  });
+  room.update({
+    combat: advanceTurn(
+      upsertEntry(startCombat(), entryFromInitiativeRoll(initiativeRecord('Alrik', 12, 5, 'a'), 'a', 1)),
+    ),
+  });
+  await control.actions.endOwnTurn();
+  assertTrue(!called && !isHeroTurn(room.get().combat, 'b') && !isHeroTurn(null, 'a'), 'nicht am Zug');
 });

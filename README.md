@@ -32,6 +32,7 @@ alles live für alle synchronisiert.
 | 17    | Stift: Der Meister malt auf die Karte, alle sehen es live               | ✅ fertig |
 | 18    | Spieler malen mit; Zoom bis in die Gassen, volle Auflösung, Schärfe     | ✅ fertig |
 | 19    | Malen: Farbeimer, eigene Farben (Hex), Formen                           | ✅ fertig |
+| 20    | Kampf: Spieler beenden ihren eigenen Zug                                | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -166,7 +167,8 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
   automatisch in der Reihenfolge. Der Meister kann für Helden würfeln, Gegner hinzufügen
   (z. B. „Ork“, INI-Basis 10, Anzahl 3), mit **Weiter ▶** durchklicken (nach dem Letzten beginnt
   die nächste Kampfrunde) und unter „Werte anpassen“ Initiative ändern oder Einträge entfernen.
-  Alle sehen die Reihenfolge live; wer dran ist, bekommt **„Du bist am Zug!“**.
+  Alle sehen die Reihenfolge live; wer dran ist, bekommt **„Du bist am Zug!“** und beendet seinen
+  Zug selbst mit **Zug beenden ▶** (in der Kampfleiste auf der Karte oder unter **Gruppe**).
 - **Meister-Übersicht:** Unter **Gruppe** stehen alle Helden mit LE, AsP, KaP, SchiP und
   Zuständen – live. LE lässt sich dort direkt mit −/+ ändern (z. B. Schaden abziehen).
 - **Karte:** Im Tab **Karte** zeigt der Meister eine Karte mit Figuren (siehe „Karte“ unten).
@@ -421,6 +423,10 @@ Beitreten erst im Tab **Held** ihren Helden). Wer einen Helden geöffnet hat, ha
    nächsten Kampf gemerkt), jede Figur behält ihren Namen (Ork 1, Ork 3 …); weitere Gegner von Hand.
 4. **Start ▶ / Weiter ▶** – wer dran ist, ist hervorgehoben; wer selbst dran ist, sieht „Du bist am Zug!“
    und hat seine Favoriten (Angriffe …) direkt in der Leiste. **Ende** beendet den Kampf für alle.
+   **Zug beenden ▶:** Ist ein Held dran, beendet sein Spieler den Zug selbst – der Nächste ist sofort
+   für alle dran (nach dem Letzten beginnt die nächste Runde). Das geht nur, solange der eigene Held am
+   Zug ist; zweimal tippen schaltet nicht doppelt weiter. Gegner schaltet weiterhin der Meister weiter,
+   und er kann jederzeit mit ◀ zurück.
    (Werte anpassen und Einträge entfernen geht weiterhin im Tab **Gruppe**.)
    **Meister:** Kommt ein Held an die Reihe, springen Werte und Proben automatisch zu ihm (samt seinen
    Favoriten in der Kampfleiste). Ist ein Gegner dran, bleibt der zuletzt gezeigte Held stehen. Während

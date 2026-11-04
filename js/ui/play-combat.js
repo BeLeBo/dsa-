@@ -2,13 +2,14 @@
  * play-combat.js – Kampf auf dem Spielbildschirm (über der Karte), live für alle:
  *  - Reihenfolge als Leiste, wer am Zug ist, Kampfrunde.
  *  - Meister: Weiter/Zurück, Gegner hinzufügen (gleich von der Karte), für fehlende Helden würfeln, beenden.
+ *  - Spieler am Zug: „Zug beenden ▶“ schaltet zum Nächsten weiter.
  *  - Spieler: großer Knopf „Initiative würfeln“, solange die eigene fehlt; danach die Favoriten
  *    (z. B. Angriffe und Paraden) als Schnellknöpfe.
  * Kampfstand und Aktionen kommen aus room-combat.js (dieselben wie im Tab „Gruppe“).
  */
 import { h, setChildren } from './dom.js';
 import { openDialog, confirmDialog } from './dialog.js';
-import { orderedEntries, currentEntry, heroEntryId } from '../combat.js';
+import { orderedEntries, currentEntry, heroEntryId, isHeroTurn } from '../combat.js';
 import { heroName, initiativeBaseOf, normalizeHero } from '../sheet.js';
 import { checkChoices, choicesByKeys } from '../check-search.js';
 import { readJson, writeJson } from '../storage.js';
@@ -269,7 +270,18 @@ export function createCombatStrip({ room, isMaster, openHeroId, openHero, action
       );
     }
     const favorites = choicesByKeys(checkChoices(hero), hero.favorites);
-    return h(
+    // Eigener Zug: selbst beenden – der Nächste ist für alle sofort dran.
+    const endTurn = isHeroTurn(combat, heroId)
+      ? h(
+          'div',
+          { class: 'play-combat-actions' },
+          button('Zug beenden ▶', () => actions.endOwnTurn(), {
+            class: 'btn btn-primary play-combat-end-turn',
+            attrs: { 'aria-label': 'Zug beenden – der Nächste ist dran' },
+          }),
+        )
+      : null;
+    const favoriteList = h(
       'div',
       { class: 'play-combat-favorites' },
       favorites.length
@@ -288,6 +300,7 @@ export function createCombatStrip({ room, isMaster, openHeroId, openHero, action
           )
         : h('p', { class: 'section-hint' }, 'Tipp: Unter „Proben“ mit ☆ deine Angriffe merken – dann stehen sie hier.'),
     );
+    return [favoriteList, endTurn];
   }
 
   function render() {
