@@ -2225,13 +2225,17 @@ body.map-fullscreen-open {
 }
 
 .map-drawings path {
-  fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.map-drawings path.is-erasing {
+.map-drawings .is-erasing {
   opacity: 0.25;
+}
+
+/* Form, die gerade aufgezogen wird */
+.map-drawings .is-draft {
+  opacity: 0.85;
 }
 
 .map-viewport.is-draw-mode,
@@ -2908,6 +2912,89 @@ body.map-fullscreen-open {
 .draw-swatch:active,
 .draw-tool:active {
   filter: brightness(0.92);
+}
+
+/* Eigene Farbe: gewählte Farbe mit buntem Rand */
+.draw-custom .draw-swatch-dot {
+  border: 3px solid transparent;
+  background:
+    linear-gradient(var(--swatch), var(--swatch)) padding-box,
+    conic-gradient(#e02424, #facc15, #16a34a, #2563eb, #9333ea, #e02424) border-box;
+  box-shadow: none;
+}
+
+/* Füllung: leeres, halb und ganz gefülltes Quadrat in der Stiftfarbe */
+.draw-fill-icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid var(--swatch);
+  border-radius: 4px;
+}
+
+.draw-fill-icon::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 1px;
+  background: var(--swatch);
+  opacity: 0;
+}
+
+.draw-fill[data-fill='halb'] .draw-fill-icon::after {
+  opacity: 0.45;
+}
+
+.draw-fill[data-fill='voll'] .draw-fill-icon::after {
+  opacity: 1;
+}
+
+/* Dialog „Eigene Farbe“ */
+.color-picker {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.color-native-wrap {
+  position: relative;
+  flex: none;
+  width: 72px;
+  height: 72px;
+  cursor: pointer;
+}
+
+.color-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0; /* der Browser-Wähler öffnet sich beim Antippen der Vorschau */
+  cursor: pointer;
+}
+
+.color-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+
+.color-picker .field {
+  flex: 1;
+}
+
+.color-hex {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  text-transform: uppercase;
+}
+
+.color-recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
 }
 
 .draw-width-dot {

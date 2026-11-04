@@ -152,14 +152,15 @@ create table if not exists public.figure_templates (
 );
 create unique index if not exists figure_templates_name on public.figure_templates (room_id, lower(name));
 
--- Zeichnungen (Stift auf der Karte): eine Zeile je Linie. points = [x1, y1, x2, y2, …]
--- in Kartenpunkten, width = Strichstärke in Kartenpunkten. Sichtbar wie die Karte selbst.
+-- Zeichnungen (Stift auf der Karte): eine Zeile je Linie, Form oder Farbeimer-Fläche.
+-- points = [x1, y1, x2, y2, …] in Kartenpunkten, width = Strichstärke in Kartenpunkten.
+-- Sichtbar wie die Karte selbst. Aufbau je Art siehe js/map.js (normalizeDrawing).
 create table if not exists public.map_drawings (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references public.rooms (id) on delete cascade,
   map_id uuid not null references public.maps (id) on delete cascade,
   color text not null default 'rot'
-    check (color in ('rot', 'gelb', 'gruen', 'blau', 'lila', 'schwarz', 'weiss')),
+    check (color in ('rot', 'gelb', 'gruen', 'blau', 'lila', 'schwarz', 'weiss') or color ~ '^#[0-9a-f]{6}$'),
   width real not null check (width > 0 and width <= 200),
   points jsonb not null check (
     case
@@ -177,6 +178,25 @@ create index if not exists map_drawings_room on public.map_drawings (room_id);
 -- Wer die Linie gemalt hat: Spieler löschen nur ihre eigenen. Ältere Linien (leer) stammen vom Meister.
 alter table public.map_drawings add column if not exists created_by uuid default auth.uid()
   references auth.users (id) on delete set null;
+-- Formen und Farbeimer: kind = Art (freie Linie, gerade Linie, Pfeil, Rechteck, Ellipse, gefüllte
+-- Fläche), fill = Füllfarbe mit Deckkraft ('#rrggbbaa'). Formen haben genau zwei Punkte; beim
+-- Farbeimer trennt [-1, -1] den äußeren Umriss von den Löchern.
+alter table public.map_drawings add column if not exists kind text not null default 'line'
+  check (kind in ('line', 'straight', 'arrow', 'rect', 'ellipse', 'fill'));
+alter table public.map_drawings add column if not exists fill text
+  check (fill is null or fill ~ '^#[0-9a-f]{8}$');
+alter table public.map_drawings drop constraint if exists map_drawings_shape_check;
+alter table public.map_drawings add constraint map_drawings_shape_check check (
+  case
+    when kind in ('straight', 'arrow', 'rect', 'ellipse') then
+      jsonb_typeof(points) = 'array' and jsonb_array_length(points) = 4
+    else true
+  end
+);
+-- Eigene Farben: außer den Namen auch Hex-Werte ('#rrggbb').
+alter table public.map_drawings drop constraint if exists map_drawings_color_check;
+alter table public.map_drawings add constraint map_drawings_color_check
+  check (color in ('rot', 'gelb', 'gruen', 'blau', 'lila', 'schwarz', 'weiss') or color ~ '^#[0-9a-f]{6}$');
 
 -- -----------------------------------------------------------------------------
 -- Hilfsfunktionen für die Zugriffsregeln
@@ -1118,7 +1138,7 @@ grant update (character_id, name, image_path, color, size, x, y, hidden, le_curr
   on public.tokens to authenticated;
 grant select, delete on public.figure_templates to authenticated;
 grant select, delete on public.map_drawings to authenticated;
-grant insert (id, room_id, map_id, color, width, points) on public.map_drawings to authenticated;
+grant insert (id, room_id, map_id, kind, color, width, fill, points) on public.map_drawings to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
@@ -1220,7 +1240,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 9;
+  select 10;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

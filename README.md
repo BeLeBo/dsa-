@@ -31,6 +31,7 @@ alles live für alle synchronisiert.
 | 16    | Heldenauswahl: Spieler wählen nach jedem Beitreten ihren Helden         | ✅ fertig |
 | 17    | Stift: Der Meister malt auf die Karte, alle sehen es live               | ✅ fertig |
 | 18    | Spieler malen mit; Zoom bis in die Gassen, volle Auflösung, Schärfe     | ✅ fertig |
+| 19    | Malen: Farbeimer, eigene Farben (Hex), Formen                           | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -309,18 +310,34 @@ auf dem Server gespeichert und für den Meister sichtbar.
    Stelle bei jemandem außerhalb des Ausschnitts, gleitet seine Karte dorthin; wer gerade in einem
    anderen Tab ist, bekommt eine Meldung mit **Ansehen**. Auf einer vorbereiteten Karte (nur der
    Meister sieht sie) gibt es keinen Ping.
-9. **Auf die Karte malen (Stift)** – Weg einzeichnen, Falle einkreisen, Pfeil zur Tür (auch die
-   Spieler können malen, siehe unten): Knopf **✎** (rechts an der Karte) nimmt den Stift in die Hand,
-   unten erscheint die Stiftleiste. Ein Finger bzw. die linke Maustaste malt; **zwei Finger** (bzw.
-   rechte Maustaste oder Leertaste + Maus) verschieben und zoomen die Karte weiter. In der Leiste:
-   **Farbe** (Rot, Gelb, Grün, Blau, Lila, Schwarz, Weiß), **Strichstärke** (dünn, mittel, dick –
-   passend zur Feldgröße), **Radierer** (über Linien wischen), **↶ Rückgängig** (eigene letzte Linie,
-   am Rechner auch Strg + Z), **🗑 Alles löschen** (alle Linien, auch die der Spieler – mit Rückfrage)
-   und **Fertig** (am Handy ✓) bzw. Esc legt den Stift weg. Figuren lassen sich beim Malen nicht
-   verschieben. Jede Linie erscheint, sobald man den Finger hebt, bei allen, die die Karte sehen; auf
-   einer vorbereiteten Karte erst, wenn sie gezeigt wird. Die Linien gehören zur Karte: Sie bleiben,
-   bis sie gelöscht werden, und verschwinden mit der Karte. Der Radierer des Meisters erfasst alle
-   Linien. Farbe und Stärke merkt sich das Gerät.
+9. **Auf die Karte malen (Stift)** – Weg einzeichnen, Falle einkreisen, Raum einfärben, Pfeil zur
+   Tür (auch die Spieler können malen, siehe unten): Knopf **✎** (rechts an der Karte) nimmt den Stift
+   in die Hand, unten erscheint die Stiftleiste. Ein Finger bzw. die linke Maustaste malt; **zwei
+   Finger** (bzw. rechte Maustaste oder Leertaste + Maus) verschieben und zoomen die Karte weiter.
+   In der Leiste:
+   - **Werkzeuge:** **Stift** (freihand), **gerade Linie**, **Pfeil**, **Rechteck** und **Kreis/Ellipse**
+     (aufziehen; mit gedrückter Umschalttaste: Quadrat, Kreis bzw. Linien in 45°-Schritten),
+     **Farbeimer** und **Radierer** (über Zeichnungen wischen).
+   - **Farbeimer:** Antippen füllt die zusammenhängende Fläche, so wie man sie sieht – begrenzt von den
+     Linien der Karte (z. B. Wände) und von allem, was schon gemalt ist. Größere Inseln (ein Tisch im
+     Raum) bleiben frei, feine Sprenkel der Kartenstruktur werden mitgefüllt. Wer mit dem Eimer zieht,
+     verschiebt die Karte. Gefüllt wird im sichtbaren Bereich (mit etwas Rand) – eine Fläche, die bis
+     über den Bildschirmrand reicht, endet dort; dann herauszoomen und noch einmal tippen.
+   - **Farben:** Rot, Gelb, Grün, Blau, Schwarz, Weiß und **Eigene Farbe** (bunter Kreis): Farbwähler
+     des Geräts oder Hex-Wert eintippen (z. B. `#3A7BD5`); die zuletzt benutzten eigenen Farben stehen
+     im Dialog zur Auswahl.
+   - **Strichstärke** (dünn, mittel, dick – passend zur Feldgröße) und **Füllung** (Quadrat-Knopf,
+     antippen wechselt: ohne → halb durchsichtig → deckend) für Rechteck, Kreis und Farbeimer (der
+     Eimer füllt nie „ohne“, sondern dann halb durchsichtig).
+   - **↶ Rückgängig** (eigene letzte Zeichnung, am Rechner auch Strg + Z), **🗑 Alles löschen** (alle
+     Zeichnungen, auch die der Spieler – mit Rückfrage) und **Fertig** (am Handy ✓) bzw. Esc legt den
+     Stift weg.
+
+   Figuren lassen sich beim Malen nicht verschieben. Jede Zeichnung erscheint, sobald man den Finger
+   hebt, bei allen, die die Karte sehen; auf einer vorbereiteten Karte erst, wenn sie gezeigt wird.
+   Flächen des Farbeimers liegen unter den Linien. Die Zeichnungen gehören zur Karte: Sie bleiben, bis
+   sie gelöscht werden, und verschwinden mit der Karte. Der Radierer des Meisters erfasst alle
+   Zeichnungen. Werkzeug, Farbe, Stärke und Füllung merkt sich das Gerät.
 
 **Karte selbst bauen (Karten-Editor)**
 
@@ -358,9 +375,9 @@ fragt nach.
 **Spieler**
 
 - **Malen:** Auch Spieler haben den Stift **✎** – auf der gezeigten Karte, mit derselben Stiftleiste
-  wie der Meister. Was jemand malt, sehen alle sofort. Rückgängig, Radierer und **Meine Linien
-  löschen** wirken bei Spielern nur auf die eigenen Linien; die Linien des Meisters und der anderen
-  bleiben. Solange der Stift aktiv ist, verschwinden am Handy die Knöpfe „Werte“ und „Proben“ –
+  wie der Meister (Formen, Farbeimer, eigene Farben). Was jemand malt, sehen alle sofort. Rückgängig,
+  Radierer und **Meine Zeichnungen löschen** wirken bei Spielern nur auf die eigenen; die Zeichnungen
+  des Meisters und der anderen bleiben. Solange der Stift aktiv ist, verschwinden am Handy die Knöpfe „Werte“ und „Proben“ –
   **Fertig** bringt sie zurück.
 - **Meine Figur aufstellen:** Steht die eigene Figur noch nicht auf der gezeigten Karte, stellt man sie
   selbst auf – mit Farbe und auf Wunsch eigenem Bild (sonst das Bild der letzten Figur). Danach ziehen.

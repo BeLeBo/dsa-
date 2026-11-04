@@ -225,10 +225,11 @@ export function createMapView(
     // Stift: der Meister auf jeder Karte (auch einer vorbereiteten), Spieler auf der gezeigten.
     canDraw: () => controller.canDraw(),
     canErase: (drawing) => controller.canRemoveDrawing(drawing),
-    onStroke: (stroke) =>
-      controller.actions.addDrawing(stroke).catch((error) => showError(error, 'Linie nicht gespeichert')),
+    onStroke: (drawing) =>
+      controller.actions.addDrawing(drawing).catch((error) => showError(error, 'Zeichnung nicht gespeichert')),
+    onBucketMiss: () => showToast('Hier ist keine Fläche zum Füllen – tippe in eine Fläche, nicht auf einen Strich.'),
     onErase: (ids) =>
-      controller.actions.removeDrawings(ids).catch((error) => showError(error, 'Linien nicht gelöscht')),
+      controller.actions.removeDrawings(ids).catch((error) => showError(error, 'Zeichnungen nicht gelöscht')),
     onUndo: () => undoDrawing(),
     onDrawModeChange: (active) => {
       drawBar.setOpen(active);
@@ -246,11 +247,11 @@ export function createMapView(
     onUndo: undoDrawing,
     onClear: async () => {
       const question = isMaster()
-        ? 'Alle Linien auf dieser Karte löschen – auch die der Spieler?'
-        : 'Deine Linien auf dieser Karte löschen?';
+        ? 'Alle Zeichnungen auf dieser Karte löschen – auch die der Spieler?'
+        : 'Deine Zeichnungen auf dieser Karte löschen?';
       const confirmLabel = isMaster() ? 'Alles löschen' : 'Löschen';
       if (!(await confirmDialog(question, { confirmLabel, danger: true }))) return;
-      await run('Linien nicht gelöscht', () => controller.actions.clearDrawings());
+      await run('Zeichnungen nicht gelöscht', () => controller.actions.clearDrawings());
     },
     onClose: () => stage.setDrawMode(false),
     isMaster,

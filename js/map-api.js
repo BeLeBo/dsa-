@@ -15,7 +15,13 @@ const MAP_COLUMNS_WITH_DETAIL = `${MAP_COLUMNS}, detail`;
 const TOKEN_COLUMNS =
   'id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max, updated_at';
 const TEMPLATE_COLUMNS = 'id, room_id, name, image_path, color, size, le_max, ini_base, updated_at';
-const DRAWING_COLUMNS = 'id, room_id, map_id, color, width, points, created_by, created_at';
+/** Spalten der Zeichnungen – die neuesten zuerst; ältere Datenbanken kennen nicht alle (Schema 8, 9). */
+const DRAWING_COLUMN_SETS = [
+  'id, room_id, map_id, kind, color, width, fill, points, created_by, created_at',
+  'id, room_id, map_id, color, width, points, created_by, created_at',
+  'id, room_id, map_id, color, width, points, created_at',
+];
+let drawingColumns = 0;
 /** So viele Linien werden höchstens mit einer Anfrage gelöscht (die IDs stehen in der Adresse). */
 const DRAWING_DELETE_CHUNK = 40;
 const IMAGE_CACHE = 'dsa5-bilder';
@@ -204,10 +210,22 @@ export async function moveToken(tokenId, x, y) {
 /** Linien einer Karte, älteste zuerst (Spieler sehen nur die der gezeigten Karte). */
 export async function fetchDrawings(mapId) {
   const client = await getClient();
-  return unwrap(client.from('map_drawings').select(DRAWING_COLUMNS).eq('map_id', mapId).order('created_at'));
+  for (;;) {
+    const columns = DRAWING_COLUMN_SETS[drawingColumns];
+    try {
+      return await unwrap(client.from('map_drawings').select(columns).eq('map_id', mapId).order('created_at'));
+    } catch (error) {
+      // schema.sql noch nicht erneut ausgeführt: mit den Spalten laden, die es schon gibt.
+      if (!error.schema || drawingColumns >= DRAWING_COLUMN_SETS.length - 1) throw error;
+      drawingColumns += 1;
+    }
+  }
 }
 
-/** Linie speichern – { id, room_id, map_id, color, width, points: [x1, y1, …] }; der Zeichner kommt vom Server. */
+/**
+ * Zeichnung speichern – { id, room_id, map_id, color, width, points: [x1, y1, …], kind?, fill? };
+ * der Zeichner kommt vom Server.
+ */
 export async function createDrawing(row) {
   const client = await getClient();
   await unwrap(client.from('map_drawings').insert(row));
