@@ -2275,6 +2275,83 @@ body.map-fullscreen-open {
   stroke-linejoin: round;
 }
 
+/* Meister: Ausschnitt, den die Spieler sehen (Linien bleiben bei jedem Zoom gleich dick) */
+.map-frame-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: calc(3px * var(--inverse-scale)) dashed var(--accent);
+  border-radius: calc(4px * var(--inverse-scale));
+  box-shadow: 0 0 0 calc(1px * var(--inverse-scale)) rgb(255 255 255 / 0.7);
+  pointer-events: none;
+}
+
+.map-frame-box.is-locked {
+  border-style: solid;
+}
+
+/* Spieler, begrenzter Ausschnitt: außerhalb abgedeckt (Schatten in Bildschirmgröße, bei jedem Zoom) */
+.map-frame-box.is-mask {
+  border: 0;
+  border-radius: 0;
+  box-shadow: 0 0 0 calc(6000px * var(--inverse-scale)) var(--surface-2);
+}
+
+.map-tokens.has-frame-mask .map-token.is-outside-frame {
+  visibility: hidden;
+}
+
+.map-frame-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: calc(2px * var(--inverse-scale)) calc(6px * var(--inverse-scale));
+  border-radius: 0 0 calc(4px * var(--inverse-scale)) 0;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: calc(12px * var(--inverse-scale));
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+/* Offizielle Karte im Karten-Dialog */
+.official-map {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+/* Dialog „Ausschnitt für die Spieler“ */
+.player-view-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Herkunft mitgelieferter Karten (Urheber, Lizenz) – oben links auf der Karte */
+.map-credit {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 3;
+  max-width: calc(100% - 70px);
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-small);
+  background: rgb(255 255 255 / 0.85);
+  color: #3a3128;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.map-credit a {
+  color: inherit;
+  font-weight: 700;
+}
+
 .map-drawings .is-erasing {
   opacity: 0.25;
 }

@@ -10,8 +10,11 @@ import { newId } from './util.js';
 
 export const IMAGE_BUCKET = 'karten';
 const MAP_COLUMNS = 'id, room_id, name, image_path, width, height, grid, has_scene, revision, created_at';
-/** Mit Detailstufen großer Karten (Datenbank ab Schema 9). */
-const MAP_COLUMNS_WITH_DETAIL = `${MAP_COLUMNS}, detail`;
+/**
+ * Spalten der Karten – die neuesten zuerst: Ausschnitt für die Spieler und Herkunft (Schema 14),
+ * Detailstufen großer Karten (Schema 9). Ältere Datenbanken kennen nicht alle.
+ */
+const MAP_COLUMN_SETS = [`${MAP_COLUMNS}, detail, player_view, credit`, `${MAP_COLUMNS}, detail`, MAP_COLUMNS];
 const TOKEN_COLUMNS =
   'id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max, updated_at';
 const TEMPLATE_COLUMNS = 'id, room_id, name, image_path, color, size, le_max, ini_base, updated_at';
@@ -44,20 +47,21 @@ function requireRows(rows, message) {
 // Karten
 // ---------------------------------------------------------------------------
 
-/** Kennt die Datenbank die Detailstufen? Sonst (schema.sql noch nicht erneut ausgeführt) ohne laden. */
-let detailColumn = true;
-const mapColumns = () => (detailColumn ? MAP_COLUMNS_WITH_DETAIL : MAP_COLUMNS);
+/** Welche Spalten kennt die Datenbank? (schema.sql noch nicht erneut ausgeführt → weniger laden) */
+let mapColumnSet = 0;
+const mapColumns = () => MAP_COLUMN_SETS[mapColumnSet];
 
 /** Sichtbare Karten des Raums (Meister: alle, Spieler: nur die gezeigte). */
 export async function fetchMaps(roomId) {
   const client = await getClient();
-  const select = () => client.from('maps').select(mapColumns()).eq('room_id', roomId).order('created_at');
-  try {
-    return await unwrap(select());
-  } catch (error) {
-    if (!error.schema || !detailColumn) throw error;
-    detailColumn = false; // ältere Datenbank: Karten trotzdem zeigen
-    return unwrap(select());
+  for (;;) {
+    try {
+      return await unwrap(client.from('maps').select(mapColumns()).eq('room_id', roomId).order('created_at'));
+    } catch (error) {
+      // ältere Datenbank: Karten trotzdem zeigen, nur ohne die neueren Angaben
+      if (!error.schema || mapColumnSet >= MAP_COLUMN_SETS.length - 1) throw error;
+      mapColumnSet += 1;
+    }
   }
 }
 

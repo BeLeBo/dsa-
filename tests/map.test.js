@@ -56,7 +56,13 @@ import {
   addStrokePoint,
   strokePath,
   drawingsAt,
+  normalizeFrame,
+  frameFromView,
+  fitFrame,
+  clampToFrame,
+  frameZoomLimits,
 } from '../js/map.js';
+import { OFFICIAL_MAPS, mapCredit, findOfficialMap } from '../js/official-maps.js';
 import { createMapController, chooseViewMap, mapTabs } from '../js/room-map.js';
 import { planDetailLevels, allTilePaths } from '../js/map-detail.js';
 
@@ -502,6 +508,7 @@ function mapController({
   onShown = () => {},
   onPing = () => {},
   onError = () => {},
+  fetchFile = async () => new Blob(['karte'], { type: 'image/jpeg' }),
 } = {}) {
   roomCounter += 1;
   const roomId = `testraum-${Date.now()}-${roomCounter}`;
@@ -515,6 +522,7 @@ function mapController({
     onError,
     api,
     images: fakeImages,
+    fetchFile,
   });
   return {
     controller,
@@ -1764,3 +1772,121 @@ test(CONTROLLER, 'Große Karte: Anlegen scheitert oder Karte gelöscht → Kache
   assertEqual(api.db.tiles, [], 'Kacheln mit der Karte gelöscht');
   cleanup();
 });
+
+// ---------------------------------------------------------------------------
+// Ausschnitt für die Spieler, offizielle Karten
+// ---------------------------------------------------------------------------
+
+const FRAME = 'Karte: Ausschnitt für die Spieler (map.js)';
+
+test(FRAME, 'Ausschnitt prüfen: auf die Karte begrenzt, zu klein oder kaputt → keiner', () => {
+  assertEqual(normalizeFrame({ x: 100, y: 50, w: 300, h: 200, locked: true }, MAP), {
+    x: 100,
+    y: 50,
+    w: 300,
+    h: 200,
+    locked: true,
+  });
+  assertEqual(normalizeFrame({ x: -50, y: 700, w: 300, h: 500 }, MAP), { x: 0, y: 700, w: 300, h: 100, locked: false });
+  assertEqual(normalizeFrame({ x: 10, y: 10, w: 3, h: 3 }, MAP), null, 'winzig');
+  assertEqual(normalizeFrame({ x: 'a', y: 0, w: 10, h: 10 }, MAP), null);
+  assertEqual(normalizeFrame(null, MAP), null);
+  assertEqual(normalizeFrame({ x: 0, y: 0, w: 100, h: 100, locked: 'ja' }, MAP).locked, false, 'nur echtes true');
+});
+
+test(FRAME, 'Was man sieht → Ausschnitt; Ausschnitt → Ansicht (mittig, ganz zu sehen)', () => {
+  const viewport = { width: 400, height: 300 };
+  const view = { scale: 2, x: -200, y: -100 }; // zeigt Kartenpunkte 100…300 × 50…200
+  assertEqual(frameFromView(view, viewport, MAP, true), { x: 100, y: 50, w: 200, h: 150, locked: true });
+  const whole = frameFromView(fitView(viewport, MAP), viewport, MAP);
+  assertEqual([whole.x, whole.y, whole.w, whole.h], [0, 0, 1000, 800], 'herausgezoomt: nie über die Karte hinaus');
+  const back = fitFrame(viewport, { x: 100, y: 50, w: 200, h: 150 });
+  assertEqual(back, view, 'gleiche Ansicht wie beim Meister (gleiches Seitenverhältnis)');
+  const phone = fitFrame({ width: 200, height: 400 }, { x: 100, y: 50, w: 200, h: 150 });
+  close(phone.scale, 1, 'schmaler Bildschirm: Breite passt');
+  close(phone.y + (50 + 75) * phone.scale, 200, 'senkrecht mittig');
+});
+
+test(FRAME, 'Begrenzt: nicht weiter heraus, nicht über den Ausschnitt hinaus', () => {
+  const viewport = { width: 400, height: 300 };
+  const frame = { x: 100, y: 50, w: 200, h: 150 };
+  const limits = frameZoomLimits({ min: 0.2, max: 8 }, viewport, frame);
+  assertEqual(limits, { min: 2, max: 8 }, 'kleinster Zoom = Ausschnitt passt genau');
+  const inside = clampToFrame({ scale: 4, x: 0, y: 0 }, viewport, frame);
+  assertEqual([inside.x, inside.y], [-400, -200], 'zurück an den linken/oberen Rand des Ausschnitts');
+  const far = clampToFrame({ scale: 4, x: -5000, y: -5000 }, viewport, frame);
+  assertEqual([far.x, far.y], [400 - 300 * 4, 300 - 200 * 4], 'rechter/unterer Rand');
+  const wide = clampToFrame({ scale: 2, x: 123, y: 0 }, { width: 600, height: 300 }, frame);
+  close(wide.x + 200 * 2, 300, 'schmaler als der Bildschirm: waagrecht mittig');
+});
+
+test(FRAME, 'Offizielle Karten: Aventurien aus dem Kartenpaket, mit Hinweis auf Urheber und Lizenz', () => {
+  const aventurien = OFFICIAL_MAPS.find((entry) => entry.id === 'aventurien');
+  assertEqual([aventurien.file, aventurien.width, aventurien.height], ['karten/aventurien.jpg', 2857, 4000]);
+  const credit = mapCredit({ credit: 'kartenpaket' });
+  assertTrue(
+    credit.text.includes('Ina Kramer') && credit.text.includes('Ulisses') && credit.text.includes('Fanprojekt'),
+  );
+  assertEqual(credit.licenseUrl, 'https://de.wiki-aventurica.de/wiki/Kartenpaket/Lizenz');
+  assertEqual(mapCredit({ credit: null }), null, 'eigene Karte: kein Hinweis');
+  assertEqual(mapCredit({ credit: 'toString' }), null, 'nur bekannte Herkunft');
+  const maps = [{ id: 'a', name: 'aventurien ', credit: 'kartenpaket' }];
+  assertEqual(findOfficialMap(maps, aventurien)?.id, 'a');
+  assertEqual(
+    findOfficialMap([{ id: 'b', name: 'Aventurien', credit: null }], aventurien),
+    null,
+    'eigene gleichnamige zählt nicht',
+  );
+});
+
+test(CONTROLLER, 'Offizielle Karte hinzufügen: wie hochgeladen, mit Herkunft; zweites Mal nur öffnen', async () => {
+  const fetched = [];
+  const { controller, api, cleanup } = mapController({
+    fetchFile: async (path) => {
+      fetched.push(path);
+      return new Blob(['karte'], { type: 'image/jpeg' });
+    },
+  });
+  await controller.load();
+  const [aventurien] = OFFICIAL_MAPS;
+  const map = await controller.actions.addOfficialMap(aventurien);
+  assertEqual(fetched, ['karten/aventurien.jpg']);
+  assertEqual([map.name, map.credit], ['Aventurien', 'kartenpaket']);
+  assertEqual(api.db.maps.length, 1);
+  assertEqual(controller.viewMap().id, map.id, 'gleich geöffnet');
+  const again = await controller.actions.addOfficialMap(aventurien);
+  assertTrue(again.existed && again.id === map.id, 'schon da → öffnen');
+  assertEqual([api.db.maps.length, fetched.length], [1, 1], 'nichts doppelt');
+  cleanup();
+});
+
+test(
+  CONTROLLER,
+  'Ausschnitt für die Spieler: speichern (begrenzt auf die Karte), aufheben, Fehler → wie vorher',
+  async () => {
+    const api = fakeApi();
+    api.db.maps.push({
+      id: 'm1',
+      room_id: 'raum',
+      name: 'Karte',
+      image_path: 'raum/k.webp',
+      width: 1000,
+      height: 800,
+      grid: {},
+    });
+    const { controller, cleanup } = mapController({ api });
+    await controller.load();
+    await controller.actions.setPlayerView('m1', { x: 900, y: 0, w: 400, h: 300, locked: true });
+    assertEqual(api.calls.at(-1), ['updateMap', 'm1', { player_view: { x: 900, y: 0, w: 100, h: 300, locked: true } }]);
+    assertEqual(controller.state.get().maps[0].player_view.w, 100);
+    await controller.actions.setPlayerView('m1', null);
+    assertEqual(api.calls.at(-1)[2], { player_view: null }, 'aufheben');
+    api.updateMap = async () => {
+      throw new Error('offline');
+    };
+    let failed = false;
+    await controller.actions.setPlayerView('m1', { x: 0, y: 0, w: 500, h: 500 }).catch(() => (failed = true));
+    assertTrue(failed && controller.state.get().maps[0].player_view === null, 'nicht gespeichert → wie vorher');
+    cleanup();
+  },
+);

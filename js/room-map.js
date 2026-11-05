@@ -18,6 +18,7 @@ import { createObservable } from './store.js';
 import { readJson, writeJson } from './storage.js';
 import { isOlderTimestamp, newId } from './util.js';
 import { normalizeHero, heroName } from './sheet.js';
+import { findOfficialMap } from './official-maps.js';
 import {
   defaultGrid,
   normalizeGrid,
@@ -34,6 +35,7 @@ import {
   normalizeDrawing,
   flattenPoints,
   flattenRings,
+  normalizeFrame,
   MAX_TOKEN_NAME_LENGTH,
   MAX_MAP_NAME_LENGTH,
 } from './map.js';
@@ -77,6 +79,13 @@ export function chooseViewMap({ maps, activeMapId, preferredMapId, isMaster }) {
   return maps[0]?.id ?? null;
 }
 
+/** Mitgelieferte Datei der App laden (z. B. karten/aventurien.jpg). */
+async function fetchBundledFile(path) {
+  const response = await fetch(new URL(`../${path}`, import.meta.url));
+  if (!response.ok) throw new Error(`Die Karte ließ sich nicht laden (${response.status}).`);
+  return response.blob();
+}
+
 /**
  * @param {object} options
  * @param {string} options.roomId
@@ -88,6 +97,7 @@ export function chooseViewMap({ maps, activeMapId, preferredMapId, isMaster }) {
  * @param {(error: Error) => void} options.onError Fehler beim Speichern im Hintergrund
  * @param {object} [options.api]  Serverfunktionen (für Tests austauschbar)
  * @param {object} [options.images] { prepareMapUpload, prepareTokenImage } (für Tests austauschbar)
+ * @param {(path: string) => Promise<Blob>} [options.fetchFile]  mitgelieferte Datei laden (für Tests austauschbar)
  */
 export function createMapController({
   roomId,
@@ -99,6 +109,7 @@ export function createMapController({
   onError = () => {},
   api = serverApi,
   images = { prepareMapUpload, prepareTokenImage },
+  fetchFile = fetchBundledFile,
 }) {
   const preferenceKey = `dsa5.karte.${roomId}`;
   /** Geöffnete Karten des Meisters (Tabs) – je Gerät gemerkt. */
@@ -361,9 +372,10 @@ export function createMapController({
    * Bild hochladen und Karte anlegen. Große Bilder behalten ihre volle Auflösung als
    * Detailkacheln; die Karte rechnet dann in Punkten der vollen Auflösung. Klappt das Hochladen
    * der Kacheln nicht, gibt es die Karte in normaler Auflösung (`detailFailed: true`).
-   * @param {{ onProgress?: (done: number, total: number) => void }} [options]  Kacheln hochgeladen
+   * @param {{ onProgress?: (done: number, total: number) => void, credit?: string }} [options]
+   *   onProgress: Kacheln hochgeladen; credit: Herkunft einer mitgelieferten Karte (siehe official-maps.js)
    */
-  async function uploadMap(file, name, { onProgress = () => {} } = {}) {
+  async function uploadMap(file, name, { onProgress = () => {}, credit = null } = {}) {
     const prepared = await images.prepareMapUpload(file);
     let detail = null;
     let detailFailed = false;
@@ -388,12 +400,29 @@ export function createMapController({
         height,
         grid: defaultGrid(width, height),
         ...(detail ? { detail } : {}),
+        ...(credit ? { credit } : {}),
       });
       return detailFailed ? { ...map, detailFailed } : map;
     } catch (error) {
       if (detail) api.removeTiles(allTilePaths(detail)).catch(() => {});
       throw error;
     }
+  }
+
+  /**
+   * Meister: mitgelieferte Karte (z. B. Aventurien aus dem Ulisses-Kartenpaket) im Raum anlegen –
+   * wie eine hochgeladene, mit Hinweis auf Urheber und Lizenz. Gibt es sie schon, wird sie geöffnet.
+   * @param {object} official  Eintrag aus OFFICIAL_MAPS
+   */
+  async function addOfficialMap(official, { onProgress = () => {} } = {}) {
+    const existing = findOfficialMap(state.get().maps, official);
+    if (existing) {
+      await selectMap(existing.id);
+      return { ...existing, existed: true };
+    }
+    const blob = await fetchFile(official.file);
+    const file = new File([blob], official.fileName, { type: blob.type || 'image/jpeg' });
+    return uploadMap(file, official.name, { onProgress, credit: official.credit });
   }
 
   /**
@@ -463,6 +492,24 @@ export function createMapController({
     if (mapId !== viewMapId) return;
     const next = activeMapId && activeMapId !== mapId ? activeMapId : (state.get().openMapIds[0] ?? null);
     await selectMap(next);
+  }
+
+  /**
+   * Meister: Ausschnitt für die Spieler festlegen ({ x, y, w, h, locked } in Kartenpunkten) oder mit
+   * null aufheben. Sofort sichtbar; klappt das Speichern nicht, gilt wieder der vorige.
+   */
+  async function setPlayerView(mapId, frame) {
+    const before = state.get().maps.find((map) => map.id === mapId);
+    if (!before) return;
+    const playerView = frame ? normalizeFrame(frame, before) : null;
+    state.update({ maps: upsertById(state.get().maps, { ...before, player_view: playerView }) });
+    try {
+      const map = await api.updateMap(mapId, { player_view: playerView });
+      state.update({ maps: upsertById(state.get().maps, map) });
+    } catch (error) {
+      state.update({ maps: upsertById(state.get().maps, before) });
+      throw error;
+    }
   }
 
   async function renameMap(mapId, name) {
@@ -1007,6 +1054,8 @@ export function createMapController({
     canRemoveDrawing,
     actions: {
       uploadMap,
+      addOfficialMap,
+      setPlayerView,
       createBuiltMap,
       loadScene,
       updateBuiltMap,

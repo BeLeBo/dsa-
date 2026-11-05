@@ -115,6 +115,27 @@ alter table public.maps add column if not exists has_scene boolean generated alw
 -- Solche Karten rechnen in Punkten der vollen Auflösung; das Kartenbild ist dann die Vorschau.
 alter table public.maps add column if not exists detail jsonb
   check (detail is null or (jsonb_typeof(detail) = 'object' and pg_column_size(detail) < 4000));
+-- Ausschnitt für die Spieler: Der Meister legt fest, welchen Teil der Karte (und wie nah) die Spieler
+-- sehen – { x, y, w, h } in Kartenpunkten, locked = Spieler können nicht darüber hinaus. Leer = ganze Karte.
+alter table public.maps add column if not exists player_view jsonb;
+alter table public.maps drop constraint if exists maps_player_view_check;
+alter table public.maps add constraint maps_player_view_check check (
+  player_view is null
+  or (
+    jsonb_typeof(player_view) = 'object'
+    and pg_column_size(player_view) < 400
+    and jsonb_typeof(player_view -> 'x') = 'number'
+    and jsonb_typeof(player_view -> 'y') = 'number'
+    and jsonb_typeof(player_view -> 'w') = 'number'
+    and jsonb_typeof(player_view -> 'h') = 'number'
+    and (player_view ->> 'w')::numeric > 0
+    and (player_view ->> 'h')::numeric > 0
+    and coalesce(jsonb_typeof(player_view -> 'locked'), 'boolean') = 'boolean'
+  )
+);
+-- Herkunft mitgelieferter Karten (z. B. 'kartenpaket' = Ulisses-Kartenpaket): Die App zeigt dazu
+-- Urheber und Lizenz an. Leer = eigene Karte.
+alter table public.maps add column if not exists credit text check (credit is null or credit in ('kartenpaket'));
 
 -- Karte, die gerade alle sehen (null = keine). Nur der Meister ändert sie.
 alter table public.rooms add column if not exists active_map_id uuid references public.maps (id) on delete set null;
@@ -1234,8 +1255,8 @@ revoke all on public.maps, public.tokens, public.figure_templates, public.map_dr
 grant select on public.rooms to authenticated;
 grant update (combat, active_map_id, ping) on public.rooms to authenticated;
 grant select, delete on public.maps to authenticated;
-grant insert (id, room_id, name, image_path, width, height, grid, scene, detail) on public.maps to authenticated;
-grant update (name, grid, image_path, width, height, scene) on public.maps to authenticated;
+grant insert (id, room_id, name, image_path, width, height, grid, scene, detail, credit) on public.maps to authenticated;
+grant update (name, grid, image_path, width, height, scene, player_view) on public.maps to authenticated;
 grant select, delete on public.tokens to authenticated;
 grant insert (id, room_id, map_id, character_id, name, image_path, color, size, x, y, hidden, le_current, le_max)
   on public.tokens to authenticated;
@@ -1351,7 +1372,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 13;
+  select 14;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;
