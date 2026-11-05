@@ -15,6 +15,8 @@ import {
   MAX_RECENT,
 } from '../js/check-search.js';
 import { createHero, createWeapon, createSpell } from '../js/sheet.js';
+import { createHeroStore } from '../js/store.js';
+import { createChecksPanel } from '../js/ui/play-panels.js';
 
 const GROUP = 'Proben auf der Karte (check-search.js)';
 
@@ -138,4 +140,29 @@ test(GROUP, 'Favoriten: an- und abwählen, in gemerkter Reihenfolge, Unbekanntes
     choicesByKeys(checkChoices(testHero()), favorites).map((choice) => choice.name),
     ['Langschwert AT', 'Ausweichen'],
   );
+});
+
+test(GROUP, 'Proben-Liste: nur wirklich gewürfelte Proben stehen unter „Zuletzt gewürfelt“', () => {
+  const storageKey = 'dsa5.karte.gewuerfelt';
+  const before = localStorage.getItem(storageKey);
+  localStorage.removeItem(storageKey);
+  const opened = [];
+  const panel = createChecksPanel({
+    store: createHeroStore(testHero()),
+    openCheck: (spec, options) => opened.push({ spec, options }),
+    onToggleFavorite: () => {},
+    onClose: () => {},
+  });
+  panel.render();
+  const recentTitle = () => panel.element.textContent.includes('Zuletzt gewürfelt');
+  panel.element.querySelector('.play-check').click();
+  assertEqual(opened.length, 1, 'Probendialog geöffnet');
+  panel.render();
+  assertTrue(!recentTitle(), 'nur angetippt (Dialog abgebrochen): nicht „zuletzt gewürfelt“');
+  assertEqual(localStorage.getItem(storageKey), null, 'auch nicht gespeichert');
+  opened[0].options.onRoll({});
+  assertTrue(recentTitle(), 'nach dem Wurf: „Zuletzt gewürfelt“');
+  assertEqual(JSON.parse(localStorage.getItem(storageKey)), [specKey(opened[0].spec)]);
+  if (before === null) localStorage.removeItem(storageKey);
+  else localStorage.setItem(storageKey, before);
 });
