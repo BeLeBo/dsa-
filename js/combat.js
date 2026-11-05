@@ -136,6 +136,12 @@ export function advanceTurn(combat) {
   return { ...combat, currentId: order[index + 1].id };
 }
 
+/** Ist gerade dieser Held am Zug? Dann darf sein Spieler den Zug selbst beenden. */
+export function isHeroTurn(combat, characterId) {
+  const entry = currentEntry(combat);
+  return Boolean(characterId) && entry?.kind === ENTRY_KINDS.HERO && entry.characterId === characterId;
+}
+
 /** Zurück zum Vorigen; vor dem Ersten geht es in die vorige Runde (nicht vor Runde 1). */
 export function previousTurn(combat) {
   const order = orderedEntries(combat);

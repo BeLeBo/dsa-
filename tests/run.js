@@ -11,6 +11,7 @@ import './optolith.test.js';
 import './check-search.test.js';
 import './map-editor.test.js';
 import './detail.test.js';
+import './draw-tools.test.js';
 
 const results = await runTests();
 window.testResults = results;

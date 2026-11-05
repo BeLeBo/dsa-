@@ -1330,8 +1330,10 @@ test(DRAW, 'Linien vom Server prüfen, Punkte für den Server runden', () => {
   assertEqual(drawing, {
     id: 'd1',
     map_id: 'm1',
+    kind: 'line',
     color: 'blau',
     width: 6,
+    fill: null,
     points: [
       { x: 1, y: 2 },
       { x: 3, y: 4 },

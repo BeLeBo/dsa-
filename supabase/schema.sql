@@ -13,7 +13,8 @@
 --              Helden des Raums – von den anderen sieht er dabei nur Name, Spezies und Profession),
 --              sieht öffentliche Würfe und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
 --              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie,
---              malt mit dem Stift auf die gezeigte Karte (löscht nur die eigenen Linien).
+--              malt mit dem Stift auf die gezeigte Karte (löscht nur die eigenen Linien),
+--              beendet im Kampf den eigenen Zug.
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- Meister wird, wer den Raum erstellt oder beim Beitreten „Ich bin Meister“ wählt
 -- (ohne PIN – die Gruppe vertraut sich; den Raumcode kennt ohnehin nur die Gruppe).
@@ -152,14 +153,15 @@ create table if not exists public.figure_templates (
 );
 create unique index if not exists figure_templates_name on public.figure_templates (room_id, lower(name));
 
--- Zeichnungen (Stift auf der Karte): eine Zeile je Linie. points = [x1, y1, x2, y2, …]
--- in Kartenpunkten, width = Strichstärke in Kartenpunkten. Sichtbar wie die Karte selbst.
+-- Zeichnungen (Stift auf der Karte): eine Zeile je Linie, Form oder Farbeimer-Fläche.
+-- points = [x1, y1, x2, y2, …] in Kartenpunkten, width = Strichstärke in Kartenpunkten.
+-- Sichtbar wie die Karte selbst. Aufbau je Art siehe js/map.js (normalizeDrawing).
 create table if not exists public.map_drawings (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references public.rooms (id) on delete cascade,
   map_id uuid not null references public.maps (id) on delete cascade,
   color text not null default 'rot'
-    check (color in ('rot', 'gelb', 'gruen', 'blau', 'lila', 'schwarz', 'weiss')),
+    check (color in ('rot', 'gelb', 'gruen', 'blau', 'lila', 'schwarz', 'weiss') or color ~ '^#[0-9a-f]{6}$'),
   width real not null check (width > 0 and width <= 200),
   points jsonb not null check (
     case
@@ -177,6 +179,25 @@ create index if not exists map_drawings_room on public.map_drawings (room_id);
 -- Wer die Linie gemalt hat: Spieler löschen nur ihre eigenen. Ältere Linien (leer) stammen vom Meister.
 alter table public.map_drawings add column if not exists created_by uuid default auth.uid()
   references auth.users (id) on delete set null;
+-- Formen und Farbeimer: kind = Art (freie Linie, gerade Linie, Pfeil, Rechteck, Ellipse, gefüllte
+-- Fläche), fill = Füllfarbe mit Deckkraft ('#rrggbbaa'). Formen haben genau zwei Punkte; beim
+-- Farbeimer trennt [-1, -1] den äußeren Umriss von den Löchern.
+alter table public.map_drawings add column if not exists kind text not null default 'line'
+  check (kind in ('line', 'straight', 'arrow', 'rect', 'ellipse', 'fill'));
+alter table public.map_drawings add column if not exists fill text
+  check (fill is null or fill ~ '^#[0-9a-f]{8}$');
+alter table public.map_drawings drop constraint if exists map_drawings_shape_check;
+alter table public.map_drawings add constraint map_drawings_shape_check check (
+  case
+    when kind in ('straight', 'arrow', 'rect', 'ellipse') then
+      jsonb_typeof(points) = 'array' and jsonb_array_length(points) = 4
+    else true
+  end
+);
+-- Eigene Farben: außer den Namen auch Hex-Werte ('#rrggbb').
+alter table public.map_drawings drop constraint if exists map_drawings_color_check;
+alter table public.map_drawings add constraint map_drawings_color_check
+  check (color in ('rot', 'gelb', 'gruen', 'blau', 'lila', 'schwarz', 'weiss') or color ~ '^#[0-9a-f]{6}$');
 
 -- -----------------------------------------------------------------------------
 -- Hilfsfunktionen für die Zugriffsregeln
@@ -458,6 +479,55 @@ declare
   v_user uuid := private.require_user();
 begin
   update public.characters set owner_id = null where room_id = p_room_id and owner_id = v_user;
+end;
+$$;
+
+-- Spieler beendet seinen eigenen Zug im Kampf: Nur wer gerade am Zug ist (sein Held), darf zum
+-- Nächsten weiterschalten – und nur, solange der Zug noch derselbe ist (zweimal tippen oder der
+-- Meister war schneller: nichts passiert doppelt). Den Nächsten rechnet die App wie beim Meister aus,
+-- damit die Reihenfolge auf allen Geräten gleich ist; hier wird geprüft, dass es ihn gibt.
+create or replace function public.end_turn(p_room_id uuid, p_current_id text, p_next_id text, p_round integer)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_combat jsonb;
+  v_round integer;
+begin
+  perform private.require_user();
+  if not public.is_room_member(p_room_id) then
+    raise exception 'Du bist nicht (mehr) Mitglied dieses Raums.' using errcode = '42501';
+  end if;
+  select r.combat into v_combat from public.rooms r where r.id = p_room_id for update;
+  if v_combat is null then
+    raise exception 'Es läuft gerade kein Kampf.' using errcode = 'P0002';
+  end if;
+  if v_combat ->> 'currentId' is distinct from p_current_id then
+    raise exception 'Der Zug hat inzwischen gewechselt.' using errcode = '22023';
+  end if;
+  if not public.is_room_master(p_room_id) and not exists (
+    select 1
+    from jsonb_array_elements(v_combat -> 'entries') as e
+    join public.characters c on c.id::text = e ->> 'characterId'
+    where e ->> 'id' = p_current_id
+      and e ->> 'kind' = 'held'
+      and c.room_id = p_room_id
+      and c.owner_id = (select auth.uid())
+  ) then
+    raise exception 'Nur wer am Zug ist, kann seinen Zug beenden.' using errcode = '42501';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(v_combat -> 'entries') as e where e ->> 'id' = p_next_id) then
+    raise exception 'Diesen Eintrag gibt es im Kampf nicht (mehr).' using errcode = '22023';
+  end if;
+  v_round := coalesce((v_combat ->> 'round')::integer, 1);
+  if p_round is null or p_round not in (v_round, v_round + 1) then
+    raise exception 'Ungültige Kampfrunde.' using errcode = '22023';
+  end if;
+  v_combat := jsonb_set(jsonb_set(v_combat, '{currentId}', to_jsonb(p_next_id)), '{round}', to_jsonb(p_round));
+  update public.rooms set combat = v_combat where id = p_room_id;
+  return v_combat;
 end;
 $$;
 
@@ -1118,7 +1188,7 @@ grant update (character_id, name, image_path, color, size, x, y, hidden, le_curr
   on public.tokens to authenticated;
 grant select, delete on public.figure_templates to authenticated;
 grant select, delete on public.map_drawings to authenticated;
-grant insert (id, room_id, map_id, color, width, points) on public.map_drawings to authenticated;
+grant insert (id, room_id, map_id, kind, color, width, fill, points) on public.map_drawings to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
@@ -1135,6 +1205,7 @@ revoke all on function public.room_heroes(uuid) from public, anon;
 revoke all on function public.claim_character(uuid, boolean) from public, anon;
 revoke all on function public.release_character(uuid) from public, anon;
 revoke all on function public.clear_log(uuid) from public, anon;
+revoke all on function public.end_turn(uuid, text, text, integer) from public, anon;
 revoke all on function public.is_active_map(uuid, uuid) from public, anon;
 revoke all on function public.room_of_path(text) from public, anon;
 revoke all on function public.move_token(uuid, double precision, double precision) from public, anon;
@@ -1152,6 +1223,7 @@ grant execute on function public.room_heroes(uuid) to authenticated;
 grant execute on function public.claim_character(uuid, boolean) to authenticated;
 grant execute on function public.release_character(uuid) to authenticated;
 grant execute on function public.clear_log(uuid) to authenticated;
+grant execute on function public.end_turn(uuid, text, text, integer) to authenticated;
 grant execute on function public.is_active_map(uuid, uuid) to authenticated;
 grant execute on function public.room_of_path(text) to authenticated;
 grant execute on function public.move_token(uuid, double precision, double precision) to authenticated;
@@ -1220,7 +1292,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 9;
+  select 11;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

@@ -1,58 +1,244 @@
 /**
- * map-draw-bar.js – Stiftleiste unten auf der Karte: Farbe, Strichstärke, Radierer, Rückgängig,
- * löschen und „Fertig“. Erscheint nur, solange der Stift aktiv ist. Der Meister löscht alle Linien,
- * Spieler nur ihre eigenen. Die Wahl (Farbe, Stärke) merkt sich das Gerät.
+ * map-draw-bar.js – Stiftleiste unten auf der Karte. Erscheint nur, solange der Stift aktiv ist.
+ *  - Werkzeuge: Stift (freihand), gerade Linie, Pfeil, Rechteck, Kreis, Farbeimer, Radierer.
+ *  - Farben: sechs feste und „Eigene Farbe“ (Farbwähler mit Hex-Eingabe, zuletzt benutzte).
+ *  - Strichstärke, Füllung von Rechteck/Kreis/Farbeimer, Rückgängig, Löschen, „Fertig“.
+ * Der Meister löscht alle Zeichnungen, Spieler nur ihre eigenen. Die Wahl merkt sich das Gerät.
  */
 import { h, icon, ICONS } from './dom.js';
+import { openDialog } from './dialog.js';
 import { readJson, writeJson } from '../storage.js';
-import { DRAW_COLORS, DRAW_WIDTHS } from '../map.js';
+import {
+  DRAW_COLORS,
+  DRAW_PALETTE,
+  DRAW_WIDTHS,
+  DRAW_FILLS,
+  SHAPE_KINDS,
+  drawColorValue,
+  normalizeColor,
+} from '../map.js';
 
 const STYLE_KEY = 'dsa5.ui.stift';
+const RECENT_KEY = 'dsa5.ui.stift-farben';
+const MAX_RECENT_COLORS = 8;
+/** Eigene Farbe, bevor man eine gewählt hat. */
+const DEFAULT_CUSTOM_COLOR = '#ff7f00';
+
+/** Werkzeuge in der Leiste: id, Bezeichnung, Symbol. */
+export const DRAW_TOOLS = Object.freeze([
+  { id: 'pen', name: 'Stift (freihand)', icon: ICONS.pen },
+  { id: 'straight', name: 'Gerade Linie (mit Umschalttaste in 45°-Schritten)', icon: ICONS.line },
+  { id: 'arrow', name: 'Pfeil (mit Umschalttaste in 45°-Schritten)', icon: ICONS.arrow },
+  { id: 'rect', name: 'Rechteck (mit Umschalttaste: Quadrat)', icon: ICONS.rect },
+  { id: 'ellipse', name: 'Kreis oder Ellipse (mit Umschalttaste: Kreis)', icon: ICONS.ellipse },
+  { id: 'bucket', name: 'Farbeimer – Fläche antippen und füllen', icon: ICONS.bucket },
+  { id: 'eraser', name: 'Radierer – über Zeichnungen wischen', icon: ICONS.eraser },
+]);
+const TOOL_IDS = DRAW_TOOLS.map((tool) => tool.id);
+const isHex = (color) => typeof color === 'string' && color.startsWith('#');
 
 /** Gespeicherte Stiftwahl des Geräts (unbekannte Werte → Standard). */
 export function storedDrawStyle() {
   const stored = readJson(STYLE_KEY, null) ?? {};
+  const color = normalizeColor(stored.color) ?? DRAW_COLORS[0].id;
+  const custom = normalizeColor(stored.custom);
   return {
-    tool: 'pen', // Der Radierer ist nach dem Wiederöffnen nie aus Versehen noch aktiv.
-    color: DRAW_COLORS.some((color) => color.id === stored.color) ? stored.color : DRAW_COLORS[0].id,
+    // Der Radierer ist nach dem Wiederöffnen nie aus Versehen noch aktiv.
+    tool: TOOL_IDS.includes(stored.tool) && stored.tool !== 'eraser' ? stored.tool : 'pen',
+    color,
     width: DRAW_WIDTHS.some((width) => width.id === stored.width) ? stored.width : 'mittel',
+    fill: DRAW_FILLS.some((fill) => fill.id === stored.fill) ? stored.fill : 'keine',
+    custom: isHex(custom) ? custom : isHex(color) ? color : DEFAULT_CUSTOM_COLOR,
   };
+}
+
+/** Zuletzt benutzte eigene Farben (neueste zuerst). */
+export function rememberCustomColor(recent, color) {
+  return [color, ...recent.filter((entry) => entry !== color)].slice(0, MAX_RECENT_COLORS);
+}
+
+/**
+ * Dialog „Eigene Farbe“: Farbwähler des Geräts, Hex-Eingabe und zuletzt benutzte Farben.
+ * @param {string} current  '#rrggbb'
+ * @param {(color: string) => void} onPick
+ */
+function openColorPicker(current, onPick) {
+  const dialog = openDialog({ title: 'Eigene Farbe', className: 'dialog-small color-dialog' });
+  let value = current;
+  const native = h('input', { type: 'color', class: 'color-native', value, 'aria-label': 'Farbe wählen' });
+  const hex = h('input', {
+    type: 'text',
+    class: 'color-hex',
+    value: value.toUpperCase(),
+    maxlength: 7,
+    autocomplete: 'off',
+    autocapitalize: 'characters',
+    spellcheck: 'false',
+    'aria-label': 'Farbe als Hex-Wert, z. B. #3A7BD5',
+  });
+  const preview = h('span', { class: 'color-preview', 'aria-hidden': 'true' });
+  const error = h(
+    'p',
+    { class: 'error-text', hidden: true, role: 'alert' },
+    'Bitte einen Hex-Wert wie #3A7BD5 eingeben.',
+  );
+  const apply = h('button', { type: 'button', class: 'btn btn-primary' }, 'Übernehmen');
+
+  const show = (color, { fromHex = false } = {}) => {
+    value = color;
+    preview.style.background = color;
+    native.value = color;
+    if (!fromHex) hex.value = color.toUpperCase();
+    apply.disabled = false;
+    error.hidden = true;
+  };
+  native.addEventListener('input', () => show(native.value));
+  hex.addEventListener('input', () => {
+    const parsed = normalizeColor(hex.value);
+    if (isHex(parsed)) {
+      show(parsed, { fromHex: true });
+      return;
+    }
+    apply.disabled = true;
+    error.hidden = hex.value.replace('#', '').trim().length < 6;
+  });
+  hex.addEventListener('blur', () => {
+    if (!apply.disabled) hex.value = value.toUpperCase();
+  });
+  const pick = () => {
+    if (apply.disabled) return;
+    onPick(value);
+    dialog.close();
+  };
+  hex.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') pick();
+  });
+  apply.addEventListener('click', pick);
+
+  const recent = readJson(RECENT_KEY, []);
+  const recentColors = (Array.isArray(recent) ? recent : []).map(normalizeColor).filter(isHex);
+  const parts = [
+    h(
+      'div',
+      { class: 'color-picker' },
+      h('label', { class: 'color-native-wrap' }, native, preview),
+      h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Hex-Wert'), hex),
+    ),
+    h(
+      'p',
+      { class: 'section-hint' },
+      'Tippe auf das Farbfeld für den Farbwähler des Geräts – oder gib einen Hex-Wert ein.',
+    ),
+    error,
+    recentColors.length
+      ? h(
+          'div',
+          { class: 'field' },
+          h('span', { class: 'field-label' }, 'Zuletzt benutzt'),
+          h(
+            'div',
+            { class: 'color-recent' },
+            recentColors.map((color) =>
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'draw-swatch',
+                  style: `--swatch: ${color}`,
+                  'aria-label': color.toUpperCase(),
+                  title: color.toUpperCase(),
+                  onclick: () => show(color),
+                },
+                h('span', { class: 'draw-swatch-dot' }),
+              ),
+            ),
+          ),
+        )
+      : null,
+  ];
+  dialog.body.append(...parts.filter(Boolean)); // ohne zuletzt benutzte Farben kein leerer Bereich
+  dialog.footer.append(
+    h('button', { type: 'button', class: 'btn', onclick: () => dialog.close() }, 'Abbrechen'),
+    apply,
+  );
+  show(value);
+  hex.focus({ preventScroll: true });
+  hex.select();
 }
 
 /**
  * @param {object} options
- * @param {(style: {tool, color, width}) => void} options.onChange  Werkzeug, Farbe oder Stärke geändert
+ * @param {(style: {tool, color, width, fill}) => void} options.onChange  Werkzeug, Farbe, Stärke oder Füllung geändert
  * @param {() => void} options.onUndo
  * @param {() => void} options.onClear
  * @param {() => void} options.onClose  „Fertig“: Stift weglegen
- * @param {() => boolean} [options.isMaster]  Meister löscht alle Linien, Spieler nur ihre eigenen
+ * @param {() => boolean} [options.isMaster]  Meister löscht alle Zeichnungen, Spieler nur ihre eigenen
  */
 export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = () => true }) {
   let style = storedDrawStyle();
 
   const choose = (changes) => {
     style = { ...style, ...changes };
-    writeJson(STYLE_KEY, { color: style.color, width: style.width });
+    writeJson(STYLE_KEY, {
+      tool: style.tool,
+      color: style.color,
+      width: style.width,
+      fill: style.fill,
+      custom: style.custom,
+    });
     refresh();
     onChange(style);
   };
+  // Eine Farbe oder Stärke wählen heißt malen – der Radierer (bzw. Farbeimer) geht dabei aus.
+  const toolFor = (keep) => (keep.includes(style.tool) ? style.tool : 'pen');
 
-  const colorButtons = DRAW_COLORS.map((color) =>
+  const toolButtons = DRAW_TOOLS.map((tool) =>
     h(
       'button',
       {
         type: 'button',
+        class: 'draw-tool',
+        dataset: { tool: tool.id },
+        'aria-label': tool.name,
+        title: tool.name,
+        onclick: () => choose({ tool: tool.id === 'eraser' && style.tool === 'eraser' ? 'pen' : tool.id }),
+      },
+      icon(tool.icon),
+    ),
+  );
+
+  const colorButtons = DRAW_PALETTE.map((id) => {
+    const color = DRAW_COLORS.find((entry) => entry.id === id);
+    return h(
+      'button',
+      {
+        type: 'button',
         class: 'draw-swatch',
-        dataset: { color: color.id },
+        dataset: { color: id },
         'aria-label': color.name,
         title: color.name,
         style: `--swatch: ${color.value}`,
-        // Eine Farbe wählen heißt malen – der Radierer geht dabei aus.
-        onclick: () => choose({ color: color.id, tool: 'pen' }),
+        onclick: () => choose({ color: id, tool: toolFor([...SHAPE_KINDS, 'pen', 'bucket']) }),
       },
       h('span', { class: 'draw-swatch-dot' }),
-    ),
+    );
+  });
+  const customButton = h(
+    'button',
+    {
+      type: 'button',
+      class: 'draw-swatch draw-custom',
+      'aria-label': 'Eigene Farbe wählen (Farbwähler, Hex-Wert)',
+      title: 'Eigene Farbe',
+      onclick: () =>
+        openColorPicker(isHex(style.color) ? style.color : style.custom, (color) => {
+          writeJson(RECENT_KEY, rememberCustomColor(readJson(RECENT_KEY, []) ?? [], color));
+          choose({ color, custom: color, tool: toolFor([...SHAPE_KINDS, 'pen', 'bucket']) });
+        }),
+    },
+    h('span', { class: 'draw-swatch-dot' }),
   );
+
   const widthButtons = DRAW_WIDTHS.map((width, index) =>
     h(
       'button',
@@ -62,28 +248,30 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
         dataset: { width: width.id },
         'aria-label': `Strich ${width.name.toLowerCase()}`,
         title: width.name,
-        onclick: () => choose({ width: width.id, tool: 'pen' }),
+        onclick: () => choose({ width: width.id, tool: toolFor([...SHAPE_KINDS, 'pen']) }),
       },
       h('span', { class: 'draw-width-dot', style: `--dot: ${4 + index * 5}px` }),
     ),
   );
-  const eraserButton = h(
+  // Füllung: ohne → halb durchsichtig → deckend (gilt für Rechteck, Kreis und Farbeimer).
+  const fillButton = h(
     'button',
     {
       type: 'button',
-      class: 'draw-tool',
-      'aria-label': 'Radierer – über Linien wischen',
-      title: 'Radierer',
-      onclick: () => choose({ tool: style.tool === 'eraser' ? 'pen' : 'eraser' }),
+      class: 'draw-tool draw-fill',
+      onclick: () => {
+        const index = DRAW_FILLS.findIndex((fill) => fill.id === style.fill);
+        choose({ fill: DRAW_FILLS[(index + 1) % DRAW_FILLS.length].id });
+      },
     },
-    icon(ICONS.eraser),
+    h('span', { class: 'draw-fill-icon' }),
   );
   const undoButton = h(
     'button',
     {
       type: 'button',
       class: 'draw-tool',
-      'aria-label': 'Rückgängig (letzte Linie entfernen)',
+      'aria-label': 'Rückgängig (eigene letzte Zeichnung entfernen)',
       title: 'Rückgängig',
       onclick: () => onUndo(),
     },
@@ -94,13 +282,13 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     {
       type: 'button',
       class: 'draw-tool',
-      'aria-label': 'Alle Linien auf dieser Karte löschen',
+      'aria-label': 'Alle Zeichnungen auf dieser Karte löschen',
       title: 'Alles löschen',
       onclick: () => onClear(),
     },
     icon(ICONS.trash),
   );
-  // Am Handy nur ein Haken (spart eine Zeile), sonst „Fertig“ ausgeschrieben.
+  // Am Handy nur ein Haken (spart Platz), sonst „Fertig“ ausgeschrieben.
   const doneButton = h(
     'button',
     {
@@ -116,12 +304,13 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
   const element = h(
     'div',
     { class: 'map-draw-bar', role: 'toolbar', 'aria-label': 'Stift', hidden: true },
-    h('div', { class: 'draw-group', role: 'group', 'aria-label': 'Farbe' }, colorButtons),
+    h('div', { class: 'draw-group', role: 'group', 'aria-label': 'Werkzeug' }, toolButtons),
+    h('div', { class: 'draw-group', role: 'group', 'aria-label': 'Farbe' }, colorButtons, customButton),
     h(
       'div',
-      { class: 'draw-group', role: 'group', 'aria-label': 'Werkzeug' },
+      { class: 'draw-group', role: 'group', 'aria-label': 'Strich und Füllung' },
       widthButtons,
-      eraserButton,
+      fillButton,
       undoButton,
       clearButton,
       doneButton,
@@ -129,14 +318,24 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
   );
 
   function refresh() {
-    const pen = style.tool === 'pen';
+    const painting = style.tool !== 'eraser';
+    for (const button of toolButtons) button.setAttribute('aria-pressed', String(button.dataset.tool === style.tool));
     for (const button of colorButtons) {
-      button.setAttribute('aria-pressed', String(pen && button.dataset.color === style.color));
+      button.setAttribute('aria-pressed', String(painting && button.dataset.color === style.color));
     }
+    customButton.style.setProperty('--swatch', style.custom);
+    customButton.setAttribute('aria-pressed', String(painting && isHex(style.color)));
     for (const button of widthButtons) {
-      button.setAttribute('aria-pressed', String(pen && button.dataset.width === style.width));
+      button.setAttribute(
+        'aria-pressed',
+        String(painting && style.tool !== 'bucket' && button.dataset.width === style.width),
+      );
     }
-    eraserButton.setAttribute('aria-pressed', String(!pen));
+    const fill = DRAW_FILLS.find((entry) => entry.id === style.fill) ?? DRAW_FILLS[0];
+    fillButton.dataset.fill = fill.id;
+    fillButton.style.setProperty('--swatch', drawColorValue(style.color));
+    fillButton.setAttribute('aria-label', `${fill.name} (für Rechteck, Kreis und Farbeimer) – antippen zum Wechseln`);
+    fillButton.title = fill.name;
     element.dataset.tool = style.tool;
   }
   refresh();
@@ -144,21 +343,23 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
   return {
     element,
     style: () => style,
-    /** Leiste zeigen oder verstecken; beim Zeigen ist immer der Stift (nicht der Radierer) aktiv. */
+    /** Leiste zeigen oder verstecken; beim Zeigen ist nie der Radierer aktiv. */
     setOpen(open) {
       element.hidden = !open;
-      if (open && style.tool !== 'pen') choose({ tool: 'pen' });
+      if (open && style.tool === 'eraser') choose({ tool: 'pen' });
     },
     /**
-     * Rückgängig nur mit eigenen Linien, Löschen nur mit Linien, die man löschen darf.
+     * Rückgängig nur mit eigenen Zeichnungen, Löschen nur mit solchen, die man löschen darf.
      * @param {{ own: number, removable: number }} counts
      */
     setCounts({ own, removable }) {
       undoButton.disabled = own === 0;
       clearButton.disabled = removable === 0;
-      const label = isMaster() ? 'Alle Linien auf dieser Karte löschen' : 'Meine Linien auf dieser Karte löschen';
+      const label = isMaster()
+        ? 'Alle Zeichnungen auf dieser Karte löschen'
+        : 'Meine Zeichnungen auf dieser Karte löschen';
       clearButton.setAttribute('aria-label', label);
-      clearButton.title = isMaster() ? 'Alles löschen' : 'Meine Linien löschen';
+      clearButton.title = isMaster() ? 'Alles löschen' : 'Meine Zeichnungen löschen';
     },
   };
 }

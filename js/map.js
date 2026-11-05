@@ -486,12 +486,16 @@ export function sortTemplates(templates) {
 }
 
 // -----------------------------------------------------------------------------
-// Zeichnen: Meister und Spieler malen mit dem Stift auf die Karte – alle sehen die Linien.
-// Eine Linie: { id, map_id, color, width, points: [{ x, y }, …], created_by } in Kartenpunkten;
+// Zeichnen: Meister und Spieler malen mit dem Stift auf die Karte – alle sehen es live.
+// Eine Zeichnung: { id, map_id, kind, color, width, fill, points: [{ x, y }, …], created_by }
+// in Kartenpunkten. kind: 'line' (freihand), 'straight' (gerade Linie), 'arrow' (Pfeil),
+// 'rect', 'ellipse' (Formen: zwei Eckpunkte) und 'fill' (Farbeimer: Umrisse der gefüllten Fläche
+// in rings – außen und Löcher; points ist dann der äußere Umriss).
+// color: Name aus DRAW_COLORS oder '#rrggbb'; fill: Füllfarbe '#rrggbbaa' oder null.
 // created_by ist die Nutzer-ID des Zeichners (leer bei älteren Linien des Meisters).
 // -----------------------------------------------------------------------------
 
-/** Stiftfarben – kräftig, damit sie auf hellen und dunklen Karten auffallen. */
+/** Benannte Stiftfarben – kräftig, damit sie auf hellen und dunklen Karten auffallen. */
 export const DRAW_COLORS = Object.freeze([
   { id: 'rot', name: 'Rot', value: '#e02424' },
   { id: 'gelb', name: 'Gelb', value: '#facc15' },
@@ -501,6 +505,8 @@ export const DRAW_COLORS = Object.freeze([
   { id: 'schwarz', name: 'Schwarz', value: '#111111' },
   { id: 'weiss', name: 'Weiß', value: '#ffffff' },
 ]);
+/** Farben in der Stiftleiste (Lila und alle anderen gibt es über „Eigene Farbe“). */
+export const DRAW_PALETTE = Object.freeze(['rot', 'gelb', 'gruen', 'blau', 'schwarz', 'weiss']);
 
 /** Strichstärken als Anteil eines Rasterfelds – so wirken sie auf jeder Karte gleich dick. */
 export const DRAW_WIDTHS = Object.freeze([
@@ -509,14 +515,62 @@ export const DRAW_WIDTHS = Object.freeze([
   { id: 'dick', name: 'Dick', cells: 0.25 },
 ]);
 
+/** Arten von Zeichnungen; Formen bestehen aus genau zwei Punkten (Anfang/Ende bzw. Ecken). */
+export const DRAW_KINDS = Object.freeze(['line', 'straight', 'arrow', 'rect', 'ellipse', 'fill']);
+export const SHAPE_KINDS = Object.freeze(['straight', 'arrow', 'rect', 'ellipse']);
+/** Füllung von Rechteck, Kreis und Farbeimer: Deckkraft (keine Füllung nur bei Formen). */
+export const DRAW_FILLS = Object.freeze([
+  { id: 'keine', name: 'Ohne Füllung', alpha: 0 },
+  { id: 'halb', name: 'Füllung halb durchsichtig', alpha: 0.45 },
+  { id: 'voll', name: 'Füllung deckend', alpha: 1 },
+]);
+
 /** So viele Punkte hat eine Linie höchstens – längere werden beim Zeichnen aufgeteilt. */
 export const MAX_DRAWING_POINTS = 1500;
 export const MAX_DRAWING_WIDTH = 200;
 
 const round1 = (value) => Math.round(value * 10) / 10;
+const HEX_COLOR = /^#[0-9a-f]{6}$/;
+const HEX_FILL = /^#[0-9a-f]{8}$/;
 
-export function drawColorValue(id) {
-  return (DRAW_COLORS.find((color) => color.id === id) ?? DRAW_COLORS[0]).value;
+/**
+ * Farbe aus einer Eingabe: Name aus DRAW_COLORS oder Hex („#3a7bd5“, „3A7BD5“, „#abc“) –
+ * Hex immer klein und sechsstellig. null, wenn unbrauchbar.
+ */
+export function normalizeColor(value) {
+  const text = String(value ?? '')
+    .trim()
+    .toLowerCase();
+  if (DRAW_COLORS.some((color) => color.id === text)) return text;
+  const hex = text.startsWith('#') ? text.slice(1) : text;
+  if (/^[0-9a-f]{3}$/.test(hex)) return `#${[...hex].map((digit) => digit + digit).join('')}`;
+  return /^[0-9a-f]{6}$/.test(hex) ? `#${hex}` : null;
+}
+
+/** Füllfarbe vom Server prüfen: '#rrggbbaa' oder null. */
+export function normalizeFill(value) {
+  const text = String(value ?? '').toLowerCase();
+  return HEX_FILL.test(text) ? text : null;
+}
+
+/** Hexwert einer Farbe (Name oder Hex). */
+export function drawColorValue(color) {
+  if (HEX_COLOR.test(color ?? '')) return color;
+  return (DRAW_COLORS.find((entry) => entry.id === color) ?? DRAW_COLORS[0]).value;
+}
+
+/** Füllfarbe zu Farbe und Füllung ('halb' | 'voll'); null bei 'keine'. */
+export function fillColor(color, fillId) {
+  const { alpha } = DRAW_FILLS.find((entry) => entry.id === fillId) ?? DRAW_FILLS[1];
+  if (!(alpha > 0)) return null;
+  return `${drawColorValue(color)}${Math.round(alpha * 255)
+    .toString(16)
+    .padStart(2, '0')}`;
+}
+
+/** '#rrggbbaa' → { color: '#rrggbb', opacity: 0 … 1 } (für SVG und Leinwand). */
+export function fillParts(fill) {
+  return { color: fill.slice(0, 7), opacity: Math.round((parseInt(fill.slice(7, 9), 16) / 255) * 100) / 100 };
 }
 
 /** Strichstärke in Kartenpunkten für die gewählte Stärke und das Raster der Karte. */
@@ -530,20 +584,47 @@ export function flattenPoints(points) {
   return points.flatMap(({ x, y }) => [round1(x), round1(y)]);
 }
 
-/** Linie vom Server (oder neu gezeichnet) prüfen – null, wenn sie unbrauchbar ist. */
+/** Trennt beim Farbeimer die Umrisse (außen, Löcher) – Kartenpunkte sind nie negativ. */
+const RING_BREAK = -1;
+
+/** Umrisse für den Server: wie flattenPoints, zwischen zwei Umrissen [-1, -1]. */
+export function flattenRings(rings) {
+  return rings.flatMap((ring, index) => [...(index > 0 ? [RING_BREAK, RING_BREAK] : []), ...flattenPoints(ring)]);
+}
+
+function splitRings(points) {
+  const rings = [[]];
+  for (const point of points) {
+    if (point.x === RING_BREAK && point.y === RING_BREAK) rings.push([]);
+    else rings[rings.length - 1].push(point);
+  }
+  return rings;
+}
+
+/** Zeichnung vom Server (oder neu gezeichnet) prüfen – null, wenn sie unbrauchbar ist. */
 export function normalizeDrawing(row) {
   if (!row || typeof row.id !== 'string' || row.id === '') return null;
   const flat = Array.isArray(row.points) ? row.points : [];
   if (flat.length < 2 || flat.length % 2 !== 0 || !flat.every(Number.isFinite)) return null;
   const points = [];
   for (let index = 0; index < flat.length; index += 2) points.push({ x: flat[index], y: flat[index + 1] });
+  const kind = DRAW_KINDS.includes(row.kind) ? row.kind : 'line';
+  if (SHAPE_KINDS.includes(kind) && points.length !== 2) return null;
+  const rings = kind === 'fill' ? splitRings(points) : null;
+  if (rings && (rings[0].length < 3 || rings.some((ring) => ring.length < 3))) return null;
+  const color = normalizeColor(row.color) ?? DRAW_COLORS[0].id;
+  const fill = normalizeFill(row.fill);
   const width = Number(row.width);
   return {
     id: row.id,
     map_id: row.map_id ?? null,
-    color: DRAW_COLORS.some((color) => color.id === row.color) ? row.color : DRAW_COLORS[0].id,
+    kind,
+    color,
     width: Number.isFinite(width) && width > 0 ? Math.min(width, MAX_DRAWING_WIDTH) : 4,
-    points,
+    // Farbeimer ohne Füllfarbe (sollte nicht vorkommen): halb durchsichtig in der Stiftfarbe.
+    fill: kind === 'fill' ? (fill ?? fillColor(color, 'halb')) : ['rect', 'ellipse'].includes(kind) ? fill : null,
+    points: rings ? rings[0] : points,
+    ...(rings ? { rings } : {}),
     created_by: typeof row.created_by === 'string' && row.created_by !== '' ? row.created_by : null,
   };
 }
@@ -559,10 +640,11 @@ export function addStrokePoint(points, point, minDistance) {
   return true;
 }
 
+const at = ({ x, y }) => `${round1(x)} ${round1(y)}`;
+
 /** SVG-Pfad einer Linie, über die Mittelpunkte geglättet. Ein einzelner Punkt wird ein Tupfen. */
 export function strokePath(points) {
   if (!points?.length) return '';
-  const at = ({ x, y }) => `${round1(x)} ${round1(y)}`;
   const [first] = points;
   const last = points[points.length - 1];
   if (points.length === 1) return `M${at(first)}h0.01`;
@@ -575,6 +657,83 @@ export function strokePath(points) {
   return `${path}L${at(last)}`;
 }
 
+/**
+ * Formen beim Aufziehen mit gedrückter Umschalttaste: Quadrat bzw. Kreis, Linien und Pfeile
+ * in 45°-Schritten. Liefert den Endpunkt.
+ */
+export function constrainShape(kind, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (kind === 'rect' || kind === 'ellipse') {
+    const side = Math.max(Math.abs(dx), Math.abs(dy));
+    return { x: start.x + Math.sign(dx || 1) * side, y: start.y + Math.sign(dy || 1) * side };
+  }
+  const length = Math.hypot(dx, dy);
+  const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  return { x: start.x + Math.cos(angle) * length, y: start.y + Math.sin(angle) * length };
+}
+
+function boxOf([a, b]) {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+}
+
+/** Pfeilspitze: Länge und halbe Breite richten sich nach der Strichstärke. */
+function arrowGeometry([a, b], width) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return null;
+  const head = Math.min(length, Math.max(4.5 * width, 6));
+  const ux = dx / length;
+  const uy = dy / length;
+  const base = { x: b.x - ux * head, y: b.y - uy * head };
+  const half = head * 0.55;
+  return {
+    shaftEnd: { x: b.x - ux * head * 0.7, y: b.y - uy * head * 0.7 },
+    left: { x: base.x + uy * half, y: base.y - ux * half },
+    right: { x: base.x - uy * half, y: base.y + ux * half },
+  };
+}
+
+/**
+ * SVG-Pfade einer Zeichnung – derselbe Pfad dient fürs Anzeigen (SVG) und für den Farbeimer
+ * (Leinwand, Path2D). stroke: Linie in der Stiftfarbe, fill: Fläche in der Füllfarbe,
+ * head: gefüllte Pfeilspitze in der Stiftfarbe.
+ * @returns {{ stroke: string|null, fill: string|null, head: string|null }}
+ */
+export function drawingPaths(drawing) {
+  const { kind, points, width } = drawing;
+  const none = { stroke: null, fill: null, head: null };
+  if (kind === 'straight') return { ...none, stroke: `M${at(points[0])}L${at(points[1])}` };
+  if (kind === 'arrow') {
+    const arrow = arrowGeometry(points, width);
+    if (!arrow) return { ...none, stroke: `M${at(points[0])}h0.01` };
+    return {
+      ...none,
+      stroke: `M${at(points[0])}L${at(arrow.shaftEnd)}`,
+      head: `M${at(points[1])}L${at(arrow.left)}L${at(arrow.right)}Z`,
+    };
+  }
+  if (kind === 'rect') {
+    const box = boxOf(points);
+    const path = `M${at(box)}h${round1(box.width)}v${round1(box.height)}h${round1(-box.width)}Z`;
+    return { ...none, stroke: path, fill: drawing.fill ? path : null };
+  }
+  if (kind === 'ellipse') {
+    const box = boxOf(points);
+    const rx = round1(box.width / 2);
+    const ry = round1(box.height / 2);
+    const start = { x: box.x, y: box.y + box.height / 2 };
+    const path = `M${at(start)}a${rx} ${ry} 0 1 0 ${round1(2 * rx)} 0a${rx} ${ry} 0 1 0 ${round1(-2 * rx)} 0Z`;
+    return { ...none, stroke: path, fill: drawing.fill ? path : null };
+  }
+  if (kind === 'fill') {
+    const rings = drawing.rings ?? [points];
+    return { ...none, fill: rings.map((ring) => `M${ring.map(at).join('L')}Z`).join('') };
+  }
+  return { ...none, stroke: strokePath(points) };
+}
+
 function distanceToSegment(point, a, b) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -583,16 +742,60 @@ function distanceToSegment(point, a, b) {
   return Math.hypot(point.x - (a.x + t * dx), point.y - (a.y + t * dy));
 }
 
-/** Radierer: IDs der Linien, die ein Kreis (Mitte, Radius in Kartenpunkten) berührt. */
+/** Liegt der Punkt in der Fläche (Umriss als Punktliste, gerade-ungerade-Regel)? */
+export function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index, index += 1) {
+    const a = polygon[index];
+    const b = polygon[previous];
+    if (a.y > point.y !== b.y > point.y && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function nearPolyline(point, points, reach, closed = false) {
+  if (points.length === 1) return Math.hypot(point.x - points[0].x, point.y - points[0].y) <= reach;
+  for (let index = 1; index < points.length; index += 1) {
+    if (distanceToSegment(point, points[index - 1], points[index]) <= reach) return true;
+  }
+  return closed && distanceToSegment(point, points[points.length - 1], points[0]) <= reach;
+}
+
+function hitsDrawing(drawing, point, radius) {
+  const { kind, points, width } = drawing;
+  const reach = radius + width / 2;
+  if (kind === 'fill') {
+    // Gerade-ungerade über alle Umrisse: in einem Loch ist nichts zu radieren.
+    const rings = drawing.rings ?? [points];
+    const inside = rings.reduce((result, ring) => result !== pointInPolygon(point, ring), false);
+    return inside || rings.some((ring) => nearPolyline(point, ring, radius, true));
+  }
+  if (kind === 'rect') {
+    const box = boxOf(points);
+    const corners = [
+      { x: box.x, y: box.y },
+      { x: box.x + box.width, y: box.y },
+      { x: box.x + box.width, y: box.y + box.height },
+      { x: box.x, y: box.y + box.height },
+    ];
+    if (drawing.fill && pointInPolygon(point, corners)) return true;
+    return nearPolyline(point, corners, reach, true);
+  }
+  if (kind === 'ellipse') {
+    const box = boxOf(points);
+    const rx = box.width / 2;
+    const ry = box.height / 2;
+    if (rx === 0 || ry === 0) return nearPolyline(point, points, reach);
+    const relative = Math.hypot((point.x - box.x - rx) / rx, (point.y - box.y - ry) / ry);
+    if (drawing.fill && relative <= 1) return true;
+    return Math.abs(relative - 1) * Math.min(rx, ry) <= reach;
+  }
+  return nearPolyline(point, points, reach);
+}
+
+/** Radierer: IDs der Zeichnungen, die ein Kreis (Mitte, Radius in Kartenpunkten) berührt. */
 export function drawingsAt(drawings, point, radius) {
-  return drawings
-    .filter(({ points, width }) => {
-      const reach = radius + width / 2;
-      if (points.length === 1) return Math.hypot(point.x - points[0].x, point.y - points[0].y) <= reach;
-      for (let index = 1; index < points.length; index += 1) {
-        if (distanceToSegment(point, points[index - 1], points[index]) <= reach) return true;
-      }
-      return false;
-    })
-    .map(({ id }) => id);
+  return drawings.filter((drawing) => hitsDrawing({ kind: 'line', ...drawing }, point, radius)).map(({ id }) => id);
 }

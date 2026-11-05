@@ -7,8 +7,10 @@
  *  - Karte verschieben: Finger, rechte/mittlere Maustaste oder Leertaste + Maus.
  *  - Stelle markieren (Ping): lange drücken, Alt + Klick oder Knopf „Stelle markieren“ und tippen.
  *    Ein Ping leuchtet ein paar Sekunden; liegt er außerhalb des Ausschnitts, rückt die Karte nach.
- *  - Zeichnen (Knopf „Stift“): Ein Finger bzw. die linke Maustaste malt oder radiert, zwei Finger
- *    bzw. rechte Maustaste/Leertaste verschieben weiter die Karte. Die Linien liegen auf der Karte.
+ *  - Zeichnen (Knopf „Stift“): Ein Finger bzw. die linke Maustaste malt, zieht Formen auf
+ *    (Linie, Pfeil, Rechteck, Kreis – mit Umschalttaste gerade bzw. gleichmäßig), füllt mit dem
+ *    Farbeimer (antippen) oder radiert; zwei Finger bzw. rechte Maustaste/Leertaste verschieben
+ *    weiter die Karte. Die Zeichnungen liegen auf der Karte.
  *
  * Kartenbild und Raster werden mit der Karte skaliert; die Figuren liegen in einer eigenen
  * Ebene in Bildschirmgröße darüber – so bleiben Namen, Kürzel und Bilder bei jedem Zoom scharf.
@@ -41,8 +43,14 @@ import {
   drawingsAt,
   drawingWidth,
   drawColorValue,
+  drawingPaths,
+  fillParts,
+  fillColor,
+  constrainShape,
+  SHAPE_KINDS,
   MAX_DRAWING_POINTS,
 } from '../map.js';
+import { bucketOutline } from '../flood-fill.js';
 import {
   planSharpLayer,
   normalizeDetail,
@@ -75,6 +83,10 @@ const PAN_ANIMATION_MS = 350;
 /** Zeichnen: Abstand zwischen zwei Punkten einer Linie (Bildschirmpunkte) und Reichweite des Radierers. */
 const MIN_STROKE_STEP_PX = 2;
 const ERASER_RADIUS_PX = 14;
+/** Kleinere Formen (Bildschirmpunkte) gelten als versehentlich angetippt. */
+const MIN_SHAPE_PX = 6;
+/** Farbeimer: so viele Bildpunkte untersucht er höchstens (sichtbarer Bereich in Bildschirmauflösung). */
+const BUCKET_MAX_PIXELS = 4_000_000;
 /** Schärfe-Ebene: so lange nach dem letzten Verschieben/Zoomen warten, dann neu zeichnen. */
 const SHARP_SETTLE_MS = 160;
 /** So viele Detailkacheln bleiben entpackt im Speicher (je bis zu 4 MB). */
@@ -147,7 +159,8 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
  * @param {(point: {x, y}) => void} options.onPing        Stelle markiert (Kartenpunkte)
  * @param {() => boolean} options.canDraw                Zeichnen erlaubt?
  * @param {(drawing: object) => boolean} options.canErase  Darf der Radierer diese Linie löschen?
- * @param {(stroke: {points, color, width}) => void} options.onStroke  Linie fertig (Kartenpunkte)
+ * @param {(drawing: object) => void} options.onStroke  Zeichnung fertig: { kind, points | rings, color, width, fill } in Kartenpunkten
+ * @param {() => void} [options.onBucketMiss]          Farbeimer fand keine Fläche (z. B. auf einem Strich)
  * @param {(ids: string[]) => void} options.onErase       Linien wegradiert
  * @param {() => void} options.onUndo                     Strg + Z beim Zeichnen
  * @param {(active: boolean) => void} options.onDrawModeChange  Stift an oder aus
@@ -169,6 +182,7 @@ export function createMapStage({
   canDraw = () => false,
   canErase = () => true,
   onStroke = () => {},
+  onBucketMiss = () => {},
   onErase = () => {},
   onUndo = () => {},
   onDrawModeChange = () => {},
@@ -179,6 +193,10 @@ export function createMapStage({
   const sharpCanvas = h('canvas', { class: 'map-sharp', 'aria-hidden': 'true', hidden: true });
   const grid = createGridLayer();
   const drawLayer = svg('svg', { class: 'map-drawings', 'aria-hidden': 'true' });
+  // Flächen (Farbeimer) unter den Linien – Wände und Pfeile bleiben darauf sichtbar.
+  const drawFills = svg('g');
+  const drawLines = svg('g');
+  drawLayer.append(drawFills, drawLines);
   const stage = h('div', { class: 'map-stage' }, image, sharpCanvas, grid.element, drawLayer);
   const tokenLayer = h('div', { class: 'map-tokens' });
   const pingLayer = h('div', { class: 'map-pings', 'aria-hidden': 'true' });
@@ -238,12 +256,16 @@ export function createMapStage({
   let selectMode = false;
   let pingMode = false;
   let drawMode = false;
-  /** Stift: Werkzeug ('pen' | 'eraser'), Farbe und Stärke (siehe DRAW_COLORS, DRAW_WIDTHS). */
-  let drawStyle = { tool: 'pen', color: 'rot', width: 'mittel' };
+  /**
+   * Stift: Werkzeug ('pen', eine Form aus SHAPE_KINDS, 'bucket' oder 'eraser'), Farbe (Name oder
+   * Hex), Stärke und Füllung (siehe DRAW_COLORS, DRAW_WIDTHS, DRAW_FILLS).
+   */
+  let drawStyle = { tool: 'pen', color: 'rot', width: 'mittel', fill: 'keine' };
   let drawings = [];
   const drawingViews = new Map();
-  /** Linie, die gerade gezeichnet wird: { path, points, color, width }. */
+  /** Linie, die gerade gezeichnet wird: { path, points, color, width }; Form: { kind, start, end, … }. */
   let draft = null;
+  let shapeDraft = null;
   /** Detailstufen der Karte (normalizeDetail) und was die Schärfe-Ebene gerade zeigt. */
   let detail = null;
   let sharpTimer = 0;
@@ -648,7 +670,8 @@ export function createMapStage({
     if (next === drawMode) return;
     drawMode = next;
     discardDraft();
-    if (gesture?.kind === 'draw' || gesture?.kind === 'erase') gesture = null;
+    discardShape();
+    if (['draw', 'erase', 'shape', 'bucket'].includes(gesture?.kind)) gesture = null;
     if (drawMode) {
       setPingMode(false);
       if (selectMode) toggleSelectMode();
@@ -661,34 +684,48 @@ export function createMapStage({
     onDrawModeChange(drawMode);
   }
 
+  /** SVG-Gruppe einer Zeichnung: Fläche, Linie und Pfeilspitze (siehe drawingPaths). */
+  function drawingElement(drawing) {
+    const group = svg('g');
+    const paths = drawingPaths(drawing);
+    const stroke = drawColorValue(drawing.color);
+    if (paths.fill && drawing.fill) {
+      const { color, opacity } = fillParts(drawing.fill);
+      group.append(svg('path', { d: paths.fill, fill: color, 'fill-opacity': opacity, 'fill-rule': 'evenodd' }));
+    }
+    if (paths.stroke) {
+      group.append(svg('path', { d: paths.stroke, fill: 'none', stroke, 'stroke-width': drawing.width }));
+    }
+    if (paths.head) {
+      group.append(svg('path', { d: paths.head, fill: stroke, stroke, 'stroke-width': drawing.width * 0.6 }));
+    }
+    return group;
+  }
+
   function renderDrawings() {
     const ids = new Set(drawings.map((drawing) => drawing.id));
-    for (const [id, path] of drawingViews) {
+    for (const [id, element] of drawingViews) {
       if (ids.has(id)) continue;
-      path.remove();
+      element.remove();
       drawingViews.delete(id);
     }
     for (const drawing of drawings) {
       if (drawingViews.has(drawing.id)) continue;
-      const path = svg('path', {
-        d: strokePath(drawing.points),
-        stroke: drawColorValue(drawing.color),
-        'stroke-width': drawing.width,
-      });
-      drawingViews.set(drawing.id, path);
-      drawLayer.insertBefore(path, draft?.path ?? null); // die Linie in Arbeit bleibt oben
+      const element = drawingElement(drawing);
+      drawingViews.set(drawing.id, element);
+      (drawing.kind === 'fill' ? drawFills : drawLines).append(element);
     }
   }
 
-  /** Linien, die der Radierer gerade berührt, blass zeigen. */
+  /** Zeichnungen, die der Radierer gerade berührt, blass zeigen. */
   function showErasing(ids) {
-    for (const [id, path] of drawingViews) path.classList.toggle('is-erasing', ids.has(id));
+    for (const [id, element] of drawingViews) element.classList.toggle('is-erasing', ids.has(id));
   }
 
   function beginDraft(point) {
     const color = drawStyle.color;
     const width = drawingWidth(drawStyle.width, gridValues);
-    const path = svg('path', { class: 'is-draft', stroke: drawColorValue(color), 'stroke-width': width });
+    const path = svg('path', { class: 'is-draft', fill: 'none', stroke: drawColorValue(color), 'stroke-width': width });
     drawLayer.append(path);
     draft = { path, points: [point], color, width };
     path.setAttribute('d', strokePath(draft.points));
@@ -718,6 +755,126 @@ export function createMapStage({
   function discardDraft() {
     draft?.path.remove();
     draft = null;
+  }
+
+  /** Form (Linie, Pfeil, Rechteck, Kreis) aufziehen: Vorschau zwischen Anfang und Finger. */
+  function beginShape(point) {
+    const kind = drawStyle.tool;
+    const filled = kind === 'rect' || kind === 'ellipse';
+    shapeDraft = {
+      kind,
+      start: point,
+      end: point,
+      color: drawStyle.color,
+      width: drawingWidth(drawStyle.width, gridValues),
+      fill: filled ? fillColor(drawStyle.color, drawStyle.fill) : null,
+      element: null,
+    };
+    renderShapeDraft();
+  }
+
+  function renderShapeDraft() {
+    const { kind, start, end, color, width, fill } = shapeDraft;
+    const element = drawingElement({ kind, color, width, fill, points: [start, end] });
+    element.classList.add('is-draft');
+    if (shapeDraft.element) shapeDraft.element.replaceWith(element);
+    else drawLayer.append(element);
+    shapeDraft.element = element;
+  }
+
+  function updateShape(screenPoint, constrain) {
+    if (!shapeDraft) return;
+    let end = clampToMap(screenToMap(view, screenPoint), map);
+    if (constrain) end = clampToMap(constrainShape(shapeDraft.kind, shapeDraft.start, end), map);
+    shapeDraft.end = end;
+    renderShapeDraft();
+  }
+
+  function commitShape() {
+    const finished = shapeDraft;
+    shapeDraft = null;
+    if (!finished) return;
+    const { kind, start, end, color, width, fill } = finished;
+    if (Math.hypot(end.x - start.x, end.y - start.y) * view.scale >= MIN_SHAPE_PX) {
+      onStroke({ kind, points: [start, end], color, width, fill });
+    }
+    finished.element?.remove();
+  }
+
+  function discardShape() {
+    shapeDraft?.element?.remove();
+    shapeDraft = null;
+  }
+
+  /** Zeichnung auf eine Leinwand (für den Farbeimer: Linien und Flächen sind Grenzen). */
+  function paintDrawing(context, drawing) {
+    const paths = drawingPaths(drawing);
+    const stroke = drawColorValue(drawing.color);
+    if (paths.fill && drawing.fill) {
+      const { color, opacity } = fillParts(drawing.fill);
+      context.globalAlpha = opacity;
+      context.fillStyle = color;
+      context.fill(new Path2D(paths.fill), 'evenodd');
+      context.globalAlpha = 1;
+    }
+    if (paths.stroke) {
+      context.lineWidth = drawing.width;
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+      context.strokeStyle = stroke;
+      context.stroke(new Path2D(paths.stroke));
+    }
+    if (paths.head) {
+      context.fillStyle = stroke;
+      context.fill(new Path2D(paths.head));
+    }
+  }
+
+  /**
+   * Farbeimer: die Fläche um den Punkt (Kartenpunkte) so, wie man sie sieht – Kartenbild,
+   * Detailkacheln und alle Zeichnungen. Gesucht wird im sichtbaren Bereich (mit Rand) in
+   * Bildschirmauflösung. Liefert die Umrisse in Kartenpunkten oder null.
+   */
+  function bucketRings(point) {
+    const region = visibleRegion(view, viewportSize(), map, 0.5);
+    if (!region || !baseScale()) return null;
+    let factor = view.scale;
+    const pixels = region.width * region.height * factor * factor;
+    if (pixels > BUCKET_MAX_PIXELS) factor *= Math.sqrt(BUCKET_MAX_PIXELS / pixels);
+    const width = Math.max(1, Math.round(region.width * factor));
+    const height = Math.max(1, Math.round(region.height * factor));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
+    context.setTransform(factor, 0, 0, factor, -region.x * factor, -region.y * factor);
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, map.width, map.height);
+    if (!sharpCanvas.hidden && sharpShown) {
+      const shown = sharpShown.region;
+      context.drawImage(sharpCanvas, shown.x, shown.y, shown.width, shown.height);
+    }
+    for (const drawing of drawings) paintDrawing(context, drawing);
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    const { data } = context.getImageData(0, 0, width, height);
+    const rings = bucketOutline(data, width, height, (point.x - region.x) * factor, (point.y - region.y) * factor, {
+      maxPoints: MAX_DRAWING_POINTS,
+    });
+    return rings?.map((ring) => ring.map((spot) => ({ x: region.x + spot.x / factor, y: region.y + spot.y / factor })));
+  }
+
+  function bucketAt(screenPoint) {
+    const point = screenToMap(view, screenPoint);
+    if (!map || point.x < 0 || point.y < 0 || point.x > map.width || point.y > map.height) return;
+    const rings = bucketRings(point);
+    if (!rings) {
+      onBucketMiss();
+      return;
+    }
+    const fill = fillColor(drawStyle.color, drawStyle.fill === 'voll' ? 'voll' : 'halb');
+    onStroke({ kind: 'fill', rings, color: drawStyle.color, width: 1, fill });
   }
 
   function eraseAt(screenPoint) {
@@ -890,6 +1047,12 @@ export function createMapStage({
       if (drawStyle.tool === 'eraser') {
         gesture = { kind: 'erase', start: point, moved: false, hits: new Set() };
         eraseAt(point);
+      } else if (drawStyle.tool === 'bucket') {
+        // Antippen füllt; wer zieht, verschiebt die Karte.
+        gesture = { kind: 'bucket', start: point, last: point, moved: false };
+      } else if (SHAPE_KINDS.includes(drawStyle.tool)) {
+        gesture = { kind: 'shape', start: point, moved: false };
+        beginShape(clampToMap(screenToMap(view, point), map));
       } else {
         gesture = { kind: 'draw', start: point, moved: false };
         beginDraft(clampToMap(screenToMap(view, point), map));
@@ -1009,6 +1172,7 @@ export function createMapStage({
       if (gesture?.kind === 'token' && gesture.moved) cancelTokenDrag();
       // Zweiter Finger beim Zeichnen: Es wird verschoben/gezoomt, die angefangene Linie verworfen.
       if (gesture?.kind === 'draw') discardDraft();
+      if (gesture?.kind === 'shape') discardShape();
       if (gesture?.kind === 'erase') showErasing(new Set());
       marquee.hidden = true;
       gesture = { kind: 'pinch', startView: view, start: pinchInfo([...pointers.values()]) };
@@ -1029,6 +1193,14 @@ export function createMapStage({
       );
       applyView();
       return;
+    }
+    if (gesture.kind === 'shape') {
+      updateShape(point, event.shiftKey);
+      return;
+    }
+    if (gesture.kind === 'bucket') {
+      if (distance(point, gesture.start) < DRAG_THRESHOLD_PX) return;
+      gesture = { kind: 'pan', start: gesture.start, last: gesture.start, moved: true };
     }
     if (gesture.kind === 'draw' || gesture.kind === 'erase') {
       // Zwischenpunkte, die der Browser zusammengefasst hat, machen die Linie glatter.
@@ -1081,6 +1253,15 @@ export function createMapStage({
     if (finished.kind === 'draw') {
       if (cancelled) discardDraft();
       else commitDraft();
+      return;
+    }
+    if (finished.kind === 'shape') {
+      if (cancelled) discardShape();
+      else commitShape();
+      return;
+    }
+    if (finished.kind === 'bucket') {
+      if (!cancelled) bucketAt(finished.start);
       return;
     }
     if (finished.kind === 'erase') {
@@ -1269,7 +1450,10 @@ export function createMapStage({
         releaseTiles();
       }
       detail = nextDetail;
-      if (changedImage) discardDraft();
+      if (changedImage) {
+        discardDraft();
+        discardShape();
+      }
       if (changedImage) {
         fitted = false;
         userMoved = false;

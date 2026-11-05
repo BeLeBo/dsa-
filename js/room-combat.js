@@ -1,7 +1,7 @@
 /**
  * room-combat.js – Kampf im Raum: hält den Kampfstand (rooms.combat), speichert Änderungen
  * des Meisters, übernimmt Initiative-Würfe der Helden aus dem Protokoll und meldet
- * Spielern „Du bist am Zug!“.
+ * Spielern „Du bist am Zug!“. Spieler beenden ihren eigenen Zug selbst (über den Server).
  */
 import {
   startCombat,
@@ -15,10 +15,11 @@ import {
   currentEntry,
   heroEntryId,
   isHeroInitiativeRoll,
+  isHeroTurn,
 } from './combat.js';
 import { rollInitiative } from './checks.js';
 import { rollDie } from './dice.js';
-import { updateCombat } from './room.js';
+import { updateCombat, endTurn as endTurnOnServer } from './room.js';
 import { VISIBILITY } from './log.js';
 
 /**
@@ -32,6 +33,7 @@ import { VISIBILITY } from './log.js';
  * @param {(message: string) => void} options.onYourTurn
  * @param {(error: Error) => void} options.onError
  * @param {Function} [options.save]        (roomId, combat) => Promise – austauschbar für Tests
+ * @param {Function} [options.endTurn]     (roomId, { currentId, nextId, round }) => Promise<combat> – für Tests
  */
 export function createCombatController({
   roomId,
@@ -43,6 +45,7 @@ export function createCombatController({
   onYourTurn,
   onError,
   save = updateCombat,
+  endTurn = endTurnOnServer,
 }) {
   /** Laufende Speicherung (Promise) und ob danach noch ein neuerer Stand zu speichern ist. */
   let saving = null;
@@ -102,6 +105,25 @@ export function createCombatController({
     if (hero) log.add({ ...rollInitiative(hero), characterId, visibility: VISIBILITY.PUBLIC });
   }
 
+  /**
+   * Spieler: eigenen Zug beenden – sofort sichtbar, der Server schaltet für alle weiter. Der Nächste
+   * wird wie beim Meister berechnet (gleiche Reihenfolge auf allen Geräten). Lehnt der Server ab
+   * (z. B. hat der Meister schon weitergeschaltet), gilt wieder der Stand vor dem Tippen.
+   */
+  async function endOwnTurn() {
+    const before = combat();
+    if (!before || !isHeroTurn(before, myCharacterId())) return;
+    const next = advanceTurn(before);
+    room.update({ combat: next });
+    try {
+      const saved = await endTurn(roomId, { currentId: before.currentId, nextId: next.currentId, round: next.round });
+      if (saved && combat() === next) room.update({ combat: saved });
+    } catch (error) {
+      if (combat() === next) room.update({ combat: before });
+      onError(error);
+    }
+  }
+
   function change(update) {
     const current = combat();
     if (current) saveCombat(update(current));
@@ -122,6 +144,7 @@ export function createCombatController({
           .flatMap(({ name, base }) => createNpcEntries({ name, base, count: 1 }, rollDie))
           .reduce(upsertEntry, current),
       ),
+    endOwnTurn,
     rollHero,
     rollAllHeroes: () => {
       const current = combat();

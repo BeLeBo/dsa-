@@ -33,6 +33,7 @@ import {
   sortTemplates,
   normalizeDrawing,
   flattenPoints,
+  flattenRings,
   MAX_TOKEN_NAME_LENGTH,
   MAX_MAP_NAME_LENGTH,
 } from './map.js';
@@ -876,30 +877,37 @@ export function createMapController({
   }
 
   /**
-   * Linie auf die angezeigte Karte zeichnen.
-   * @param {{ points: {x, y}[], color: string, width: number }} stroke  Punkte und Stärke in Kartenpunkten
+   * Zeichnung auf die angezeigte Karte: Linie, Form oder Farbeimer-Fläche (siehe normalizeDrawing).
+   * @param {object} spec  { kind, points | rings (Farbeimer), color, width, fill } in Kartenpunkten
    */
-  async function addDrawing({ points, color, width }) {
+  async function addDrawing({ kind = 'line', points = null, rings = null, color, width, fill = null }) {
     const map = viewMap();
-    if (!canDraw() || !points?.length) return null;
+    if (!canDraw() || !(points?.length || rings?.length)) return null;
+    const onMap = (list) => list.map((point) => clampToMap(point, map));
     const drawing = normalizeDrawing({
       id: newId(),
       map_id: map.id,
+      kind,
       color,
       width,
-      points: flattenPoints(points.map((point) => clampToMap(point, map))),
+      fill,
+      points: kind === 'fill' ? flattenRings((rings ?? [points]).map(onMap)) : flattenPoints(onMap(points)),
       created_by: userId(),
     });
     if (!drawing) return null;
     state.update({ drawings: [...state.get().drawings, drawing] });
-    const saving = api.createDrawing({
+    const row = {
       id: drawing.id,
       room_id: roomId,
       map_id: map.id,
       color: drawing.color,
       width: drawing.width,
-      points: flattenPoints(drawing.points),
-    });
+      points: drawing.rings ? flattenRings(drawing.rings) : flattenPoints(drawing.points),
+    };
+    // Neue Felder nur, wenn nötig – so klappen freie Linien auch mit einer älteren Datenbank.
+    if (drawing.kind !== 'line') row.kind = drawing.kind;
+    if (drawing.fill) row.fill = drawing.fill;
+    const saving = api.createDrawing(row);
     savingDrawings.set(drawing.id, saving);
     try {
       await saving;
