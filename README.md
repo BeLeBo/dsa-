@@ -33,8 +33,10 @@ alles live für alle synchronisiert.
 | 18    | Spieler malen mit; Zoom bis in die Gassen, volle Auflösung, Schärfe     | ✅ fertig |
 | 19    | Malen: Farbeimer, eigene Farben (Hex), Formen                           | ✅ fertig |
 | 20    | Kampf: Spieler beenden ihren eigenen Zug                                | ✅ fertig |
-| 21    | Malrecht, Eimer nur für Gemaltes, freie Strichstärke, winzige Figuren   | ✅ fertig |
+| 21    | Malrecht, freie Strichstärke, winzige Figuren                           | ✅ fertig |
 | 22    | Kartenauswahl einklappen, nur für mich malen, Tote kommen nicht dran    | ✅ fertig |
+| 23    | Farbeimer wieder wie früher, Zeichnungen selbst ausblenden              | ✅ fertig |
+| 24    | Aventurien-Karte (Ulisses-Kartenpaket), Ausschnitt für die Spieler      | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -264,6 +266,12 @@ auf dem Server gespeichert und für den Meister sichtbar.
    flott. Während des Hochladens zählt der Knopf mit („volle Auflösung 12 / 60 …“). Sehr große Bilder
    lieber am Rechner hochladen: Ist das Bild für das Gerät zu groß, gibt es die Karte in normaler
    Auflösung (mit Hinweis). Handyfotos im HEIC-Format bitte vorher als JPG speichern.
+   **Ganz Aventurien:** Unter **Karten** → **Offizielle Karte** → **Aventurien hinzufügen** legt die
+   offizielle Aventurienkarte (Ina Kramer, aus dem Kartenpaket von Ulisses Spiele) als Karte im Raum
+   an – mit Raster aus, zum Hineinzoomen in voller Auflösung. Die App bringt die Karte mit
+   (`karten/aventurien.jpg`, unverändert); bei der Karte steht immer der Hinweis auf Urheber und
+   Lizenz (siehe „Offizielle Karten und Lizenz“ unten). Gibt es sie im Raum schon, öffnet der Knopf
+   sie nur. Figuren lassen sich auf der großen Karte z. B. als „Winzig (¼ Feld)“ aufstellen.
 2. Eine neue Karte sieht zunächst **nur der Meister** („Vorbereitung“) – in Ruhe Figuren aufstellen,
    dann **Allen zeigen**. **Mehrere Karten offen:** Über der Karte stehen Tabs – die gezeigte Karte mit
    Auge 👁, daneben die Karten, die du gerade vorbereitest. Ein Tipp wechselt hin und her, × schließt
@@ -272,14 +280,24 @@ auf dem Server gespeichert und für den Meister sichtbar.
    die Kartenauswahl ein (mehr Platz für die Karte): Dann steht nur noch ein Knopf mit dem Namen der
    offenen Karte vorn in der Werkzeugleiste – antippen klappt sie wieder auf. Das Gerät merkt es sich. Unter **Karten** lassen sich alle
    Karten verwalten: öffnen, allen zeigen, ausblenden, umbenennen, löschen (mit allen Figuren darauf).
-3. **Raster:** an/aus, Feldgröße (oder „Felder in der Breite“), Versatz und Linienfarbe. Hat das Bild
+3. **Ausschnitt für die Spieler:** Karte so verschieben und zoomen, wie die Spieler sie sehen sollen
+   (z. B. nur das Bornland auf der Aventurienkarte), dann **Ausschnitt** → **Diesen Ausschnitt den
+   Spielern zeigen**. Die Karte der Spieler gleitet sofort dorthin, mit demselben Zoom – auch wer die
+   App erst später öffnet, sieht diesen Ausschnitt. Mit **„Spieler sehen nur diesen Ausschnitt“**
+   können sie nicht weiter heraus- oder wegschieben (hineinzoomen geht); passt ihr Bildschirm nicht
+   genau, ist der Rest abgedeckt, und Figuren außerhalb sind versteckt. Ohne den Haken können sie sich
+   danach frei umsehen; der Knopf ⌖ („Ausschnitt des Meisters zeigen“) bringt sie zurück. Der Meister sieht den
+   Ausschnitt als gestrichelten Rahmen (🔒 durchgezogen, wenn begrenzt); **Zum Ausschnitt der
+   Spieler** springt hin, **Aufheben** gibt die ganze Karte frei. Jede Karte hat ihren eigenen
+   Ausschnitt; auf einer vorbereiteten Karte gilt er, sobald sie gezeigt wird.
+4. **Raster:** an/aus, Feldgröße (oder „Felder in der Breite“), Versatz und Linienfarbe. Hat das Bild
    schon Kästchen, die Werte so einstellen, dass die Linien übereinander liegen. Bei sichtbarem
    Raster rasten Figuren beim Ablegen in die Felder ein (große Figuren mit 2 × 2 Feldern auf die Linien).
    **Stadtkarten:** Ein feines Raster (Feldgröße bis hinunter zu 2 Punkten, unter 10 in halben
    Schritten) macht die Figuren klein genug für Gassen und lässt tiefer hineinzoomen – so weit, dass
    ein Feld bis zu 240 Bildschirmpunkte groß wird. Weit herausgezoomt blendet die App die Rasterlinien
    aus (sonst wären sie nur ein grauer Schleier); Figuren bleiben dabei immer mindestens 6 Punkte groß.
-4. **+ Figur:** Name, Anzahl (mehrere werden nummeriert: Ork 1, Ork 2 …), **Lebensenergie (LeP)** für
+5. **+ Figur:** Name, Anzahl (mehrere werden nummeriert: Ork 1, Ork 2 …), **Lebensenergie (LeP)** für
    Gegner und NSC (jede Figur startet mit vollen LeP, leer = ohne LeP), Größe (⅛ Feld bis 4 × 4 Felder – winzig z. B. für Ratten oder Figuren in engen Gassen),
    Farbe, optional ein Bild (wird quadratisch zugeschnitten) und **Verborgen** – verborgene Figuren
    sieht nur der Meister (z. B. für einen Hinterhalt). Gehört die Figur zu einem Helden, darf dessen
@@ -292,8 +310,8 @@ auf dem Server gespeichert und für den Meister sichtbar.
    Merken ersetzt die alte, × löscht. Sie gehören zum Raum (der Kampagne), liegen auf dem Server
    und sind auf jedem Gerät des Meisters da; Spieler sehen sie nicht. Die **INI-Basis** steht im Kampf
    bei **+ Gegner** schon drin.
-5. **Helden:** stellt alle Helden des Raums auf, die noch fehlen (mit ihrem Bild von einer früheren Karte).
-6. **Figur antippen** wählt sie aus; ihre Werte gleiten als Pop-up über die Karte (am Handy von unten,
+6. **Helden:** stellt alle Helden des Raums auf, die noch fehlen (mit ihrem Bild von einer früheren Karte).
+7. **Figur antippen** wählt sie aus; ihre Werte gleiten als Pop-up über die Karte (am Handy von unten,
    am PC unten rechts) – die Karte selbst bleibt, wo sie ist:
    - **Held:** LeP, AsP, KaP und Schicksalspunkte mit − / + ändern oder direkt eintippen, Zustände
      (Schmerz, Belastung …) hoch- und runtersetzen. Die Änderung landet sofort im Heldenbogen des
@@ -304,7 +322,7 @@ auf dem Server gespeichert und für den Meister sichtbar.
    - **Heldenbogen** öffnet den ganzen Bogen, **Figur bearbeiten** Name, Held, Größe, Farbe, Bild und
      Entfernen, **Verbergen/Zeigen** blendet die Figur für die Spieler aus und ein.
    - × oder ein Tipp auf eine freie Stelle der Karte hebt die Auswahl auf.
-7. **Mehrere Figuren markieren** – wie am Desktop:
+8. **Mehrere Figuren markieren** – wie am Desktop:
    - Maus: auf freier Fläche mit der linken Taste einen **Rahmen aufziehen**; ein Klick mit gedrückter
      **Strg**- oder **Umschalt**-Taste nimmt einzelne Figuren dazu oder heraus.
    - Handy/Tablet: Knopf **Auswählen** (gestricheltes Quadrat rechts), dann mit dem Finger einen Rahmen
@@ -314,55 +332,60 @@ auf dem Server gespeichert und für den Meister sichtbar.
      verbergen, zeigen oder entfernen.
    - Tastatur: Pfeiltasten bewegen alle markierten um ein Feld, **Entf** entfernt sie (mit Rückfrage),
      **Esc** hebt die Auswahl auf, **Enter** auf einer Figur öffnet „Figur bearbeiten“.
-8. **Stelle markieren (Ping)** – „Hier ist die Tür!“: Auf der gezeigten Karte eine Stelle **lange
+9. **Stelle markieren (Ping)** – „Hier ist die Tür!“: Auf der gezeigten Karte eine Stelle **lange
    drücken** (Finger oder Maus, ohne zu ziehen), **Alt + Klick** oder Knopf **📍** (rechts an der Karte)
    und dann auf die Stelle tippen. Alle sehen dort ein paar Sekunden lang pulsierende Ringe. Liegt die
    Stelle bei jemandem außerhalb des Ausschnitts, gleitet seine Karte dorthin; wer gerade in einem
    anderen Tab ist, bekommt eine Meldung mit **Ansehen**. Auf einer vorbereiteten Karte (nur der
    Meister sieht sie) gibt es keinen Ping.
-9. **Auf die Karte malen (Stift)** – Weg einzeichnen, Falle einkreisen, Raum einfärben, Pfeil zur
-   Tür (auch die Spieler können malen, siehe unten): Knopf **✎** (rechts an der Karte) nimmt den Stift
-   in die Hand, unten erscheint die Stiftleiste. Ein Finger bzw. die linke Maustaste malt; **zwei
-   Finger** (bzw. rechte Maustaste oder Leertaste + Maus) verschieben und zoomen die Karte weiter.
-   In der Leiste:
-   - **Werkzeuge:** **Stift** (freihand), **gerade Linie**, **Pfeil**, **Rechteck** und **Kreis/Ellipse**
-     (aufziehen; mit gedrückter Umschalttaste: Quadrat, Kreis bzw. Linien in 45°-Schritten),
-     **Farbeimer** und **Radierer** (über Zeichnungen wischen).
-   - **Farbeimer:** füllt nur **selbst gemalte, geschlossene Flächen** – z. B. erst ein Rechteck, einen
-     Kreis oder mit dem Stift einen Umriss malen, dann hineintippen. Straßen, Wege und Wände des
-     Kartenbilds zählen nicht als Rand (sonst liefe die Farbe durch die ganze Stadt). Was im Umriss
-     gemalt ist (ein Kreis darin), bleibt als Loch frei. Ist der Umriss nicht geschlossen oder reicht
-     die Fläche über den Bildschirmrand hinaus, füllt der Eimer nichts und sagt Bescheid – dann den
-     Umriss schließen bzw. herauszoomen. Nochmal in dieselbe Füllung tippen legt keine zweite darüber;
-     mit einer anderen Farbe färbt man um. Wer mit dem Eimer zieht, verschiebt die Karte.
-   - **Farben:** Rot, Gelb, Grün, Blau, Schwarz, Weiß und **Eigene Farbe** (bunter Kreis): Farbwähler
-     des Geräts oder Hex-Wert eintippen (z. B. `#3A7BD5`); die zuletzt benutzten eigenen Farben stehen
-     im Dialog zur Auswahl.
-   - **Strichstärke** mit dem Schieberegler frei einstellen – von hauchdünn (ein Hundertstel Feld, für
-     feine Gassen auf Stadtkarten) bis dick (ein halbes Feld); der Punkt daneben zeigt die Stärke.
-     Sie richtet sich nach der Feldgröße und wirkt so auf jeder Karte gleich. **Füllung** (Quadrat-Knopf,
-     antippen wechselt: ohne → halb durchsichtig → deckend) für Rechteck, Kreis und Farbeimer (der
-     Eimer füllt nie „ohne“, sondern dann halb durchsichtig). Am Handy steht der Schieberegler in einer
-     eigenen Zeile über die ganze Breite.
-   - **Nur für mich** (Knopf mit den Personen bzw. 🔒): Was man malt, solange das Schloss an ist, sieht
-     niemand sonst – auch nicht der Meister (bzw. die Spieler, wenn der Meister es nutzt). Praktisch für
-     eigene Notizen, Pläne oder Markierungen. Antippen schaltet zurück auf „für alle“; schon gemalte
-     Zeichnungen bleiben, wie sie gemalt wurden. „Alles löschen“ des Meisters lässt die privaten
-     Zeichnungen der Spieler stehen.
-   - **↶ Rückgängig** (eigene letzte Zeichnung, am Rechner auch Strg + Z), **🗑 Alles löschen** (alle
-     Zeichnungen, auch die der Spieler – mit Rückfrage) und **Fertig** (am Handy ✓) bzw. Esc legt den
-     Stift weg.
+10. **Auf die Karte malen (Stift)** – Weg einzeichnen, Falle einkreisen, Raum einfärben, Pfeil zur
+    Tür (auch die Spieler können malen, siehe unten): Knopf **✎** (rechts an der Karte) nimmt den Stift
+    in die Hand, unten erscheint die Stiftleiste. Ein Finger bzw. die linke Maustaste malt; **zwei
+    Finger** (bzw. rechte Maustaste oder Leertaste + Maus) verschieben und zoomen die Karte weiter.
+    In der Leiste:
 
-   Figuren lassen sich beim Malen nicht verschieben. Jede Zeichnung erscheint, sobald man den Finger
-   hebt, bei allen, die die Karte sehen; auf einer vorbereiteten Karte erst, wenn sie gezeigt wird.
-   Flächen des Farbeimers liegen unter den Linien. Die Zeichnungen gehören zur Karte: Sie bleiben, bis
-   sie gelöscht werden, und verschwinden mit der Karte. Der Radierer des Meisters erfasst alle
-   Zeichnungen. Werkzeug, Farbe, Stärke, Füllung und „nur für mich“ merkt sich das Gerät.
-   - **Malrecht:** Unter **Gruppe** → **Mitglieder** steht bei jedem Spieler **✎ darf malen** – antippen
-     sperrt das Malen für ihn (**✎ gesperrt**), nochmal antippen erlaubt es wieder. **Malen für alle
-     sperren** und **Allen erlauben** schalten alle Spieler auf einmal (auch wer später beitritt, darf
-     zunächst malen). Gesperrte Spieler verlieren den Stift sofort und bekommen einen Hinweis; ihre
-     schon gemalten Linien bleiben, löschen dürfen sie sie weiterhin. Der Meister malt immer.
+- **Werkzeuge:** **Stift** (freihand), **gerade Linie**, **Pfeil**, **Rechteck** und **Kreis/Ellipse**
+  (aufziehen; mit gedrückter Umschalttaste: Quadrat, Kreis bzw. Linien in 45°-Schritten),
+  **Farbeimer** und **Radierer** (über Zeichnungen wischen).
+- **Farbeimer:** Antippen füllt die zusammenhängende Fläche, so wie man sie sieht – begrenzt von den
+  Linien der Karte (z. B. Wände) und von allem, was schon gemalt ist. Größere Inseln (ein Tisch im
+  Raum) bleiben frei, feine Sprenkel der Kartenstruktur werden mitgefüllt. Wer mit dem Eimer zieht,
+  verschiebt die Karte. Gefüllt wird im sichtbaren Bereich (mit etwas Rand) – eine Fläche, die bis
+  über den Bildschirmrand reicht, endet dort; dann herauszoomen und noch einmal tippen. Nochmal in
+  dieselbe Füllung (gleiche Farbe) tippen legt keine zweite darüber.
+- **Farben:** Rot, Gelb, Grün, Blau, Schwarz, Weiß und **Eigene Farbe** (bunter Kreis): Farbwähler
+  des Geräts oder Hex-Wert eintippen (z. B. `#3A7BD5`); die zuletzt benutzten eigenen Farben stehen
+  im Dialog zur Auswahl.
+- **Strichstärke** mit dem Schieberegler frei einstellen – von hauchdünn (ein Hundertstel Feld, für
+  feine Gassen auf Stadtkarten) bis dick (ein halbes Feld); der Punkt daneben zeigt die Stärke.
+  Sie richtet sich nach der Feldgröße und wirkt so auf jeder Karte gleich. **Füllung** (Quadrat-Knopf,
+  antippen wechselt: ohne → halb durchsichtig → deckend) für Rechteck, Kreis und Farbeimer (der
+  Eimer füllt nie „ohne“, sondern dann halb durchsichtig). Am Handy steht der Schieberegler in einer
+  eigenen Zeile über die ganze Breite.
+- **Nur für mich** (Knopf mit den Personen bzw. 🔒): Was man malt, solange das Schloss an ist, sieht
+  niemand sonst – auch nicht der Meister (bzw. die Spieler, wenn der Meister es nutzt). Praktisch für
+  eigene Notizen, Pläne oder Markierungen. Antippen schaltet zurück auf „für alle“; schon gemalte
+  Zeichnungen bleiben, wie sie gemalt wurden. „Alles löschen“ des Meisters lässt die privaten
+  Zeichnungen der Spieler stehen.
+- **↶ Rückgängig** (eigene letzte Zeichnung, am Rechner auch Strg + Z), **🗑 Alles löschen** (alle
+  Zeichnungen, auch die der Spieler – mit Rückfrage) und **Fertig** (am Handy ✓) bzw. Esc legt den
+  Stift weg.
+
+Figuren lassen sich beim Malen nicht verschieben. Jede Zeichnung erscheint, sobald man den Finger
+hebt, bei allen, die die Karte sehen; auf einer vorbereiteten Karte erst, wenn sie gezeigt wird.
+Flächen des Farbeimers liegen unter den Linien. Die Zeichnungen gehören zur Karte: Sie bleiben, bis
+sie gelöscht werden, und verschwinden mit der Karte. Der Radierer des Meisters erfasst alle
+Zeichnungen. Werkzeug, Farbe, Stärke, Füllung und „nur für mich“ merkt sich das Gerät.
+
+- **Zeichnungen ausblenden:** Das **Auge** rechts an der Karte (erscheint, sobald etwas gemalt ist)
+  blendet alle Zeichnungen aus – **nur auf dem eigenen Gerät**, die anderen sehen sie weiter. Dann
+  ist das Auge durchgestrichen und zeigt, wie viele ausgeblendet sind; nochmal antippen blendet sie
+  wieder ein. Wer den Stift nimmt, sieht sie automatisch wieder. Das Gerät merkt sich die Wahl.
+- **Malrecht:** Unter **Gruppe** → **Mitglieder** steht bei jedem Spieler **✎ darf malen** – antippen
+  sperrt das Malen für ihn (**✎ gesperrt**), nochmal antippen erlaubt es wieder. **Malen für alle
+  sperren** und **Allen erlauben** schalten alle Spieler auf einmal (auch wer später beitritt, darf
+  zunächst malen). Gesperrte Spieler verlieren den Stift sofort und bekommen einen Hinweis; ihre
+  schon gemalten Linien bleiben, löschen dürfen sie sie weiterhin. Der Meister malt immer.
 
 **Karte selbst bauen (Karten-Editor)**
 
@@ -405,6 +428,8 @@ fragt nach.
   Radierer und **Meine Zeichnungen löschen** wirken bei Spielern nur auf die eigenen; die Zeichnungen
   des Meisters und der anderen bleiben. Solange der Stift aktiv ist, verschwinden am Handy die Knöpfe „Werte“ und „Proben“ –
   **Fertig** bringt sie zurück.
+- **Ausschnitt des Meisters:** Hat der Meister einen Ausschnitt festgelegt, gleitet die Karte dorthin
+  (mit seinem Zoom). Ist er begrenzt, kommt man nicht darüber hinaus – der Rest ist abgedeckt.
 - **Meine Figur aufstellen:** Steht die eigene Figur noch nicht auf der gezeigten Karte, stellt man sie
   selbst auf – mit Farbe und auf Wunsch eigenem Bild (sonst das Bild der letzten Figur). Danach ziehen.
 
@@ -487,6 +512,16 @@ Beitreten erst im Tab **Held** ihren Helden). Wer einen Helden geöffnet hat, ha
 - Bilder werden nach dem ersten Laden auf dem Gerät gespeichert und nicht erneut heruntergeladen
   (Detailkacheln in einem eigenen Speicher, damit sie die Karten- und Figurenbilder nicht verdrängen).
   Die Karte selbst braucht eine Verbindung; ohne Netz zeigt der Tab einen Hinweis.
+
+## Offizielle Karten und Lizenz
+
+Die Aventurienkarte (`karten/aventurien.jpg`) stammt unverändert aus dem **Kartenpaket**, das Ulisses
+Spiele für DSA-Fanprojekte bereitstellt (Karte: Ina Kramer, © Ulisses Spiele). Sie darf unter der
+[Lizenzvereinbarung zum Ulisses-Kartenpaket](https://de.wiki-aventurica.de/wiki/Kartenpaket/Lizenz)
+nicht-kommerziell genutzt und weitergegeben werden – mit Verweis auf die Lizenz und ohne die Hinweise
+auf der Karte (Fanprojekt-Logo, „Mit freundlicher Genehmigung der Ulisses-Spiele GmbH“) zu verändern.
+Diese App ist ein kostenloses DSA-Fanprojekt; bei der Karte steht in der App immer der Hinweis mit
+Link zur Lizenz. Mehr dazu in `karten/LIZENZ.md`. Die Lizenz der App selbst gilt nicht für die Karte.
 
 ## Fehlerbehebung
 
@@ -574,6 +609,8 @@ js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, G
 js/room-map.js           Karte im Raum: laden, live aktuell halten, Aktionen (Meister/Spieler)
 js/map.js                Karte als reine Funktionen: Raster, Einrasten, Aufstellen, Zoom, Auswahl, Ping
 js/map-api.js            Karte auf dem Server: Karten, Figuren, Bilder (Storage), Realtime
+js/official-maps.js      Mitgelieferte offizielle Karten (Aventurien) und ihr Lizenzhinweis
+karten/                  Aventurienkarte aus dem Ulisses-Kartenpaket (unverändert) und LIZENZ.md
 js/image.js              Bilder vor dem Hochladen verkleinern bzw. zuschneiden, gebaute Karten umwandeln
 js/map-editor.js         Karten-Editor als reine Funktionen: Szene, Gelände, Objekte, Zufallsgenerator
 js/map-render.js         Gebaute Karten zeichnen: Boden, Gelände mit weichen Rändern, alle Objekte

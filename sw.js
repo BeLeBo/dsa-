@@ -117,6 +117,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (url.origin !== self.location.origin) return; // Server-Anfragen nie zwischenspeichern
+  // Mitgelieferte Karten (mehrere MB) lädt nur der Meister einmal beim Hinzufügen – nicht speichern.
+  if (url.pathname.includes('/karten/')) return;
   event.respondWith(networkFirst(request, event));
 });
 

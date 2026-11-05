@@ -396,6 +396,71 @@ export function clampView(view, viewport, map) {
   };
 }
 
+// -----------------------------------------------------------------------------
+// Ausschnitt für die Spieler: Der Meister legt fest, welchen Teil der Karte (und wie nah) sie sehen.
+// -----------------------------------------------------------------------------
+
+/** Kleinster Ausschnitt (Kartenpunkte je Seite). */
+const MIN_FRAME_PX = 8;
+
+/**
+ * Ausschnitt aus der Datenbank prüfen: { x, y, w, h } in Kartenpunkten, auf die Karte begrenzt,
+ * locked = Spieler kommen nicht darüber hinaus. null, wenn keiner (oder unbrauchbar).
+ */
+export function normalizeFrame(value, map) {
+  if (!value || typeof value !== 'object' || !map) return null;
+  const numbers = ['x', 'y', 'w', 'h'].map((key) => Number(value[key]));
+  if (!numbers.every(Number.isFinite)) return null;
+  const x = clamp(numbers[0], 0, map.width);
+  const y = clamp(numbers[1], 0, map.height);
+  const w = Math.min(numbers[2], map.width - x);
+  const h = Math.min(numbers[3], map.height - y);
+  if (!(w >= MIN_FRAME_PX && h >= MIN_FRAME_PX)) return null;
+  return { x: round1(x), y: round1(y), w: round1(w), h: round1(h), locked: value.locked === true };
+}
+
+/** Was man bei dieser Ansicht von der Karte sieht (Kartenpunkte, auf die Karte begrenzt). */
+export function frameFromView(view, viewport, map, locked = false) {
+  const start = screenToMap(view, { x: 0, y: 0 });
+  const end = screenToMap(view, { x: viewport.width, y: viewport.height });
+  const x = Math.max(0, start.x);
+  const y = Math.max(0, start.y);
+  return normalizeFrame({ x, y, w: Math.min(map.width, end.x) - x, h: Math.min(map.height, end.y) - y, locked }, map);
+}
+
+/** Ansicht, in der der Ausschnitt ganz und mittig zu sehen ist. */
+export function fitFrame(viewport, frame, { padding = 0, maxScale = Infinity } = {}) {
+  const scale = Math.min((viewport.width - 2 * padding) / frame.w, (viewport.height - 2 * padding) / frame.h, maxScale);
+  const safeScale = scale > 0 ? scale : 1;
+  return {
+    scale: safeScale,
+    x: viewport.width / 2 - (frame.x + frame.w / 2) * safeScale,
+    y: viewport.height / 2 - (frame.y + frame.h / 2) * safeScale,
+  };
+}
+
+/**
+ * Begrenzter Ausschnitt: Der Bildschirm bleibt innerhalb des Ausschnitts. Ist er (bei diesem Zoom)
+ * schmaler oder niedriger als der Bildschirm, steht er in dieser Richtung mittig.
+ */
+export function clampToFrame(view, viewport, frame) {
+  const axis = (offset, size, start, length) => {
+    if (length * view.scale <= size) return size / 2 - (start + length / 2) * view.scale;
+    return clamp(offset, size - (start + length) * view.scale, -start * view.scale);
+  };
+  return {
+    scale: view.scale,
+    x: axis(view.x, viewport.width, frame.x, frame.w),
+    y: axis(view.y, viewport.height, frame.y, frame.h),
+  };
+}
+
+/** Zoomgrenzen im begrenzten Ausschnitt: nicht weiter heraus, als er gerade ganz passt. */
+export function frameZoomLimits(limits, viewport, frame) {
+  const min = fitFrame(viewport, frame).scale;
+  return { min, max: Math.max(limits.max, min) };
+}
+
 export function screenToMap(view, point) {
   return { x: (point.x - view.x) / view.scale, y: (point.y - view.y) / view.scale };
 }

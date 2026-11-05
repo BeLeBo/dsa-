@@ -19,11 +19,13 @@ import { createDrawBar } from './map-draw-bar.js';
 import { createVitalsPanel, createChecksPanel, createHeroPicker, poolSummary } from './play-panels.js';
 import { createRecentRolls } from './play-log.js';
 import { createCombatStrip } from './play-combat.js';
-import { confirmDialog } from './dialog.js';
+import { confirmDialog, openDialog } from './dialog.js';
 import { imageUrl, tileBlob } from '../map-api.js';
 import { currentEntry } from '../combat.js';
 import { readJson, writeJson } from '../storage.js';
+import { mapCredit } from '../official-maps.js';
 import {
+  normalizeFrame,
   normalizeGrid,
   gridSizeFromCells,
   cellsAcross,
@@ -227,6 +229,9 @@ export function createMapView(
     lifeOf: (token) =>
       tokenLifeBar(token, token.character_id ? heroFor(token.character_id) : null, { master: isMaster() }),
     selectable: isMaster,
+    // Spieler sehen den Ausschnitt, den der Meister festlegt; der Meister sieht ihn als Rahmen.
+    followsFrame: () => !isMaster(),
+    showsFrame: isMaster,
     onMove: (moves) => controller.actions.moveTokens(moves).catch((error) => showError(error, 'Figur nicht bewegt')),
     onSelect: () => renderPanels(),
     // Spieler tippt die eigene Figur an: Werte aufklappen (am Handy die linke Schublade).
@@ -245,10 +250,12 @@ export function createMapView(
       controller.actions
         .addDrawing({ ...drawing, private: drawBar.style().private })
         .catch((error) => showError(error, 'Zeichnung nicht gespeichert')),
-    onBucketMiss: () =>
+    onBucketMiss: () => showToast('Hier ist keine Fläche zum Füllen – tippe in eine Fläche, nicht auf einen Strich.'),
+    onDrawingsHidden: (hidden) =>
       showToast(
-        'Der Farbeimer füllt nur selbst gemalte, geschlossene Flächen – erst einen Umriss malen (z. B. ein Rechteck), dann hineintippen. Reicht die Fläche über den Bildschirmrand, vorher herauszoomen.',
-        { duration: 8000 },
+        hidden
+          ? 'Zeichnungen ausgeblendet – nur bei dir, die anderen sehen sie weiter. Das Auge blendet sie wieder ein.'
+          : 'Zeichnungen wieder eingeblendet.',
       ),
     onErase: (ids) =>
       controller.actions.removeDrawings(ids).catch((error) => showError(error, 'Zeichnungen nicht gelöscht')),
@@ -418,6 +425,20 @@ export function createMapView(
   const center = h('div', { class: 'map-center' }, stage.element, message);
   const game = h('div', { class: 'map-game' }, vitals.element, center, checks.element, vitalsToggle, checksToggle);
   panel.append(tabStrip, toolbar, notice, combatStrip.element, gridPanel.element, game);
+  // Mitgelieferte Karten (Ulisses-Kartenpaket): Urheber und Lizenz stehen immer bei der Karte.
+  const creditLine = h('p', { class: 'map-credit', hidden: true });
+  stage.element.append(creditLine);
+  function renderCredit(map) {
+    const credit = mapCredit(map);
+    if (!changed('credit', credit?.text ?? null)) return;
+    creditLine.hidden = !credit;
+    if (!credit) return;
+    setChildren(
+      creditLine,
+      `${credit.text} · `,
+      h('a', { href: credit.licenseUrl, target: '_blank', rel: 'noopener' }, credit.licenseLabel),
+    );
+  }
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && drawer && !document.querySelector('dialog[open]')) openDrawer(null);
   });
@@ -506,6 +527,84 @@ export function createMapView(
     ];
   }
 
+  /**
+   * Meister: Ausschnitt für die Spieler – was er gerade sieht (mit diesem Zoom), auf Wunsch so
+   * begrenzt, dass die Spieler nicht weiter heraus- oder wegschieben können.
+   */
+  function openPlayerViewDialog(map) {
+    const current = normalizeFrame(map.player_view, map);
+    const dialog = openDialog({ title: 'Ausschnitt für die Spieler', className: 'dialog-small player-view-dialog' });
+    const lock = h('input', { type: 'checkbox', class: 'player-view-lock', checked: current?.locked ?? false });
+    const save = (frame, message) =>
+      run('Ausschnitt nicht gespeichert', async () => {
+        await controller.actions.setPlayerView(map.id, frame);
+        dialog.close();
+        showToast(message);
+      });
+    const shown = isShownMap(map);
+    dialog.body.append(
+      h(
+        'p',
+        { class: 'section-hint' },
+        'Verschiebe und zoome die Karte so, wie die Spieler sie sehen sollen – dann hier übernehmen. Ihre Karte gleitet sofort dorthin.',
+      ),
+      h(
+        'label',
+        { class: 'check' },
+        lock,
+        h('span', {}, 'Spieler sehen nur diesen Ausschnitt (nicht weiter herauszoomen oder wegschieben)'),
+      ),
+      shown ? null : h('p', { class: 'field-hint' }, 'Gilt, sobald du diese Karte allen zeigst.'),
+      h(
+        'div',
+        { class: 'player-view-actions' },
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'btn btn-primary',
+            onclick: () => {
+              const frame = stage.visibleFrame(lock.checked);
+              if (!frame) return;
+              save(
+                frame,
+                lock.checked
+                  ? '🔒 Die Spieler sehen jetzt nur diesen Ausschnitt.'
+                  : 'Die Spieler sehen jetzt diesen Ausschnitt (sie können sich frei umsehen).',
+              );
+            },
+          },
+          current ? 'Jetzigen Ausschnitt übernehmen' : 'Diesen Ausschnitt den Spielern zeigen',
+        ),
+        current
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'btn',
+                onclick: () => {
+                  dialog.close();
+                  stage.showFrame();
+                },
+              },
+              'Zum Ausschnitt der Spieler',
+            )
+          : null,
+        current
+          ? h(
+              'button',
+              {
+                type: 'button',
+                class: 'btn',
+                onclick: () => save(null, 'Die Spieler sehen wieder die ganze Karte.'),
+              },
+              'Aufheben (ganze Karte)',
+            )
+          : null,
+      ),
+    );
+  }
+
   function renderToolbar(map) {
     const hasHeroes = room.get().characters.length > 0;
     const canPlace = canPlaceOwnToken(map);
@@ -524,6 +623,7 @@ export function createMapView(
         heroLabel,
         tabsCollapsed,
         map ? isShownMap(map) : false,
+        JSON.stringify(map?.player_view ?? null),
       )
     )
       return;
@@ -574,6 +674,7 @@ export function createMapView(
       toolButton('Raster', () => (gridPanel.isOpen() ? gridPanel.close() : gridPanel.open()), {
         pressed: gridPanel.isOpen(),
       }),
+      toolButton('Ausschnitt', () => openPlayerViewDialog(map), { pressed: Boolean(map.player_view) }),
       toolButton('+ Figur', () =>
         openTokenDialog({ controller, token: null, characters: room.get().characters, center: stage.visibleCenter }),
       ),
@@ -824,6 +925,7 @@ export function createMapView(
     renderToolbar(map);
     renderNotice(state, map);
     renderMessage(state, map);
+    renderCredit(map);
     combatStrip.render();
     stage.element.hidden = !map;
     if (map) {

@@ -24,6 +24,11 @@ import {
   fitView,
   zoomLimits,
   clampView,
+  normalizeFrame,
+  fitFrame,
+  clampToFrame,
+  frameZoomLimits,
+  frameFromView,
   zoomAt,
   panBy,
   pinchView,
@@ -61,6 +66,7 @@ import {
   MAX_SHARPEN_PIXELS,
 } from '../map-detail.js';
 import { unsharpMask } from '../sharpen.js';
+import { readJson, writeJson } from '../storage.js';
 
 /** Ab dieser Bewegung (Bildschirmpunkte) ist es kein Antippen mehr. */
 const DRAG_THRESHOLD_PX = 6;
@@ -80,6 +86,8 @@ const LONG_PRESS_MS = 550;
 /** Ein Ping so nah am Rand (Bildschirmpunkte) holt die Karte ins Bild. */
 const PING_MARGIN_PX = 48;
 const PAN_ANIMATION_MS = 350;
+/** Gleiten zum Ausschnitt des Meisters (Verschieben und Zoomen). */
+const FRAME_ANIMATION_MS = 600;
 /** Zeichnen: Abstand zwischen zwei Punkten einer Linie (Bildschirmpunkte) und Reichweite des Radierers. */
 const MIN_STROKE_STEP_PX = 2;
 const ERASER_RADIUS_PX = 14;
@@ -87,6 +95,8 @@ const ERASER_RADIUS_PX = 14;
 const MIN_SHAPE_PX = 6;
 /** Farbeimer: so viele Bildpunkte untersucht er höchstens (sichtbarer Bereich in Bildschirmauflösung). */
 const BUCKET_MAX_PIXELS = 4_000_000;
+/** Zeichnungen auf diesem Gerät ausgeblendet (gilt für alle Karten). */
+const DRAWINGS_HIDDEN_KEY = 'dsa5.karte.zeichnungenAus';
 /** Schärfe-Ebene: so lange nach dem letzten Verschieben/Zoomen warten, dann neu zeichnen. */
 const SHARP_SETTLE_MS = 160;
 /** So viele Detailkacheln bleiben entpackt im Speicher (je bis zu 4 MB). */
@@ -164,6 +174,9 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
  * @param {(ids: string[]) => void} options.onErase       Linien wegradiert
  * @param {() => void} options.onUndo                     Strg + Z beim Zeichnen
  * @param {(active: boolean) => void} options.onDrawModeChange  Stift an oder aus
+ * @param {(hidden: boolean) => void} [options.onDrawingsHidden]  Zeichnungen auf diesem Gerät aus- bzw. eingeblendet
+ * @param {() => boolean} [options.followsFrame]  Spieler: dem Ausschnitt des Meisters folgen (maps.player_view)
+ * @param {() => boolean} [options.showsFrame]    Meister: den Ausschnitt der Spieler als Rahmen zeigen
  * @param {(path: string) => Promise<string>} options.loadImage  Bildadresse zu einem Speicherpfad
  * @param {(path: string) => Promise<Blob>} [options.loadTile]  Detailkachel großer Karten laden
  */
@@ -186,6 +199,9 @@ export function createMapStage({
   onErase = () => {},
   onUndo = () => {},
   onDrawModeChange = () => {},
+  onDrawingsHidden = () => {},
+  followsFrame = () => false,
+  showsFrame = () => false,
   loadImage,
   loadTile = null,
 }) {
@@ -197,7 +213,10 @@ export function createMapStage({
   const drawFills = svg('g');
   const drawLines = svg('g');
   drawLayer.append(drawFills, drawLines);
-  const stage = h('div', { class: 'map-stage' }, image, sharpCanvas, grid.element, drawLayer);
+  // Meister: Rahmen um den Ausschnitt, den die Spieler sehen
+  const frameLabel = h('span', { class: 'map-frame-label' });
+  const frameBox = h('div', { class: 'map-frame-box', hidden: true, 'aria-hidden': 'true' }, frameLabel);
+  const stage = h('div', { class: 'map-stage' }, image, sharpCanvas, grid.element, drawLayer, frameBox);
   const tokenLayer = h('div', { class: 'map-tokens' });
   const pingLayer = h('div', { class: 'map-pings', 'aria-hidden': 'true' });
   const marquee = h('div', { class: 'map-marquee', hidden: true });
@@ -230,22 +249,32 @@ export function createMapStage({
     'aria-pressed': 'false',
     hidden: true,
   });
+  // Zeichnungen nur auf diesem Gerät ausblenden (die anderen sehen sie weiter) – das Gerät merkt es sich.
+  let drawingsHidden = readJson(DRAWINGS_HIDDEN_KEY, false) === true;
+  const hideButton = controlButton('Zeichnungen ausblenden', ICONS.eye, () => setDrawingsHidden(!drawingsHidden), {
+    'aria-pressed': 'false',
+    hidden: true,
+  });
   const fullscreenButton = controlButton('Vollbild', ICONS.expand, toggleFullscreen, { 'aria-pressed': 'false' });
+  const fitButton = controlButton('Ganze Karte zeigen', ICONS.fit, () => fit());
   const controls = h(
     'div',
     { class: 'map-controls' },
     controlButton('Vergrößern', ICONS.plus, () => zoomBy(BUTTON_ZOOM_FACTOR)),
     controlButton('Verkleinern', ICONS.minus, () => zoomBy(1 / BUTTON_ZOOM_FACTOR)),
-    controlButton('Ganze Karte zeigen', ICONS.fit, () => fit()),
+    fitButton,
     selectButton,
     pingButton,
     drawButton,
+    hideButton,
     fullscreenButton,
   );
   const element = h('div', { class: 'map-frame' }, viewport, controls);
 
   let map = null;
   let gridValues = null;
+  /** Ausschnitt für die Spieler (maps.player_view, siehe normalizeFrame) – oder null. */
+  let frame = null;
   let view = { x: 0, y: 0, scale: 1 };
   let fitted = false;
   let userMoved = false;
@@ -263,6 +292,7 @@ export function createMapStage({
   let drawStyle = { tool: 'pen', color: 'rot', width: 'mittel', fill: 'keine' };
   let drawings = [];
   const drawingViews = new Map();
+  updateHideButton(); // gemerkte Wahl: ausgeblendet bleibt ausgeblendet
   /** Linie, die gerade gezeichnet wird: { path, points, color, width }; Form: { kind, start, end, … }. */
   let draft = null;
   let shapeDraft = null;
@@ -294,9 +324,32 @@ export function createMapStage({
   const viewportSize = () => ({ width: viewport.clientWidth, height: viewport.clientHeight });
   const hasSize = () => viewport.clientWidth > 0 && viewport.clientHeight > 0;
 
+  /** Ausschnitt des Meisters, über den dieses Gerät nicht hinaus darf (Spieler, begrenzt) – oder null. */
+  const lockedFrame = () => (followsFrame() && frame?.locked ? frame : null);
+
+  /** Zoomgrenzen – im begrenzten Ausschnitt nicht weiter heraus, als er ganz passt. */
+  function limits(size = viewportSize()) {
+    const base = zoomLimits(size, map, gridValues);
+    const locked = lockedFrame();
+    return locked ? frameZoomLimits(base, size, locked) : base;
+  }
+
+  /** Karte (bzw. begrenzter Ausschnitt) bleibt im Blick. */
+  function clampTo(target, size) {
+    const locked = lockedFrame();
+    if (!locked) return clampView(target, size, map);
+    const { min, max } = limits(size);
+    return clampToFrame({ ...target, scale: Math.min(max, Math.max(min, target.scale)) }, size, locked);
+  }
+
+  /** Ansicht auf den Ausschnitt des Meisters (Spieler) bzw. die ganze Karte. */
+  function homeView(size) {
+    return followsFrame() && frame ? fitFrame(size, frame, { padding: 4 }) : fitView(size, map);
+  }
+
   function applyView() {
     if (!map || !hasSize()) return;
-    view = clampView(view, viewportSize(), map);
+    view = clampTo(view, viewportSize());
     stage.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
     stage.style.setProperty('--inverse-scale', String(1 / view.scale));
     const cellPx = gridValues ? gridValues.size * view.scale : Infinity;
@@ -307,10 +360,10 @@ export function createMapStage({
     scheduleSharp();
   }
 
-  /** Ganze Karte zeigen (Knopf). */
+  /** Ganze Karte zeigen (Knopf) – Spieler mit Ausschnitt des Meisters: diesen Ausschnitt. */
   function fit() {
     if (!map || !hasSize()) return;
-    view = fitView(viewportSize(), map);
+    view = homeView(viewportSize());
     fitted = true;
     userMoved = true;
     applyView();
@@ -323,6 +376,12 @@ export function createMapStage({
   function showStart() {
     if (!map || !hasSize()) return;
     const size = viewportSize();
+    if (followsFrame() && frame) {
+      fitted = true;
+      view = homeView(size);
+      applyView();
+      return;
+    }
     const whole = fitView(size, map);
     const mine = tokens.filter(isMine);
     const readable = READABLE_CELL_PX / (gridValues?.size ?? 1);
@@ -334,7 +393,7 @@ export function createMapStage({
         x: mine.reduce((sum, token) => sum + token.x, 0) / mine.length,
         y: mine.reduce((sum, token) => sum + token.y, 0) / mine.length,
       };
-      const scale = Math.min(zoomLimits(size, map, gridValues).max, readable);
+      const scale = Math.min(limits(size).max, readable);
       view = { scale, x: size.width / 2 - center.x * scale, y: size.height / 2 - center.y * scale };
     }
     applyView();
@@ -343,7 +402,7 @@ export function createMapStage({
   function zoomBy(factor, point = { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 }) {
     if (!map || !hasSize()) return;
     userMoved = true;
-    view = zoomAt(view, factor, point, zoomLimits(viewportSize(), map, gridValues));
+    view = zoomAt(view, factor, point, limits());
     applyView();
   }
 
@@ -388,13 +447,71 @@ export function createMapStage({
     entry.element.style.transform = `translate(${center.x}px, ${center.y}px)`;
   }
 
+  /**
+   * Gleitet sanft zu einer Ansicht (Verschieben und Zoomen): Der Punkt in der Bildschirmmitte
+   * wandert, die Vergrößerung ändert sich gleichmäßig. Wer selbst schiebt oder zoomt, hat Vorrang.
+   */
+  function animateTo(target) {
+    const size = viewportSize();
+    const to = clampTo(target, size);
+    const from = view;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    cancelAnimationFrame(panAnimation);
+    if (reduced) {
+      view = to;
+      applyView();
+      return;
+    }
+    const center = (v) => ({ x: (size.width / 2 - v.x) / v.scale, y: (size.height / 2 - v.y) / v.scale });
+    const a = center(from);
+    const b = center(to);
+    const start = performance.now();
+    const step = (now) => {
+      if (gesture) return;
+      const t = Math.min(1, (now - start) / FRAME_ANIMATION_MS);
+      const eased = 1 - (1 - t) ** 3;
+      const scale = from.scale * (to.scale / from.scale) ** eased;
+      const x = a.x + (b.x - a.x) * eased;
+      const y = a.y + (b.y - a.y) * eased;
+      view = { scale, x: size.width / 2 - x * scale, y: size.height / 2 - y * scale };
+      applyView();
+      if (t < 1) panAnimation = requestAnimationFrame(step);
+    };
+    panAnimation = requestAnimationFrame(step);
+  }
+
+  /**
+   * Meister: gestrichelter Rahmen um den Ausschnitt der Spieler. Spieler mit begrenztem Ausschnitt:
+   * alles außerhalb ist abgedeckt (passt der Bildschirm nicht genau, sähen sie sonst darüber hinaus).
+   */
+  function updateFrameBox() {
+    const outline = Boolean(frame) && showsFrame();
+    const mask = !outline && Boolean(lockedFrame());
+    frameBox.hidden = !outline && !mask;
+    frameBox.classList.toggle('is-mask', mask);
+    frameLabel.hidden = !outline;
+    tokenLayer.classList.toggle('has-frame-mask', mask);
+    const fitLabel = followsFrame() && frame ? 'Ausschnitt des Meisters zeigen' : 'Ganze Karte zeigen';
+    fitButton.setAttribute('aria-label', fitLabel);
+    fitButton.title = fitLabel;
+    if (frameBox.hidden) return;
+    Object.assign(frameBox.style, {
+      left: `${frame.x}px`,
+      top: `${frame.y}px`,
+      width: `${frame.w}px`,
+      height: `${frame.h}px`,
+    });
+    frameBox.classList.toggle('is-locked', frame.locked);
+    frameLabel.textContent = frame.locked ? '🔒 Spieler sehen nur das' : 'Ausschnitt der Spieler';
+  }
+
   /** Schiebt die Karte sanft so, dass der Punkt in der Mitte steht (nur wenn er am Rand oder draußen liegt). */
   function reveal(point) {
     const size = viewportSize();
     const target = viewToReveal(view, point, size, Math.min(PING_MARGIN_PX, size.width / 4, size.height / 4));
     if (!target) return;
     const from = view;
-    const to = clampView(target, size, map);
+    const to = clampTo(target, size);
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     cancelAnimationFrame(panAnimation);
     if (reduced) {
@@ -676,12 +793,40 @@ export function createMapStage({
       setPingMode(false);
       if (selectMode) toggleSelectMode();
       setSelection([]);
+      if (drawingsHidden) setDrawingsHidden(false); // malen nur mit sichtbaren Zeichnungen
     }
     showErasing(new Set());
     drawButton.setAttribute('aria-pressed', String(drawMode));
     viewport.classList.toggle('is-draw-mode', drawMode);
     viewport.dataset.tool = drawStyle.tool;
     onDrawModeChange(drawMode);
+  }
+
+  /**
+   * Zeichnungen auf diesem Gerät aus- oder einblenden. Beim Ausblenden legt man den Stift weg;
+   * der Knopf zeigt, wie viele gerade versteckt sind.
+   */
+  function setDrawingsHidden(hidden) {
+    const next = Boolean(hidden);
+    const changed = next !== drawingsHidden;
+    drawingsHidden = next;
+    writeJson(DRAWINGS_HIDDEN_KEY, next);
+    if (next && drawMode) setDrawMode(false);
+    updateHideButton();
+    if (changed) onDrawingsHidden(next);
+  }
+
+  function updateHideButton() {
+    drawLayer.classList.toggle('is-hidden', drawingsHidden);
+    hideButton.hidden = !drawingsHidden && drawings.length === 0;
+    hideButton.setAttribute('aria-pressed', String(drawingsHidden));
+    const label = drawingsHidden
+      ? `Zeichnungen einblenden (${drawings.length} ausgeblendet)`
+      : 'Zeichnungen ausblenden (nur bei dir)';
+    hideButton.setAttribute('aria-label', label);
+    hideButton.title = label;
+    hideButton.replaceChildren(icon(drawingsHidden ? ICONS.eyeOff : ICONS.eye));
+    hideButton.dataset.count = drawingsHidden && drawings.length ? String(drawings.length) : '';
   }
 
   /** SVG-Gruppe einer Zeichnung: Fläche, Linie und Pfeilspitze (siehe drawingPaths). */
@@ -703,6 +848,7 @@ export function createMapStage({
   }
 
   function renderDrawings() {
+    updateHideButton();
     const ids = new Set(drawings.map((drawing) => drawing.id));
     for (const [id, element] of drawingViews) {
       if (ids.has(id)) continue;
@@ -831,14 +977,13 @@ export function createMapStage({
   }
 
   /**
-   * Farbeimer: die Fläche um den Punkt (Kartenpunkte), begrenzt nur von dem, was gemalt ist –
-   * Straßen, Wege und Wände des Kartenbilds zählen nicht. Gefüllt wird nur, was rundum von
-   * Zeichnungen eingeschlossen ist. Gesucht wird im sichtbaren Bereich (mit Rand) in
+   * Farbeimer: die Fläche um den Punkt (Kartenpunkte) so, wie man sie sieht – Kartenbild,
+   * Detailkacheln und alle Zeichnungen. Gesucht wird im sichtbaren Bereich (mit Rand) in
    * Bildschirmauflösung. Liefert die Umrisse in Kartenpunkten oder null.
    */
   function bucketRings(point) {
     const region = visibleRegion(view, viewportSize(), map, 0.5);
-    if (!region) return null;
+    if (!region || !baseScale()) return null;
     let factor = view.scale;
     const pixels = region.width * region.height * factor * factor;
     if (pixels > BUCKET_MAX_PIXELS) factor *= Math.sqrt(BUCKET_MAX_PIXELS / pixels);
@@ -851,13 +996,17 @@ export function createMapStage({
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, width, height);
     context.setTransform(factor, 0, 0, factor, -region.x * factor, -region.y * factor);
-    // Nur Striche und Umrisse begrenzen – Füllungen nicht (sonst stapelt erneutes Füllen Flächen).
-    for (const drawing of drawings) paintDrawing(context, { ...drawing, fill: null });
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, map.width, map.height);
+    if (!sharpCanvas.hidden && sharpShown) {
+      const shown = sharpShown.region;
+      context.drawImage(sharpCanvas, shown.x, shown.y, shown.width, shown.height);
+    }
+    for (const drawing of drawings) paintDrawing(context, drawing);
     context.setTransform(1, 0, 0, 1, 0, 0);
     const { data } = context.getImageData(0, 0, width, height);
     const rings = bucketOutline(data, width, height, (point.x - region.x) * factor, (point.y - region.y) * factor, {
       maxPoints: MAX_DRAWING_POINTS,
-      enclosed: true,
     });
     return rings?.map((ring) => ring.map((spot) => ({ x: region.x + spot.x / factor, y: region.y + spot.y / factor })));
   }
@@ -914,6 +1063,13 @@ export function createMapStage({
     entry.element.style.height = `${diameter}px`;
     entry.element.style.setProperty('--token-size', `${diameter}px`);
     entry.element.style.transform = `translate(${center.x - diameter / 2}px, ${center.y - diameter / 2}px)`;
+    // Spieler mit begrenztem Ausschnitt: Figuren außerhalb liegen unter der Abdeckung.
+    const locked = lockedFrame();
+    const { x, y } = entry.position;
+    entry.element.classList.toggle(
+      'is-outside-frame',
+      Boolean(locked) && (x < locked.x || y < locked.y || x > locked.x + locked.w || y > locked.y + locked.h),
+    );
   }
 
   /** Lebensbalken unter der Figur: ein durchgehender Balken oder mehrere Abschnitte. */
@@ -1184,12 +1340,7 @@ export function createMapStage({
     pointers.set(event.pointerId, point);
     if (gesture.kind === 'pinch') {
       if (pointers.size < 2) return;
-      view = pinchView(
-        gesture.startView,
-        gesture.start,
-        pinchInfo([...pointers.values()]),
-        zoomLimits(viewportSize(), map, gridValues),
-      );
+      view = pinchView(gesture.startView, gesture.start, pinchInfo([...pointers.values()]), limits());
       applyView();
       return;
     }
@@ -1449,6 +1600,10 @@ export function createMapStage({
       drawLayer.setAttribute('height', map.height);
       drawLayer.setAttribute('viewBox', `0 0 ${map.width} ${map.height}`);
       updateControls();
+      const nextFrame = normalizeFrame(map.player_view, map);
+      const frameChanged = JSON.stringify(nextFrame) !== JSON.stringify(frame);
+      frame = nextFrame;
+      updateFrameBox();
       const nextDetail = normalizeDetail(map.detail, map);
       if (changedImage || nextDetail?.path !== detail?.path) {
         hideSharp();
@@ -1464,6 +1619,10 @@ export function createMapStage({
         userMoved = false;
         loadMapImage(map);
         showStart();
+      } else if (frameChanged && followsFrame() && frame && hasSize()) {
+        // Der Meister hat einen neuen Ausschnitt gewählt: dorthin gleiten.
+        fitted = true;
+        animateTo(homeView(viewportSize()));
       }
       renderTokens();
       applyView();
@@ -1495,6 +1654,15 @@ export function createMapStage({
     },
     /** Stift an oder aus (z. B. „Fertig“ in der Stiftleiste). */
     setDrawMode,
+    /** Zeichnungen auf diesem Gerät aus- oder einblenden. */
+    setDrawingsHidden,
+    /** Was man gerade von der Karte sieht – als Ausschnitt für die Spieler (Meister). */
+    visibleFrame: (locked = false) => (map && hasSize() ? frameFromView(view, viewportSize(), map, locked) : null),
+    /** Meister: zum Ausschnitt der Spieler gleiten. */
+    showFrame() {
+      if (map && frame && hasSize()) animateTo(fitFrame(viewportSize(), frame, { padding: 4 }));
+    },
+    drawingsHidden: () => drawingsHidden,
     isDrawing: () => drawMode,
     /** Werkzeug, Farbe oder Stärke des Stifts ändern. */
     setDrawStyle(changes) {

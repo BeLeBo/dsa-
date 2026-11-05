@@ -22,6 +22,7 @@ import { heroName, normalizeHero } from '../sheet.js';
 import { imageUrl } from '../map-api.js';
 import { enemyGroup, rememberedIni, rememberIni } from './play-combat.js';
 import { openMapEditor } from './map-editor-view.js';
+import { OFFICIAL_MAPS, MAP_CREDITS, findOfficialMap } from '../official-maps.js';
 
 /** Knopf, der während einer Aktion gesperrt ist und „…“ zeigt. */
 function busyButton(label, busyLabel, action, className = 'btn') {
@@ -118,6 +119,60 @@ function uploadForm(actions, onDone) {
     picker.element,
     field('Name', nameInput),
     upload,
+  );
+}
+
+/**
+ * Offizielle Karten (Ulisses-Kartenpaket), die die App mitbringt – z. B. ganz Aventurien.
+ * Ein Tipp legt sie im Raum an (wie hochgeladen); gibt es sie schon, wird sie geöffnet.
+ */
+function officialSection(controller, onDone) {
+  const credit = MAP_CREDITS.kartenpaket;
+  const rows = OFFICIAL_MAPS.map((official) => {
+    const exists = () => Boolean(findOfficialMap(controller.state.get().maps, official));
+    const label = exists() ? `${official.name} öffnen` : `${official.name} hinzufügen`;
+    const button = busyButton(
+      label,
+      'wird geladen …',
+      async () => {
+        try {
+          const onProgress = (done, total) => {
+            button.textContent = `volle Auflösung ${done} / ${total} …`;
+          };
+          const map = await controller.actions.addOfficialMap(official, { onProgress });
+          onDone();
+          showToast(
+            map.existed
+              ? `„${map.name}“ ist schon da – geöffnet.`
+              : `Karte „${map.name}“ hinzugefügt – nur du siehst sie, bis du sie zeigst. Mit „Ausschnitt“ legst du fest, welchen Teil die Spieler sehen.`,
+            { duration: map.existed ? undefined : 9000 },
+          );
+        } catch (error) {
+          showError(error, 'Karte nicht hinzugefügt');
+        }
+      },
+      exists() ? 'btn' : 'btn btn-primary',
+    );
+    return h(
+      'div',
+      { class: 'official-map' },
+      h('strong', {}, official.name),
+      h('span', { class: 'field-hint' }, official.description),
+      button,
+    );
+  });
+  return h(
+    'section',
+    { class: 'map-upload' },
+    h('h3', {}, 'Offizielle Karte'),
+    rows,
+    h(
+      'p',
+      { class: 'field-hint' },
+      `${credit.text}. Aus dem Kartenpaket von Ulisses Spiele, frei für nicht-kommerzielle Fanprojekte – `,
+      h('a', { href: credit.licenseUrl, target: '_blank', rel: 'noopener' }, 'Lizenz'),
+      '.',
+    ),
   );
 }
 
@@ -287,6 +342,7 @@ export function openMapsDialog(controller) {
       'Neue Karten siehst zuerst nur du – so kannst du sie in Ruhe vorbereiten. „Allen zeigen“ macht sie für die Gruppe sichtbar.',
     ),
     list,
+    officialSection(controller, dialog.close),
     uploadForm(controller.actions, dialog.close),
     buildSection(() => edit(null)),
   );
