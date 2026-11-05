@@ -2323,6 +2323,40 @@ body.map-fullscreen-open {
   margin-bottom: 8px;
 }
 
+/* Regionalkarten: aufklappbare Liste, je Karte Name und Knopf */
+.official-regions > summary {
+  margin: 4px 0 8px;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.official-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.official-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.official-name {
+  min-width: 0;
+}
+
+.official-list .btn {
+  flex: none;
+}
+
 /* Dialog „Ausschnitt für die Spieler“ */
 .player-view-actions {
   display: flex;
