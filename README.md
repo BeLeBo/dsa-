@@ -33,8 +33,9 @@ alles live für alle synchronisiert.
 | 18    | Spieler malen mit; Zoom bis in die Gassen, volle Auflösung, Schärfe     | ✅ fertig |
 | 19    | Malen: Farbeimer, eigene Farben (Hex), Formen                           | ✅ fertig |
 | 20    | Kampf: Spieler beenden ihren eigenen Zug                                | ✅ fertig |
-| 21    | Malrecht, Eimer nur für Gemaltes, freie Strichstärke, winzige Figuren   | ✅ fertig |
+| 21    | Malrecht, freie Strichstärke, winzige Figuren                           | ✅ fertig |
 | 22    | Kartenauswahl einklappen, nur für mich malen, Tote kommen nicht dran    | ✅ fertig |
+| 23    | Farbeimer wieder wie früher, Zeichnungen selbst ausblenden              | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -328,13 +329,12 @@ auf dem Server gespeichert und für den Meister sichtbar.
    - **Werkzeuge:** **Stift** (freihand), **gerade Linie**, **Pfeil**, **Rechteck** und **Kreis/Ellipse**
      (aufziehen; mit gedrückter Umschalttaste: Quadrat, Kreis bzw. Linien in 45°-Schritten),
      **Farbeimer** und **Radierer** (über Zeichnungen wischen).
-   - **Farbeimer:** füllt nur **selbst gemalte, geschlossene Flächen** – z. B. erst ein Rechteck, einen
-     Kreis oder mit dem Stift einen Umriss malen, dann hineintippen. Straßen, Wege und Wände des
-     Kartenbilds zählen nicht als Rand (sonst liefe die Farbe durch die ganze Stadt). Was im Umriss
-     gemalt ist (ein Kreis darin), bleibt als Loch frei. Ist der Umriss nicht geschlossen oder reicht
-     die Fläche über den Bildschirmrand hinaus, füllt der Eimer nichts und sagt Bescheid – dann den
-     Umriss schließen bzw. herauszoomen. Nochmal in dieselbe Füllung tippen legt keine zweite darüber;
-     mit einer anderen Farbe färbt man um. Wer mit dem Eimer zieht, verschiebt die Karte.
+   - **Farbeimer:** Antippen füllt die zusammenhängende Fläche, so wie man sie sieht – begrenzt von den
+     Linien der Karte (z. B. Wände) und von allem, was schon gemalt ist. Größere Inseln (ein Tisch im
+     Raum) bleiben frei, feine Sprenkel der Kartenstruktur werden mitgefüllt. Wer mit dem Eimer zieht,
+     verschiebt die Karte. Gefüllt wird im sichtbaren Bereich (mit etwas Rand) – eine Fläche, die bis
+     über den Bildschirmrand reicht, endet dort; dann herauszoomen und noch einmal tippen. Nochmal in
+     dieselbe Füllung (gleiche Farbe) tippen legt keine zweite darüber.
    - **Farben:** Rot, Gelb, Grün, Blau, Schwarz, Weiß und **Eigene Farbe** (bunter Kreis): Farbwähler
      des Geräts oder Hex-Wert eintippen (z. B. `#3A7BD5`); die zuletzt benutzten eigenen Farben stehen
      im Dialog zur Auswahl.
@@ -358,6 +358,10 @@ auf dem Server gespeichert und für den Meister sichtbar.
    Flächen des Farbeimers liegen unter den Linien. Die Zeichnungen gehören zur Karte: Sie bleiben, bis
    sie gelöscht werden, und verschwinden mit der Karte. Der Radierer des Meisters erfasst alle
    Zeichnungen. Werkzeug, Farbe, Stärke, Füllung und „nur für mich“ merkt sich das Gerät.
+   - **Zeichnungen ausblenden:** Das **Auge** rechts an der Karte (erscheint, sobald etwas gemalt ist)
+     blendet alle Zeichnungen aus – **nur auf dem eigenen Gerät**, die anderen sehen sie weiter. Dann
+     ist das Auge durchgestrichen und zeigt, wie viele ausgeblendet sind; nochmal antippen blendet sie
+     wieder ein. Wer den Stift nimmt, sieht sie automatisch wieder. Das Gerät merkt sich die Wahl.
    - **Malrecht:** Unter **Gruppe** → **Mitglieder** steht bei jedem Spieler **✎ darf malen** – antippen
      sperrt das Malen für ihn (**✎ gesperrt**), nochmal antippen erlaubt es wieder. **Malen für alle
      sperren** und **Allen erlauben** schalten alle Spieler auf einmal (auch wer später beitritt, darf

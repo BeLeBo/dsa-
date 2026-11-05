@@ -61,6 +61,7 @@ import {
   MAX_SHARPEN_PIXELS,
 } from '../map-detail.js';
 import { unsharpMask } from '../sharpen.js';
+import { readJson, writeJson } from '../storage.js';
 
 /** Ab dieser Bewegung (Bildschirmpunkte) ist es kein Antippen mehr. */
 const DRAG_THRESHOLD_PX = 6;
@@ -87,6 +88,8 @@ const ERASER_RADIUS_PX = 14;
 const MIN_SHAPE_PX = 6;
 /** Farbeimer: so viele Bildpunkte untersucht er höchstens (sichtbarer Bereich in Bildschirmauflösung). */
 const BUCKET_MAX_PIXELS = 4_000_000;
+/** Zeichnungen auf diesem Gerät ausgeblendet (gilt für alle Karten). */
+const DRAWINGS_HIDDEN_KEY = 'dsa5.karte.zeichnungenAus';
 /** Schärfe-Ebene: so lange nach dem letzten Verschieben/Zoomen warten, dann neu zeichnen. */
 const SHARP_SETTLE_MS = 160;
 /** So viele Detailkacheln bleiben entpackt im Speicher (je bis zu 4 MB). */
@@ -164,6 +167,7 @@ const isTyping = (target) => target instanceof Element && Boolean(target.closest
  * @param {(ids: string[]) => void} options.onErase       Linien wegradiert
  * @param {() => void} options.onUndo                     Strg + Z beim Zeichnen
  * @param {(active: boolean) => void} options.onDrawModeChange  Stift an oder aus
+ * @param {(hidden: boolean) => void} [options.onDrawingsHidden]  Zeichnungen auf diesem Gerät aus- bzw. eingeblendet
  * @param {(path: string) => Promise<string>} options.loadImage  Bildadresse zu einem Speicherpfad
  * @param {(path: string) => Promise<Blob>} [options.loadTile]  Detailkachel großer Karten laden
  */
@@ -186,6 +190,7 @@ export function createMapStage({
   onErase = () => {},
   onUndo = () => {},
   onDrawModeChange = () => {},
+  onDrawingsHidden = () => {},
   loadImage,
   loadTile = null,
 }) {
@@ -230,6 +235,12 @@ export function createMapStage({
     'aria-pressed': 'false',
     hidden: true,
   });
+  // Zeichnungen nur auf diesem Gerät ausblenden (die anderen sehen sie weiter) – das Gerät merkt es sich.
+  let drawingsHidden = readJson(DRAWINGS_HIDDEN_KEY, false) === true;
+  const hideButton = controlButton('Zeichnungen ausblenden', ICONS.eye, () => setDrawingsHidden(!drawingsHidden), {
+    'aria-pressed': 'false',
+    hidden: true,
+  });
   const fullscreenButton = controlButton('Vollbild', ICONS.expand, toggleFullscreen, { 'aria-pressed': 'false' });
   const controls = h(
     'div',
@@ -240,6 +251,7 @@ export function createMapStage({
     selectButton,
     pingButton,
     drawButton,
+    hideButton,
     fullscreenButton,
   );
   const element = h('div', { class: 'map-frame' }, viewport, controls);
@@ -263,6 +275,7 @@ export function createMapStage({
   let drawStyle = { tool: 'pen', color: 'rot', width: 'mittel', fill: 'keine' };
   let drawings = [];
   const drawingViews = new Map();
+  updateHideButton(); // gemerkte Wahl: ausgeblendet bleibt ausgeblendet
   /** Linie, die gerade gezeichnet wird: { path, points, color, width }; Form: { kind, start, end, … }. */
   let draft = null;
   let shapeDraft = null;
@@ -676,12 +689,40 @@ export function createMapStage({
       setPingMode(false);
       if (selectMode) toggleSelectMode();
       setSelection([]);
+      if (drawingsHidden) setDrawingsHidden(false); // malen nur mit sichtbaren Zeichnungen
     }
     showErasing(new Set());
     drawButton.setAttribute('aria-pressed', String(drawMode));
     viewport.classList.toggle('is-draw-mode', drawMode);
     viewport.dataset.tool = drawStyle.tool;
     onDrawModeChange(drawMode);
+  }
+
+  /**
+   * Zeichnungen auf diesem Gerät aus- oder einblenden. Beim Ausblenden legt man den Stift weg;
+   * der Knopf zeigt, wie viele gerade versteckt sind.
+   */
+  function setDrawingsHidden(hidden) {
+    const next = Boolean(hidden);
+    const changed = next !== drawingsHidden;
+    drawingsHidden = next;
+    writeJson(DRAWINGS_HIDDEN_KEY, next);
+    if (next && drawMode) setDrawMode(false);
+    updateHideButton();
+    if (changed) onDrawingsHidden(next);
+  }
+
+  function updateHideButton() {
+    drawLayer.classList.toggle('is-hidden', drawingsHidden);
+    hideButton.hidden = !drawingsHidden && drawings.length === 0;
+    hideButton.setAttribute('aria-pressed', String(drawingsHidden));
+    const label = drawingsHidden
+      ? `Zeichnungen einblenden (${drawings.length} ausgeblendet)`
+      : 'Zeichnungen ausblenden (nur bei dir)';
+    hideButton.setAttribute('aria-label', label);
+    hideButton.title = label;
+    hideButton.replaceChildren(icon(drawingsHidden ? ICONS.eyeOff : ICONS.eye));
+    hideButton.dataset.count = drawingsHidden && drawings.length ? String(drawings.length) : '';
   }
 
   /** SVG-Gruppe einer Zeichnung: Fläche, Linie und Pfeilspitze (siehe drawingPaths). */
@@ -703,6 +744,7 @@ export function createMapStage({
   }
 
   function renderDrawings() {
+    updateHideButton();
     const ids = new Set(drawings.map((drawing) => drawing.id));
     for (const [id, element] of drawingViews) {
       if (ids.has(id)) continue;
@@ -831,14 +873,13 @@ export function createMapStage({
   }
 
   /**
-   * Farbeimer: die Fläche um den Punkt (Kartenpunkte), begrenzt nur von dem, was gemalt ist –
-   * Straßen, Wege und Wände des Kartenbilds zählen nicht. Gefüllt wird nur, was rundum von
-   * Zeichnungen eingeschlossen ist. Gesucht wird im sichtbaren Bereich (mit Rand) in
+   * Farbeimer: die Fläche um den Punkt (Kartenpunkte) so, wie man sie sieht – Kartenbild,
+   * Detailkacheln und alle Zeichnungen. Gesucht wird im sichtbaren Bereich (mit Rand) in
    * Bildschirmauflösung. Liefert die Umrisse in Kartenpunkten oder null.
    */
   function bucketRings(point) {
     const region = visibleRegion(view, viewportSize(), map, 0.5);
-    if (!region) return null;
+    if (!region || !baseScale()) return null;
     let factor = view.scale;
     const pixels = region.width * region.height * factor * factor;
     if (pixels > BUCKET_MAX_PIXELS) factor *= Math.sqrt(BUCKET_MAX_PIXELS / pixels);
@@ -851,13 +892,17 @@ export function createMapStage({
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, width, height);
     context.setTransform(factor, 0, 0, factor, -region.x * factor, -region.y * factor);
-    // Nur Striche und Umrisse begrenzen – Füllungen nicht (sonst stapelt erneutes Füllen Flächen).
-    for (const drawing of drawings) paintDrawing(context, { ...drawing, fill: null });
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, map.width, map.height);
+    if (!sharpCanvas.hidden && sharpShown) {
+      const shown = sharpShown.region;
+      context.drawImage(sharpCanvas, shown.x, shown.y, shown.width, shown.height);
+    }
+    for (const drawing of drawings) paintDrawing(context, drawing);
     context.setTransform(1, 0, 0, 1, 0, 0);
     const { data } = context.getImageData(0, 0, width, height);
     const rings = bucketOutline(data, width, height, (point.x - region.x) * factor, (point.y - region.y) * factor, {
       maxPoints: MAX_DRAWING_POINTS,
-      enclosed: true,
     });
     return rings?.map((ring) => ring.map((spot) => ({ x: region.x + spot.x / factor, y: region.y + spot.y / factor })));
   }
@@ -1495,6 +1540,9 @@ export function createMapStage({
     },
     /** Stift an oder aus (z. B. „Fertig“ in der Stiftleiste). */
     setDrawMode,
+    /** Zeichnungen auf diesem Gerät aus- oder einblenden. */
+    setDrawingsHidden,
+    drawingsHidden: () => drawingsHidden,
     isDrawing: () => drawMode,
     /** Werkzeug, Farbe oder Stärke des Stifts ändern. */
     setDrawStyle(changes) {

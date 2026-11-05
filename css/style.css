@@ -4065,6 +4065,33 @@ a.btn {
   border-color: var(--focus);
 }
 
+/* Zeichnungen nur auf diesem Gerät ausgeblendet */
+.map-drawings.is-hidden {
+  display: none;
+}
+
+/* Wie viele Zeichnungen gerade ausgeblendet sind (kleine Zahl am Auge) */
+.map-control[data-count]:not([data-count='']) {
+  position: relative;
+}
+
+.map-control[data-count]:not([data-count=''])::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
 /* Tot (0 LeP): bleibt in der Reihe, kommt aber nicht dran */
 .play-combat-entry.is-down:not(.is-current) {
   border-style: dashed;

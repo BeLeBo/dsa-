@@ -245,10 +245,12 @@ export function createMapView(
       controller.actions
         .addDrawing({ ...drawing, private: drawBar.style().private })
         .catch((error) => showError(error, 'Zeichnung nicht gespeichert')),
-    onBucketMiss: () =>
+    onBucketMiss: () => showToast('Hier ist keine Fläche zum Füllen – tippe in eine Fläche, nicht auf einen Strich.'),
+    onDrawingsHidden: (hidden) =>
       showToast(
-        'Der Farbeimer füllt nur selbst gemalte, geschlossene Flächen – erst einen Umriss malen (z. B. ein Rechteck), dann hineintippen. Reicht die Fläche über den Bildschirmrand, vorher herauszoomen.',
-        { duration: 8000 },
+        hidden
+          ? 'Zeichnungen ausgeblendet – nur bei dir, die anderen sehen sie weiter. Das Auge blendet sie wieder ein.'
+          : 'Zeichnungen wieder eingeblendet.',
       ),
     onErase: (ids) =>
       controller.actions.removeDrawings(ids).catch((error) => showError(error, 'Zeichnungen nicht gelöscht')),
