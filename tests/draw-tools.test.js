@@ -263,6 +263,13 @@ test(BUCKET, 'Viele Punkte: Umriss wird gröber, bis er passt', () => {
   assertTrue(total <= 60, `höchstens 60 Punkte (${total})`);
 });
 
+test(COLORS, 'Nur für mich: Kennzeichen bleibt erhalten, sonst für alle', () => {
+  const row = { id: 'd1', points: [1, 2, 3, 4], color: 'rot', width: 2 };
+  assertEqual(normalizeDrawing({ ...row, private: true }).private, true);
+  assertEqual(normalizeDrawing(row).private, false, 'ältere Datenbank ohne Spalte: für alle');
+  assertEqual(normalizeDrawing({ ...row, private: 'ja' }).private, false, 'nur echtes true');
+});
+
 test(BUCKET, 'Zuletzt benutzte eigene Farben: neueste zuerst, ohne Doppelte, höchstens acht', () => {
   let recent = [];
   for (const color of ['#111111', '#222222', '#111111']) recent = rememberCustomColor(recent, color);
@@ -326,16 +333,23 @@ test(BUCKET, 'Speichern: Form mit Füllung, Farbeimer mit Umrissen, Linie wie bi
     fill: '#e02424ff',
   });
   await controller.actions.addDrawing({ points: [{ x: 1, y: 1 }], color: 'rot', width: 3 });
+  await controller.actions.addDrawing({ points: [{ x: 5, y: 5 }], color: 'blau', width: 3, private: true });
+  assertEqual(calls[3].private, true, 'nur für mich: als privat gespeichert');
+  assertEqual(controller.state.get().drawings.at(-1).private, true, 'auch sofort auf dem eigenen Gerät');
   assertEqual(
     [calls[0].kind, calls[0].fill, calls[0].points],
     ['rect', '#3a7bd573', [10, 10, 1000, 50]],
     'Form, auf die Karte begrenzt',
   );
   assertEqual(calls[1].points, [0, 0, 50, 0, 50, 50, -1, -1, 10, 10, 20, 10, 20, 20], 'Umrisse mit Trennzeichen');
-  assertEqual('kind' in calls[2] || 'fill' in calls[2], false, 'freie Linie ohne neue Felder (ältere Datenbank)');
+  assertEqual(
+    'kind' in calls[2] || 'fill' in calls[2] || 'private' in calls[2],
+    false,
+    'freie Linie für alle ohne neue Felder (ältere Datenbank)',
+  );
   assertEqual(
     controller.state.get().drawings.map((drawing) => drawing.kind),
-    ['rect', 'fill', 'line'],
+    ['rect', 'fill', 'line', 'line'],
   );
   localStorage.removeItem('dsa5.karte.raum');
   localStorage.removeItem('dsa5.karten-offen.raum');

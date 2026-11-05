@@ -186,8 +186,18 @@ export function openEnemiesDialog({ tokens, combat, actions }) {
  * @param {object} options.actions                 Kampfaktionen (room-combat.js)
  * @param {(spec: object) => void} options.openCheck  Probendialog
  * @param {() => object[]} options.mapTokens       Figuren der angezeigten Karte (für „+ Gegner“)
+ * @param {(entry: object) => boolean} [options.isOut]  tot (LeP ≤ 0) – kommt nicht dran
  */
-export function createCombatStrip({ room, isMaster, openHeroId, openHero, actions, openCheck, mapTokens }) {
+export function createCombatStrip({
+  room,
+  isMaster,
+  openHeroId,
+  openHero,
+  actions,
+  openCheck,
+  mapTokens,
+  isOut = () => false,
+}) {
   const element = h('section', { class: 'play-combat', 'aria-label': 'Kampf', hidden: true });
   let renderedKey = '';
 
@@ -199,22 +209,26 @@ export function createCombatStrip({ room, isMaster, openHeroId, openHero, action
     return h(
       'ol',
       { class: 'play-combat-order' },
-      orderedEntries(combat).map((entry) =>
-        h(
+      orderedEntries(combat).map((entry) => {
+        const down = isOut(entry);
+        return h(
           'li',
           {
             class: [
               'play-combat-entry',
               entry.id === current ? 'is-current' : '',
               mine && entry.characterId === mine ? 'is-mine' : '',
+              down ? 'is-down' : '',
             ]
               .filter(Boolean)
               .join(' '),
+            title: down ? `${entry.name}: 0 LeP – kommt nicht dran` : null,
           },
+          down ? h('span', { class: 'play-combat-down', 'aria-label': 'tot, kommt nicht dran' }, '✝') : null,
           h('span', { class: 'play-combat-name' }, entry.name),
           h('span', { class: 'play-combat-total' }, String(entry.total)),
-        ),
-      ),
+        );
+      }),
     );
   }
 
@@ -309,6 +323,7 @@ export function createCombatStrip({ room, isMaster, openHeroId, openHero, action
     const hero = openHero();
     const key = JSON.stringify([
       combat,
+      combat ? combat.entries.map((entry) => isOut(entry)) : null,
       isMaster(),
       heroId,
       hero ? [hero.favorites, hero.weapons, hero.combatTechniques, hero.attributes, hero.base.aw, hero.base.ini] : null,

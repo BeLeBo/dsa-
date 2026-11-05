@@ -68,6 +68,7 @@ export const ICONS = Object.freeze({
   eraser: 'M9 20h11M4.5 14.5l9-9a2 2 0 0 1 2.8 0l3.2 3.2a2 2 0 0 1 0 2.8L11 20H8l-3.5-3.5a1.4 1.4 0 0 1 0-2zM9 10l5 5',
   undo: 'M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11',
   check: 'M5 12.5l4.5 4.5L19 7',
+  lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3M12 14.5v2',
   line: 'M5 19L19 5',
   arrow: 'M5 19L18 6M10 5.5h8.5V14',
   rect: 'M4 6.5h16v11H4z',

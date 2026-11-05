@@ -9,7 +9,8 @@
 --              führt den Kampf (Initiative), kann das Protokoll leeren,
 --              verwaltet Karten und Figuren, speichert Figuren als Vorlagen, markiert
 --              Stellen auf der Karte (Ping), malt mit dem Stift auf die Karte und kann
---              Spielern das Malen entziehen.
+--              Spielern das Malen entziehen. Private Zeichnungen („nur für mich“) sieht
+--              nur, wer sie gemalt hat – auch der Meister nicht.
 --   Spieler  – sieht und bearbeitet nur den eigenen Helden (wählt ihn beim Beitreten aus den
 --              Helden des Raums – von den anderen sieht er dabei nur Name, Spezies und Profession),
 --              sieht öffentliche Würfe und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
@@ -204,6 +205,8 @@ alter table public.map_drawings add constraint map_drawings_shape_check check (
     else true
   end
 );
+-- Nur für mich: private Zeichnungen sieht nur, wer sie gemalt hat – auch nicht der Meister.
+alter table public.map_drawings add column if not exists private boolean not null default false;
 -- Eigene Farben: außer den Namen auch Hex-Werte ('#rrggbb').
 alter table public.map_drawings drop constraint if exists map_drawings_color_check;
 alter table public.map_drawings add constraint map_drawings_color_check
@@ -530,8 +533,9 @@ $$;
 
 -- Spieler beendet seinen eigenen Zug im Kampf: Nur wer gerade am Zug ist (sein Held), darf zum
 -- Nächsten weiterschalten – und nur, solange der Zug noch derselbe ist (zweimal tippen oder der
--- Meister war schneller: nichts passiert doppelt). Den Nächsten rechnet die App wie beim Meister aus,
--- damit die Reihenfolge auf allen Geräten gleich ist; hier wird geprüft, dass es ihn gibt.
+-- Meister war schneller: nichts passiert doppelt). Den Nächsten rechnet die App wie beim Meister aus
+-- (Tote mit 0 LeP überspringt sie), damit die Reihenfolge auf allen Geräten gleich ist; hier wird
+-- geprüft, dass es ihn gibt.
 create or replace function public.end_turn(p_room_id uuid, p_current_id text, p_next_id text, p_round integer)
 returns jsonb
 language plpgsql
@@ -1177,13 +1181,17 @@ create policy "Meister entfernt Figuren" on public.tokens
 
 -- Zeichnungen: sichtbar wie die Karte (Spieler: nur auf der gezeigten). Malen: der Meister überall,
 -- Spieler auf der gezeigten Karte, solange der Meister es ihnen nicht entzogen hat.
--- Löschen: der Meister alle Linien, Spieler ihre eigenen.
+-- Löschen: der Meister alle Linien, Spieler ihre eigenen. Private Zeichnungen („nur für mich“)
+-- sieht und löscht nur, wer sie gemalt hat.
 drop policy if exists "Zeichnungen sehen" on public.map_drawings;
 create policy "Zeichnungen sehen" on public.map_drawings
   for select to authenticated
   using (
-    public.is_room_master(room_id)
-    or (public.is_room_member(room_id) and public.is_active_map(room_id, map_id))
+    (not private or created_by = (select auth.uid()))
+    and (
+      public.is_room_master(room_id)
+      or (public.is_room_member(room_id) and public.is_active_map(room_id, map_id))
+    )
   );
 
 drop policy if exists "Meister zeichnet" on public.map_drawings;
@@ -1203,7 +1211,7 @@ drop policy if exists "Meister löscht Zeichnungen" on public.map_drawings;
 drop policy if exists "Zeichnungen löschen" on public.map_drawings;
 create policy "Zeichnungen löschen" on public.map_drawings
   for delete to authenticated
-  using (public.is_room_master(room_id) or created_by = (select auth.uid()));
+  using ((public.is_room_master(room_id) and not private) or created_by = (select auth.uid()));
 
 -- Gespeicherte Figuren: nur der Meister (Anlegen und Ändern über save_/update_figure_template()).
 drop policy if exists "Meister sieht gespeicherte Figuren" on public.figure_templates;
@@ -1235,7 +1243,7 @@ grant update (character_id, name, image_path, color, size, x, y, hidden, le_curr
   on public.tokens to authenticated;
 grant select, delete on public.figure_templates to authenticated;
 grant select, delete on public.map_drawings to authenticated;
-grant insert (id, room_id, map_id, kind, color, width, fill, points) on public.map_drawings to authenticated;
+grant insert (id, room_id, map_id, kind, color, width, fill, points, private) on public.map_drawings to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
@@ -1343,7 +1351,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 12;
+  select 13;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;

@@ -14,16 +14,20 @@ function entryDetail(entry) {
   return `INI ${entry.base} + W6 ${entry.roll}${modifier}`;
 }
 
-function initiativeRow(entry, position, { isCurrent, editing, isMine, actions }) {
+function initiativeRow(entry, position, { isCurrent, editing, isMine, isDown = false, actions }) {
   return h(
     'li',
-    { class: `initiative-row ${isCurrent ? 'is-current' : ''} ${isMine ? 'is-mine' : ''}`.trim() },
+    {
+      class: ['initiative-row', isCurrent ? 'is-current' : '', isMine ? 'is-mine' : '', isDown ? 'is-down' : '']
+        .filter(Boolean)
+        .join(' '),
+    },
     h('span', { class: 'initiative-position' }, String(position)),
     h(
       'div',
       { class: 'initiative-name' },
-      h('strong', {}, entry.name),
-      h('span', { class: 'row-sub' }, entryDetail(entry)),
+      h('strong', {}, isDown ? `✝ ${entry.name}` : entry.name),
+      h('span', { class: 'row-sub' }, isDown ? `0 LeP – kommt nicht dran · ${entryDetail(entry)}` : entryDetail(entry)),
     ),
     h('span', { class: 'initiative-total' }, String(entry.total)),
     editing
@@ -155,6 +159,7 @@ export function renderCombatCard({
   editing = false,
   actions,
   npcForm = null,
+  isOut = () => false,
 }) {
   if (!combat) {
     if (!isMaster) return null;
@@ -212,6 +217,7 @@ export function renderCombatCard({
               isCurrent: entry.id === combat.currentId,
               editing: isMaster && editing,
               isMine: Boolean(entry.characterId) && entry.characterId === myCharacterId,
+              isDown: isOut(entry),
               actions,
             }),
           ),

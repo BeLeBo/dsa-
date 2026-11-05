@@ -657,6 +657,8 @@ export function normalizeDrawing(row) {
     points: rings ? rings[0] : points,
     ...(rings ? { rings } : {}),
     created_by: typeof row.created_by === 'string' && row.created_by !== '' ? row.created_by : null,
+    // Nur für mich: sieht nur, wer sie gemalt hat (die Datenbank liefert sie niemand anderem).
+    private: row.private === true,
   };
 }
 

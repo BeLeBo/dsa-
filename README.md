@@ -34,6 +34,7 @@ alles live für alle synchronisiert.
 | 19    | Malen: Farbeimer, eigene Farben (Hex), Formen                           | ✅ fertig |
 | 20    | Kampf: Spieler beenden ihren eigenen Zug                                | ✅ fertig |
 | 21    | Malrecht, Eimer nur für Gemaltes, freie Strichstärke, winzige Figuren   | ✅ fertig |
+| 22    | Kartenauswahl einklappen, nur für mich malen, Tote kommen nicht dran    | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -170,6 +171,10 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
   die nächste Kampfrunde) und unter „Werte anpassen“ Initiative ändern oder Einträge entfernen.
   Alle sehen die Reihenfolge live; wer dran ist, bekommt **„Du bist am Zug!“** und beendet seinen
   Zug selbst mit **Zug beenden ▶** (in der Kampfleiste auf der Karte oder unter **Gruppe**).
+  **Tote kommen nicht dran:** Wer 0 LeP oder weniger hat (Held laut Heldenbogen, Gegner laut seiner
+  Figur auf der Karte), steht durchgestrichen mit ✝ in der Reihenfolge und wird bei **Weiter**,
+  **Zurück** und **Zug beenden** übersprungen. Wird er geheilt, ist er wieder dran. Gegner ohne
+  eingetragene LeP gelten nie als tot; sind alle tot, geht es wie gewohnt reihum.
 - **Meister-Übersicht:** Unter **Gruppe** stehen alle Helden mit LE, AsP, KaP, SchiP und
   Zuständen – live. LE lässt sich dort direkt mit −/+ ändern (z. B. Schaden abziehen).
 - **Karte:** Im Tab **Karte** zeigt der Meister eine Karte mit Figuren (siehe „Karte“ unten).
@@ -263,7 +268,9 @@ auf dem Server gespeichert und für den Meister sichtbar.
    dann **Allen zeigen**. **Mehrere Karten offen:** Über der Karte stehen Tabs – die gezeigte Karte mit
    Auge 👁, daneben die Karten, die du gerade vorbereitest. Ein Tipp wechselt hin und her, × schließt
    den Tab (die Karte bleibt), **+ Karte** öffnet eine weitere oder lädt eine neue hoch. Während du eine
-   andere Karte bearbeitest, sehen die Spieler weiter die gezeigte. Unter **Karten** lassen sich alle
+   andere Karte bearbeitest, sehen die Spieler weiter die gezeigte. **▴** vorn in der Tab-Zeile klappt
+   die Kartenauswahl ein (mehr Platz für die Karte): Dann steht nur noch ein Knopf mit dem Namen der
+   offenen Karte vorn in der Werkzeugleiste – antippen klappt sie wieder auf. Das Gerät merkt es sich. Unter **Karten** lassen sich alle
    Karten verwalten: öffnen, allen zeigen, ausblenden, umbenennen, löschen (mit allen Figuren darauf).
 3. **Raster:** an/aus, Feldgröße (oder „Felder in der Breite“), Versatz und Linienfarbe. Hat das Bild
    schon Kästchen, die Werte so einstellen, dass die Linien übereinander liegen. Bei sichtbarem
@@ -335,7 +342,13 @@ auf dem Server gespeichert und für den Meister sichtbar.
      feine Gassen auf Stadtkarten) bis dick (ein halbes Feld); der Punkt daneben zeigt die Stärke.
      Sie richtet sich nach der Feldgröße und wirkt so auf jeder Karte gleich. **Füllung** (Quadrat-Knopf,
      antippen wechselt: ohne → halb durchsichtig → deckend) für Rechteck, Kreis und Farbeimer (der
-     Eimer füllt nie „ohne“, sondern dann halb durchsichtig).
+     Eimer füllt nie „ohne“, sondern dann halb durchsichtig). Am Handy steht der Schieberegler in einer
+     eigenen Zeile über die ganze Breite.
+   - **Nur für mich** (Knopf mit den Personen bzw. 🔒): Was man malt, solange das Schloss an ist, sieht
+     niemand sonst – auch nicht der Meister (bzw. die Spieler, wenn der Meister es nutzt). Praktisch für
+     eigene Notizen, Pläne oder Markierungen. Antippen schaltet zurück auf „für alle“; schon gemalte
+     Zeichnungen bleiben, wie sie gemalt wurden. „Alles löschen“ des Meisters lässt die privaten
+     Zeichnungen der Spieler stehen.
    - **↶ Rückgängig** (eigene letzte Zeichnung, am Rechner auch Strg + Z), **🗑 Alles löschen** (alle
      Zeichnungen, auch die der Spieler – mit Rückfrage) und **Fertig** (am Handy ✓) bzw. Esc legt den
      Stift weg.
@@ -344,7 +357,7 @@ auf dem Server gespeichert und für den Meister sichtbar.
    hebt, bei allen, die die Karte sehen; auf einer vorbereiteten Karte erst, wenn sie gezeigt wird.
    Flächen des Farbeimers liegen unter den Linien. Die Zeichnungen gehören zur Karte: Sie bleiben, bis
    sie gelöscht werden, und verschwinden mit der Karte. Der Radierer des Meisters erfasst alle
-   Zeichnungen. Werkzeug, Farbe, Stärke und Füllung merkt sich das Gerät.
+   Zeichnungen. Werkzeug, Farbe, Stärke, Füllung und „nur für mich“ merkt sich das Gerät.
    - **Malrecht:** Unter **Gruppe** → **Mitglieder** steht bei jedem Spieler **✎ darf malen** – antippen
      sperrt das Malen für ihn (**✎ gesperrt**), nochmal antippen erlaubt es wieder. **Malen für alle
      sperren** und **Allen erlauben** schalten alle Spieler auf einmal (auch wer später beitritt, darf
@@ -435,7 +448,7 @@ Beitreten erst im Tab **Held** ihren Helden). Wer einen Helden geöffnet hat, ha
 4. **Start ▶ / Weiter ▶** – wer dran ist, ist hervorgehoben; wer selbst dran ist, sieht „Du bist am Zug!“
    und hat seine Favoriten (Angriffe …) direkt in der Leiste. **Ende** beendet den Kampf für alle.
    **Zug beenden ▶:** Ist ein Held dran, beendet sein Spieler den Zug selbst – der Nächste ist sofort
-   für alle dran (nach dem Letzten beginnt die nächste Runde). Das geht nur, solange der eigene Held am
+   für alle dran (nach dem Letzten beginnt die nächste Runde; Tote mit 0 LeP werden übersprungen). Das geht nur, solange der eigene Held am
    Zug ist; zweimal tippen schaltet nicht doppelt weiter. Gegner schaltet weiterhin der Meister weiter,
    und er kann jederzeit mit ◀ zurück.
    (Werte anpassen und Einträge entfernen geht weiterhin im Tab **Gruppe**.)
@@ -530,7 +543,8 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
   benutzte Bilder löscht die App beim Entfernen von Karten und Figuren. Ob Spieler eine Karte
   sehen, entscheidet die Datenbank (gezeigte Karte, verborgene Figuren) – nicht nur die App. Auch das
   Malrecht prüft die Datenbank: Gesperrte Spieler können keine Zeichnung speichern, und sperren oder
-  erlauben kann nur der Meister (`set_draw_permission`).
+  erlauben kann nur der Meister (`set_draw_permission`). Private Zeichnungen („nur für mich“) liefert
+  die Datenbank nur an den, der sie gemalt hat – auch nicht live an andere Geräte.
 - **Gebaute Karten** (Karten-Editor) zeichnet der Browser selbst – alle Objekte und Gelände sind
   Code (`js/map-render.js`), es gibt keine Bilddateien dafür. Gespeichert wird das fertige Bild wie
   bei hochgeladenen Karten, dazu der Aufbau als JSON in `maps.scene` (Gelände als Zeichenkette, ein

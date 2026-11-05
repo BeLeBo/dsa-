@@ -12,6 +12,41 @@ import { newId } from './util.js';
 
 export const ENTRY_KINDS = Object.freeze({ HERO: 'held', NPC: 'nsc' });
 const MAX_NPC_COUNT = 20;
+const NEVER = () => false;
+
+/** LeP auf 0 oder weniger (bei bekanntem Maximum)? Leere Werte zählen nicht. */
+function lifeIsGone(current, max) {
+  if (current === null || current === undefined || current === '') return false;
+  const value = Number(current);
+  const maximum = Number(max);
+  return Number.isFinite(value) && Number.isFinite(maximum) && maximum > 0 && value <= 0;
+}
+
+/**
+ * Tot bzw. kampfunfähig (LeP 0 oder weniger)? Solche Einträge kommen im Kampf nicht dran.
+ * Helden: aus dem Heldenbogen, wenn das Gerät ihn kennt, sonst aus ihrer Figur (die Datenbank
+ * spiegelt die LeP der Helden auf die Figuren). Gegner/NSC: über ihre Figur(en) gleichen Namens –
+ * erst wenn alle am Boden sind. Ohne eingetragene LeP ist niemand tot.
+ * @param {object} entry
+ * @param {{ hero?: object|null, tokens?: object[] }} known
+ */
+export function isEntryDown(entry, { hero = null, tokens = [] } = {}) {
+  if (!entry) return false;
+  const pool = entry.kind === ENTRY_KINDS.HERO ? hero?.base?.le : null;
+  if (pool) return lifeIsGone(pool.current, pool.max);
+  const own = tokens.filter((token) =>
+    entry.kind === ENTRY_KINDS.HERO
+      ? token.character_id === entry.characterId
+      : !token.character_id && token.name === entry.name,
+  );
+  const tracked = own.filter((token) => Number(token.le_max) > 0 && token.le_current !== null);
+  return tracked.length > 0 && tracked.every((token) => lifeIsGone(token.le_current, token.le_max));
+}
+
+/** Überspringen nur, solange noch jemand übrig ist – sonst ginge es reihum wie immer. */
+function skipper(order, isOut) {
+  return order.length > 0 && order.every((entry) => isOut(entry)) ? NEVER : isOut;
+}
 
 export function startCombat() {
   return { round: 1, currentId: null, entries: [] };
@@ -115,25 +150,45 @@ export function adjustEntry(combat, id, delta) {
   return { ...combat, entries };
 }
 
-/** Entfernt einen Eintrag; war er am Zug, ist der Nächste dran (ohne neue Runde). */
-export function removeEntry(combat, id) {
+/**
+ * Entfernt einen Eintrag; war er am Zug, ist der Nächste dran (ohne neue Runde, Tote übersprungen –
+ * am Ende der Reihe der Letzte davor).
+ */
+export function removeEntry(combat, id, isOut = NEVER) {
   const order = orderedEntries(combat);
   const index = order.findIndex((item) => item.id === id);
   if (index === -1) return combat;
   const remaining = order.filter((item) => item.id !== id);
-  const currentId =
-    combat.currentId === id ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null) : combat.currentId;
+  const skip = skipper(remaining, isOut);
+  const after = remaining.slice(index).find((item) => !skip(item));
+  const before = remaining
+    .slice(0, index)
+    .reverse()
+    .find((item) => !skip(item));
+  const currentId = combat.currentId === id ? ((after ?? before)?.id ?? null) : combat.currentId;
   return { ...combat, entries: combat.entries.filter((item) => item.id !== id), currentId };
 }
 
-/** Nächster ist dran; nach dem Letzten beginnt eine neue Kampfrunde. */
-export function advanceTurn(combat) {
+/**
+ * Nächster ist dran; nach dem Letzten beginnt eine neue Kampfrunde. Wer tot ist (`isOut`),
+ * kommt nicht dran.
+ */
+export function advanceTurn(combat, isOut = NEVER) {
   const order = orderedEntries(combat);
   if (order.length === 0) return combat;
-  const index = order.findIndex((item) => item.id === combat.currentId);
-  if (index === -1) return { ...combat, currentId: order[0].id };
-  if (index === order.length - 1) return { ...combat, currentId: order[0].id, round: combat.round + 1 };
-  return { ...combat, currentId: order[index + 1].id };
+  const skip = skipper(order, isOut);
+  const start = order.findIndex((item) => item.id === combat.currentId);
+  let index = start;
+  let round = combat.round;
+  for (let step = 0; step < order.length; step += 1) {
+    index += 1;
+    if (index === order.length) {
+      index = 0;
+      if (start !== -1) round += 1;
+    }
+    if (!skip(order[index])) break;
+  }
+  return { ...combat, currentId: order[index].id, round };
 }
 
 /** Ist gerade dieser Held am Zug? Dann darf sein Spieler den Zug selbst beenden. */
@@ -142,13 +197,25 @@ export function isHeroTurn(combat, characterId) {
   return Boolean(characterId) && entry?.kind === ENTRY_KINDS.HERO && entry.characterId === characterId;
 }
 
-/** Zurück zum Vorigen; vor dem Ersten geht es in die vorige Runde (nicht vor Runde 1). */
-export function previousTurn(combat) {
+/**
+ * Zurück zum Vorigen; vor dem Ersten geht es in die vorige Runde (nicht vor Runde 1). Tote werden
+ * übersprungen.
+ */
+export function previousTurn(combat, isOut = NEVER) {
   const order = orderedEntries(combat);
-  const index = order.findIndex((item) => item.id === combat.currentId);
+  let index = order.findIndex((item) => item.id === combat.currentId);
   if (index === -1) return combat;
-  if (index > 0) return { ...combat, currentId: order[index - 1].id };
-  if (combat.round > 1) return { ...combat, currentId: order.at(-1).id, round: combat.round - 1 };
+  const skip = skipper(order, isOut);
+  let round = combat.round;
+  for (let step = 0; step < order.length; step += 1) {
+    index -= 1;
+    if (index < 0) {
+      if (round <= 1) return combat;
+      round -= 1;
+      index = order.length - 1;
+    }
+    if (!skip(order[index])) return { ...combat, currentId: order[index].id, round };
+  }
   return combat;
 }
 

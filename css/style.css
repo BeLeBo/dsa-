@@ -1987,6 +1987,15 @@ input.num::-webkit-inner-spin-button {
   color: var(--accent);
 }
 
+.initiative-row.is-down:not(.is-current) {
+  color: var(--muted);
+}
+
+.initiative-row.is-down .initiative-name strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
 .initiative-position {
   width: 24px;
   color: var(--muted);
@@ -3066,6 +3075,14 @@ body.map-fullscreen-open {
   margin-left: 4px;
 }
 
+/* Handy: Schieberegler über die ganze Breite (feiner einstellbar), die Knöpfe darunter */
+@media (max-width: 479px) {
+  .draw-width {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
 @media (max-width: 639px) {
   .draw-done {
     width: var(--touch);
@@ -3377,6 +3394,40 @@ a.btn {
   color: var(--muted);
   font-size: 1.2rem;
   cursor: pointer;
+}
+
+.map-tabs-collapse {
+  flex: none;
+  width: var(--touch);
+  min-height: var(--touch);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+/* Eingeklappte Kartenauswahl: ein Knopf mit dem Kartennamen vorn in der Werkzeugleiste */
+.map-toolbar .map-tabs-expand {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 220px;
+  border-color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.map-tabs-expand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-tabs-expand.is-shown .map-tabs-expand-name {
+  color: var(--accent);
 }
 
 .map-tab-add {
@@ -4012,6 +4063,17 @@ a.btn {
 
 .play-combat-entry.is-mine:not(.is-current) {
   border-color: var(--focus);
+}
+
+/* Tot (0 LeP): bleibt in der Reihe, kommt aber nicht dran */
+.play-combat-entry.is-down:not(.is-current) {
+  border-style: dashed;
+  background: none;
+  color: var(--muted);
+}
+
+.play-combat-entry.is-down .play-combat-name {
+  text-decoration: line-through;
 }
 
 .play-combat-name {

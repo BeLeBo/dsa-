@@ -51,7 +51,7 @@ import { normalizeHero, heroName } from './sheet.js';
 import { isPlainObject, isOlderTimestamp } from './util.js';
 import { toInt, clampConditionLevel } from './rules.js';
 import { toggleKey } from './check-search.js';
-import { heroEntryId, heroOnTurnChange } from './combat.js';
+import { heroEntryId, heroOnTurnChange, isEntryDown } from './combat.js';
 import { readLocalHero } from './mode-local.js';
 
 /** Wartezeit bis zum nächsten Verbindungsversuch, wenn der Server nicht erreichbar ist. */
@@ -119,12 +119,25 @@ export function startRoomMode(initialSession, { onLeave }) {
     return row ? normalizeHero(row.data) : null;
   }
 
+  /**
+   * Tot bzw. kampfunfähig (LeP ≤ 0)? Kommt im Kampf nicht dran. Gegner über ihre Figuren auf der
+   * angezeigten Karte (die Kartensteuerung entsteht erst weiter unten – gefragt wird später).
+   */
+  function combatIsOut(entry) {
+    if (!entry) return false;
+    return isEntryDown(entry, {
+      hero: entry.characterId ? heroFor(entry.characterId) : null,
+      tokens: mapController.state.get().tokens ?? [],
+    });
+  }
+
   const combat = createCombatController({
     roomId: session.roomId,
     room,
     log,
     isMaster,
     heroFor,
+    isOut: combatIsOut,
     myCharacterId: () => (isMaster() ? null : (sync?.id ?? null)),
     onYourTurn: (message) => {
       showToast(message, { duration: 8000 });
@@ -680,6 +693,7 @@ export function startRoomMode(initialSession, { onLeave }) {
     openCheck: shell.openCheck,
     log,
     combatActions: combat.actions,
+    combatIsOut: combat.isOut,
     showProtocol: () => shell.selectTab(TABS.log.id),
   });
 
@@ -709,10 +723,11 @@ export function startRoomMode(initialSession, { onLeave }) {
     if (heroId && isMaster() && sync?.id !== heroId) heroActions.select(heroId);
   });
 
-  createGroupView(shell.panel(TABS.group.id), {
+  const groupView = createGroupView(shell.panel(TABS.group.id), {
     room,
     currentCharacterId: () => sync?.id ?? null,
     combatActions: combat.actions,
+    combatIsOut: combat.isOut,
     actions: {
       share,
       leave,
@@ -742,6 +757,22 @@ export function startRoomMode(initialSession, { onLeave }) {
           showToast('Held gelöscht.');
         }),
     },
+  });
+
+  // Die LeP der Gegner stehen an ihren Figuren: Fällt einer auf 0 (oder steht wieder auf), bekommt
+  // auch die Kampfkarte unter „Gruppe“ gleich das ✝ – neu gezeichnet nur, wenn sich das ändert.
+  let downInCombat = '';
+  mapController.state.subscribe(() => {
+    const fight = room.get().combat;
+    const key = fight
+      ? fight.entries
+          .filter((entry) => combat.isOut(entry))
+          .map((entry) => entry.id)
+          .join()
+      : '';
+    if (key === downInCombat) return;
+    downInCombat = key;
+    groupView.render();
   });
 
   // Beim Verlassen oder Wechseln der App sofort speichern; beim Zurückkehren abgleichen.

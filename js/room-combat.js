@@ -34,6 +34,7 @@ import { VISIBILITY } from './log.js';
  * @param {(error: Error) => void} options.onError
  * @param {Function} [options.save]        (roomId, combat) => Promise – austauschbar für Tests
  * @param {Function} [options.endTurn]     (roomId, { currentId, nextId, round }) => Promise<combat> – für Tests
+ * @param {(entry: object) => boolean} [options.isOut]  Tot (LeP ≤ 0)? Kommt dann nicht dran.
  */
 export function createCombatController({
   roomId,
@@ -46,6 +47,7 @@ export function createCombatController({
   onError,
   save = updateCombat,
   endTurn = endTurnOnServer,
+  isOut = () => false,
 }) {
   /** Laufende Speicherung (Promise) und ob danach noch ein neuerer Stand zu speichern ist. */
   let saving = null;
@@ -90,7 +92,17 @@ export function createCombatController({
     if (!Object.hasOwn(row, 'combat') || saving) return;
     const before = combat();
     room.update({ combat: row.combat });
-    if (row.combat) notifyTurn(before, row.combat);
+    if (!row.combat) return;
+    // Hat ein Spieler an einen Toten weitergegeben (z. B. verborgener Gegner, den er nicht kennt),
+    // schaltet das Gerät des Meisters gleich weiter.
+    if (isMaster() && before && before.currentId !== row.combat.currentId) {
+      const next = advanceTurn(row.combat, isOut);
+      if (isOut(currentEntry(row.combat)) && next.currentId !== row.combat.currentId) {
+        saveCombat(next);
+        return;
+      }
+    }
+    notifyTurn(before, row.combat);
   }
 
   /** Neuer Protokolleintrag: Initiative-Würfe von Helden landen beim Meister im Kampf. */
@@ -113,7 +125,7 @@ export function createCombatController({
   async function endOwnTurn() {
     const before = combat();
     if (!before || !isHeroTurn(before, myCharacterId())) return;
-    const next = advanceTurn(before);
+    const next = advanceTurn(before, isOut);
     room.update({ combat: next });
     try {
       const saved = await endTurn(roomId, { currentId: before.currentId, nextId: next.currentId, round: next.round });
@@ -132,10 +144,10 @@ export function createCombatController({
   const actions = {
     start: () => saveCombat(startCombat()),
     end: () => saveCombat(null),
-    next: () => change(advanceTurn),
-    previous: () => change(previousTurn),
+    next: () => change((current) => advanceTurn(current, isOut)),
+    previous: () => change((current) => previousTurn(current, isOut)),
     adjust: (id, delta) => change((current) => adjustEntry(current, id, delta)),
-    remove: (id) => change((current) => removeEntry(current, id)),
+    remove: (id) => change((current) => removeEntry(current, id, isOut)),
     addNpc: (npc) => change((current) => createNpcEntries(npc, rollDie).reduce(upsertEntry, current)),
     /** Mehrere einzelne Gegner mit festem Namen (z. B. „Ork 1“, „Ork 3“ von der Karte). */
     addNpcs: (npcs) =>
@@ -155,5 +167,5 @@ export function createCombatController({
     },
   };
 
-  return { actions, handleRoomRow, handleRecord };
+  return { actions, handleRoomRow, handleRecord, isOut };
 }

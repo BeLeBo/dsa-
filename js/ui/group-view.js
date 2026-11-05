@@ -71,7 +71,7 @@ function heroSummary(character, hero, adjustPool) {
  *        leave() fragt selbst nach; Zuweisen und Löschen werden hier bestätigt.
  * @param {object} options.combatActions  siehe combat-view.js
  */
-export function createGroupView(root, { room, currentCharacterId, actions, combatActions }) {
+export function createGroupView(root, { room, currentCharacterId, actions, combatActions, combatIsOut }) {
   const ui = { editingCombat: false };
   const combatViewActions = {
     ...combatActions,
@@ -256,6 +256,7 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
         editing: ui.editingCombat,
         actions: combatViewActions,
         npcForm,
+        isOut: combatIsOut,
       }),
       h(
         'section',

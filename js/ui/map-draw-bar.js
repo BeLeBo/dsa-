@@ -7,6 +7,7 @@
  */
 import { h, icon, ICONS } from './dom.js';
 import { openDialog } from './dialog.js';
+import { showToast } from './toast.js';
 import { readJson, writeJson } from '../storage.js';
 import {
   DRAW_COLORS,
@@ -51,6 +52,7 @@ export function storedDrawStyle() {
     width: normalizeDrawWidth(stored.width), // Anteil eines Felds (früher: Stufenname)
     fill: DRAW_FILLS.some((fill) => fill.id === stored.fill) ? stored.fill : 'keine',
     custom: isHex(custom) ? custom : isHex(color) ? color : DEFAULT_CUSTOM_COLOR,
+    private: stored.private === true, // nur für mich malen
   };
 }
 
@@ -170,7 +172,7 @@ function openColorPicker(current, onPick) {
 
 /**
  * @param {object} options
- * @param {(style: {tool, color, width, fill}) => void} options.onChange  Werkzeug, Farbe, Stärke oder Füllung geändert
+ * @param {(style: {tool, color, width, fill, private}) => void} options.onChange  Werkzeug, Farbe, Stärke, Füllung oder „nur für mich“ geändert
  * @param {() => void} options.onUndo
  * @param {() => void} options.onClear
  * @param {() => void} options.onClose  „Fertig“: Stift weglegen
@@ -187,6 +189,7 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
       width: style.width,
       fill: style.fill,
       custom: style.custom,
+      private: style.private,
     });
     refresh();
     onChange(style);
@@ -269,6 +272,23 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     },
     h('span', { class: 'draw-fill-icon' }),
   );
+  // Nur für mich: Was man dann malt, sieht niemand sonst (auch nicht der Meister) – z. B. eigene Notizen.
+  const privacyButton = h(
+    'button',
+    {
+      type: 'button',
+      class: 'draw-tool draw-privacy',
+      onclick: () => {
+        choose({ private: !style.private });
+        showToast(
+          style.private
+            ? '🔒 Nur für dich: Was du jetzt malst, sieht niemand sonst – auch nicht der Meister.'
+            : 'Für alle: Was du jetzt malst, sehen wieder alle.',
+        );
+      },
+    },
+    icon(ICONS.group),
+  );
   const undoButton = h(
     'button',
     {
@@ -314,6 +334,7 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
       { class: 'draw-group draw-options', role: 'group', 'aria-label': 'Strich und Füllung' },
       widthControl,
       fillButton,
+      privacyButton,
       undoButton,
       clearButton,
       doneButton,
@@ -341,6 +362,16 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     fillButton.style.setProperty('--swatch', drawColorValue(style.color));
     fillButton.setAttribute('aria-label', `${fill.name} (für Rechteck, Kreis und Farbeimer) – antippen zum Wechseln`);
     fillButton.title = fill.name;
+    privacyButton.setAttribute('aria-pressed', String(style.private));
+    privacyButton.setAttribute(
+      'aria-label',
+      style.private
+        ? 'Nur für mich – was du malst, sieht niemand sonst. Antippen: für alle'
+        : 'Für alle sichtbar. Antippen: nur für mich malen',
+    );
+    privacyButton.title = style.private ? 'Nur für mich' : 'Für alle sichtbar';
+    privacyButton.replaceChildren(icon(style.private ? ICONS.lock : ICONS.group));
+    element.classList.toggle('is-private', style.private);
     element.dataset.tool = style.tool;
   }
   refresh();

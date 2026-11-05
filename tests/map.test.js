@@ -1371,6 +1371,7 @@ test(DRAW, 'Linien vom Server prüfen, Punkte für den Server runden', () => {
       { x: 3, y: 4 },
     ],
     created_by: null,
+    private: false,
   });
   assertEqual(normalizeDrawing({ id: 'd', points: [1, 2], created_by: 'u1' }).created_by, 'u1', 'Zeichner');
   assertEqual(normalizeDrawing({ id: 'd', color: 'pink', width: 6, points: [1, 2] }).color, 'rot', 'Farbe → Rot');
