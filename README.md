@@ -37,6 +37,7 @@ alles live für alle synchronisiert.
 | 22    | Kartenauswahl einklappen, nur für mich malen, Tote kommen nicht dran    | ✅ fertig |
 | 23    | Farbeimer wieder wie früher, Zeichnungen selbst ausblenden              | ✅ fertig |
 | 24    | Aventurien-Karte (Ulisses-Kartenpaket), Ausschnitt für die Spieler      | ✅ fertig |
+| 25    | Regionalkarten und politische Karte aus dem Kartenpaket                 | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -266,12 +267,17 @@ auf dem Server gespeichert und für den Meister sichtbar.
    flott. Während des Hochladens zählt der Knopf mit („volle Auflösung 12 / 60 …“). Sehr große Bilder
    lieber am Rechner hochladen: Ist das Bild für das Gerät zu groß, gibt es die Karte in normaler
    Auflösung (mit Hinweis). Handyfotos im HEIC-Format bitte vorher als JPG speichern.
-   **Ganz Aventurien:** Unter **Karten** → **Offizielle Karte** → **Aventurien hinzufügen** legt die
+   **Ganz Aventurien:** Unter **Karten** → **Offizielle Karten** → **Aventurien hinzufügen** legt die
    offizielle Aventurienkarte (Ina Kramer, aus dem Kartenpaket von Ulisses Spiele) als Karte im Raum
    an – mit Raster aus, zum Hineinzoomen in voller Auflösung. Die App bringt die Karte mit
    (`karten/aventurien.jpg`, unverändert); bei der Karte steht immer der Hinweis auf Urheber und
    Lizenz (siehe „Offizielle Karten und Lizenz“ unten). Gibt es sie im Raum schon, öffnet der Knopf
    sie nur. Figuren lassen sich auf der großen Karte z. B. als „Winzig (¼ Feld)“ aufstellen.
+   Darunter (aufklappbar) die **Regionalkarten** mit mehr Einzelheiten – Nordwest-Aventurien, West- und
+   Ostnivesenland, Orkland und Svellttal, Bornland, westliches und zentrales Mittelreich, Schildlande,
+   Liebliches Feld, östliche Tulamidenlande, Khôm, Maraskan, Al'Anfa und das Regengebirge, Altoum und
+   die Waldinseln (alle von Ina Kramer) – und die **politische Karte** „Politische Grenzen und
+   Anspruchsgebiete 30 Hal“ (Michael Meyhöfer). Jede mit **hinzufügen** bzw. **öffnen**.
 2. Eine neue Karte sieht zunächst **nur der Meister** („Vorbereitung“) – in Ruhe Figuren aufstellen,
    dann **Allen zeigen**. **Mehrere Karten offen:** Über der Karte stehen Tabs – die gezeigte Karte mit
    Auge 👁, daneben die Karten, die du gerade vorbereitest. Ein Tipp wechselt hin und her, × schließt
@@ -515,13 +521,15 @@ Beitreten erst im Tab **Held** ihren Helden). Wer einen Helden geöffnet hat, ha
 
 ## Offizielle Karten und Lizenz
 
-Die Aventurienkarte (`karten/aventurien.jpg`) stammt unverändert aus dem **Kartenpaket**, das Ulisses
-Spiele für DSA-Fanprojekte bereitstellt (Karte: Ina Kramer, © Ulisses Spiele). Sie darf unter der
+Die mitgelieferten Karten im Ordner `karten/` (Aventurien, 14 Regionalkarten von Ina Kramer und die
+politische Karte von Michael Meyhöfer) stammen unverändert aus dem **Kartenpaket**, das Ulisses Spiele
+für DSA-Fanprojekte bereitstellt (© Ulisses Spiele). Sie dürfen unter der
 [Lizenzvereinbarung zum Ulisses-Kartenpaket](https://de.wiki-aventurica.de/wiki/Kartenpaket/Lizenz)
 nicht-kommerziell genutzt und weitergegeben werden – mit Verweis auf die Lizenz und ohne die Hinweise
-auf der Karte (Fanprojekt-Logo, „Mit freundlicher Genehmigung der Ulisses-Spiele GmbH“) zu verändern.
-Diese App ist ein kostenloses DSA-Fanprojekt; bei der Karte steht in der App immer der Hinweis mit
-Link zur Lizenz. Mehr dazu in `karten/LIZENZ.md`. Die Lizenz der App selbst gilt nicht für die Karte.
+auf den Karten (Fanprojekt-Logo, „Mit freundlicher Genehmigung der Ulisses-Spiele GmbH“) zu verändern.
+Diese App ist ein kostenloses DSA-Fanprojekt; bei jeder dieser Karten steht in der App der Hinweis auf
+Urheber und Rechte mit Link zur Lizenz. Mehr dazu in `karten/LIZENZ.md`. Die Lizenz der App selbst gilt
+nicht für die Karten.
 
 ## Fehlerbehebung
 
@@ -609,8 +617,8 @@ js/mode-room.js          Raum-Modus: verbinden, Held öffnen, live abgleichen, G
 js/room-map.js           Karte im Raum: laden, live aktuell halten, Aktionen (Meister/Spieler)
 js/map.js                Karte als reine Funktionen: Raster, Einrasten, Aufstellen, Zoom, Auswahl, Ping
 js/map-api.js            Karte auf dem Server: Karten, Figuren, Bilder (Storage), Realtime
-js/official-maps.js      Mitgelieferte offizielle Karten (Aventurien) und ihr Lizenzhinweis
-karten/                  Aventurienkarte aus dem Ulisses-Kartenpaket (unverändert) und LIZENZ.md
+js/official-maps.js      Mitgelieferte offizielle Karten (Aventurien, Regionen, politisch), Lizenzhinweis
+karten/                  Karten aus dem Ulisses-Kartenpaket (unverändert) und LIZENZ.md
 js/image.js              Bilder vor dem Hochladen verkleinern bzw. zuschneiden, gebaute Karten umwandeln
 js/map-editor.js         Karten-Editor als reine Funktionen: Szene, Gelände, Objekte, Zufallsgenerator
 js/map-render.js         Gebaute Karten zeichnen: Boden, Gelände mit weichen Rändern, alle Objekte

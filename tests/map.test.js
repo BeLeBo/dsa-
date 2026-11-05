@@ -1820,15 +1820,26 @@ test(FRAME, 'Begrenzt: nicht weiter heraus, nicht über den Ausschnitt hinaus', 
   close(wide.x + 200 * 2, 300, 'schmaler als der Bildschirm: waagrecht mittig');
 });
 
-test(FRAME, 'Offizielle Karten: Aventurien aus dem Kartenpaket, mit Hinweis auf Urheber und Lizenz', () => {
+test(FRAME, 'Offizielle Karten: Aventurien, Regionalkarten und politische Karte mit Urheber und Lizenz', () => {
   const aventurien = OFFICIAL_MAPS.find((entry) => entry.id === 'aventurien');
   assertEqual([aventurien.file, aventurien.width, aventurien.height], ['karten/aventurien.jpg', 2857, 4000]);
-  const credit = mapCredit({ credit: 'kartenpaket' });
+  assertEqual(OFFICIAL_MAPS.length, 16, 'Kontinent, 14 Regionen, politische Karte');
+  assertEqual(new Set(OFFICIAL_MAPS.map((entry) => entry.id)).size, 16, 'eindeutige Namen');
   assertTrue(
-    credit.text.includes('Ina Kramer') && credit.text.includes('Ulisses') && credit.text.includes('Fanprojekt'),
+    OFFICIAL_MAPS.every((entry) => entry.name.length <= 60),
+    'Namen passen in die Datenbank',
   );
+  const credit = mapCredit({ credit: 'kartenpaket', name: 'Aventurien' });
+  assertEqual(credit.text, 'Karte: Ina Kramer · © Ulisses Spiele · DSA-Fanprojekt');
   assertEqual(credit.licenseUrl, 'https://de.wiki-aventurica.de/wiki/Kartenpaket/Lizenz');
-  assertEqual(mapCredit({ credit: null }), null, 'eigene Karte: kein Hinweis');
+  const political = mapCredit({ credit: 'kartenpaket', name: 'Politische Grenzen und Anspruchsgebiete 30 Hal' });
+  assertTrue(political.text.startsWith('Karte: Michael Meyhöfer'), political.text);
+  const renamed = mapCredit({ credit: 'kartenpaket', name: 'Unsere Kampagne' });
+  assertTrue(
+    renamed.text.includes('Ulisses-Kartenpaket') && renamed.text.includes('© Ulisses Spiele'),
+    'umbenannt: allgemeiner Hinweis',
+  );
+  assertEqual(mapCredit({ credit: null, name: 'Aventurien' }), null, 'eigene Karte: kein Hinweis');
   assertEqual(mapCredit({ credit: 'toString' }), null, 'nur bekannte Herkunft');
   const maps = [{ id: 'a', name: 'aventurien ', credit: 'kartenpaket' }];
   assertEqual(findOfficialMap(maps, aventurien)?.id, 'a');
@@ -1837,6 +1848,15 @@ test(FRAME, 'Offizielle Karten: Aventurien aus dem Kartenpaket, mit Hinweis auf 
     null,
     'eigene gleichnamige zählt nicht',
   );
+});
+
+test(FRAME, 'Offizielle Karten: jede Datei ist da und so groß wie angegeben', async () => {
+  for (const entry of OFFICIAL_MAPS) {
+    const image = new Image();
+    image.src = new URL(`../${entry.file}`, import.meta.url).href;
+    await image.decode();
+    assertEqual([image.naturalWidth, image.naturalHeight], [entry.width, entry.height], entry.file);
+  }
 });
 
 test(CONTROLLER, 'Offizielle Karte hinzufügen: wie hochgeladen, mit Herkunft; zweites Mal nur öffnen', async () => {

@@ -123,17 +123,18 @@ function uploadForm(actions, onDone) {
 }
 
 /**
- * Offizielle Karten (Ulisses-Kartenpaket), die die App mitbringt – z. B. ganz Aventurien.
- * Ein Tipp legt sie im Raum an (wie hochgeladen); gibt es sie schon, wird sie geöffnet.
+ * Offizielle Karten (Ulisses-Kartenpaket), die die App mitbringt: ganz Aventurien vorn, darunter
+ * aufklappbar die Regionalkarten und die politische Karte. Ein Tipp legt eine Karte im Raum an (wie
+ * hochgeladen); gibt es sie schon, wird sie geöffnet.
  */
 function officialSection(controller, onDone) {
   const credit = MAP_CREDITS.kartenpaket;
-  const rows = OFFICIAL_MAPS.map((official) => {
-    const exists = () => Boolean(findOfficialMap(controller.state.get().maps, official));
-    const label = exists() ? `${official.name} öffnen` : `${official.name} hinzufügen`;
+  function addButton(official, { compact = false } = {}) {
+    const exists = Boolean(findOfficialMap(controller.state.get().maps, official));
+    const label = compact ? (exists ? 'öffnen' : 'hinzufügen') : `${official.name} ${exists ? 'öffnen' : 'hinzufügen'}`;
     const button = busyButton(
       label,
-      'wird geladen …',
+      compact ? '…' : 'wird geladen …',
       async () => {
         try {
           const onProgress = (done, total) => {
@@ -151,27 +152,59 @@ function officialSection(controller, onDone) {
           showError(error, 'Karte nicht hinzugefügt');
         }
       },
-      exists() ? 'btn' : 'btn btn-primary',
+      `${exists ? 'btn' : 'btn btn-primary'}${compact ? ' btn-small' : ''}`,
     );
-    return h(
-      'div',
-      { class: 'official-map' },
-      h('strong', {}, official.name),
-      h('span', { class: 'field-hint' }, official.description),
-      button,
-    );
-  });
+    button.dataset.map = official.id;
+    if (compact) button.setAttribute('aria-label', `${official.name} ${exists ? 'öffnen' : 'hinzufügen'}`);
+    return button;
+  }
+  const continent = OFFICIAL_MAPS.filter((entry) => entry.kind === 'continent');
+  const others = OFFICIAL_MAPS.filter((entry) => entry.kind !== 'continent');
   return h(
     'section',
     { class: 'map-upload' },
-    h('h3', {}, 'Offizielle Karte'),
-    rows,
+    h('h3', {}, 'Offizielle Karten'),
+    continent.map((official) =>
+      h(
+        'div',
+        { class: 'official-map' },
+        h('strong', {}, official.name),
+        h('span', { class: 'field-hint' }, official.description),
+        addButton(official),
+      ),
+    ),
+    h(
+      'details',
+      { class: 'official-regions' },
+      h('summary', {}, `Regionalkarten und politische Karte (${others.length})`),
+      h(
+        'ul',
+        { class: 'official-list' },
+        others.map((official) =>
+          h(
+            'li',
+            {},
+            h(
+              'span',
+              { class: 'official-name' },
+              official.name,
+              h(
+                'span',
+                { class: 'field-hint' },
+                ` · ${official.author}${official.kind === 'political' ? ' · politische Karte' : ''}`,
+              ),
+            ),
+            addButton(official, { compact: true }),
+          ),
+        ),
+      ),
+    ),
     h(
       'p',
       { class: 'field-hint' },
-      `${credit.text}. Aus dem Kartenpaket von Ulisses Spiele, frei für nicht-kommerzielle Fanprojekte – `,
+      `Aus dem Kartenpaket von Ulisses Spiele (${credit.rights}), frei für nicht-kommerzielle Fanprojekte – `,
       h('a', { href: credit.licenseUrl, target: '_blank', rel: 'noopener' }, 'Lizenz'),
-      '.',
+      '. Bei jeder Karte steht der Hinweis auf Urheber und Lizenz.',
     ),
   );
 }
