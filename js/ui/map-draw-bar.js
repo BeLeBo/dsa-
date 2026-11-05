@@ -11,11 +11,13 @@ import { readJson, writeJson } from '../storage.js';
 import {
   DRAW_COLORS,
   DRAW_PALETTE,
-  DRAW_WIDTHS,
   DRAW_FILLS,
   SHAPE_KINDS,
   drawColorValue,
   normalizeColor,
+  normalizeDrawWidth,
+  widthFromSlider,
+  sliderFromWidth,
 } from '../map.js';
 
 const STYLE_KEY = 'dsa5.ui.stift';
@@ -46,7 +48,7 @@ export function storedDrawStyle() {
     // Der Radierer ist nach dem Wiederöffnen nie aus Versehen noch aktiv.
     tool: TOOL_IDS.includes(stored.tool) && stored.tool !== 'eraser' ? stored.tool : 'pen',
     color,
-    width: DRAW_WIDTHS.some((width) => width.id === stored.width) ? stored.width : 'mittel',
+    width: normalizeDrawWidth(stored.width), // Anteil eines Felds (früher: Stufenname)
     fill: DRAW_FILLS.some((fill) => fill.id === stored.fill) ? stored.fill : 'keine',
     custom: isHex(custom) ? custom : isHex(color) ? color : DEFAULT_CUSTOM_COLOR,
   };
@@ -239,20 +241,21 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     h('span', { class: 'draw-swatch-dot' }),
   );
 
-  const widthButtons = DRAW_WIDTHS.map((width, index) =>
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'draw-tool draw-width',
-        dataset: { width: width.id },
-        'aria-label': `Strich ${width.name.toLowerCase()}`,
-        title: width.name,
-        onclick: () => choose({ width: width.id, tool: toolFor([...SHAPE_KINDS, 'pen']) }),
-      },
-      h('span', { class: 'draw-width-dot', style: `--dot: ${4 + index * 5}px` }),
-    ),
+  // Strichstärke frei wählbar: Schieberegler von hauchdünn bis dick, daneben der Punkt als Vorschau.
+  const widthSlider = h('input', {
+    type: 'range',
+    class: 'draw-width-slider',
+    min: 0,
+    max: 100,
+    step: 1,
+    'aria-label': 'Strichstärke',
+    title: 'Strichstärke',
+  });
+  widthSlider.addEventListener('input', () =>
+    choose({ width: widthFromSlider(widthSlider.value), tool: toolFor([...SHAPE_KINDS, 'pen']) }),
   );
+  const widthDot = h('span', { class: 'draw-width-dot', 'aria-hidden': 'true' });
+  const widthControl = h('label', { class: 'draw-width' }, widthDot, widthSlider);
   // Füllung: ohne → halb durchsichtig → deckend (gilt für Rechteck, Kreis und Farbeimer).
   const fillButton = h(
     'button',
@@ -308,8 +311,8 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     h('div', { class: 'draw-group', role: 'group', 'aria-label': 'Farbe' }, colorButtons, customButton),
     h(
       'div',
-      { class: 'draw-group', role: 'group', 'aria-label': 'Strich und Füllung' },
-      widthButtons,
+      { class: 'draw-group draw-options', role: 'group', 'aria-label': 'Strich und Füllung' },
+      widthControl,
       fillButton,
       undoButton,
       clearButton,
@@ -325,12 +328,14 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     }
     customButton.style.setProperty('--swatch', style.custom);
     customButton.setAttribute('aria-pressed', String(painting && isHex(style.color)));
-    for (const button of widthButtons) {
-      button.setAttribute(
-        'aria-pressed',
-        String(painting && style.tool !== 'bucket' && button.dataset.width === style.width),
-      );
+    const position = sliderFromWidth(style.width);
+    if (Number(widthSlider.value) !== position && document.activeElement !== widthSlider) {
+      widthSlider.value = String(position);
     }
+    // Vorschau: 2 bis 22 Punkte, in der Stiftfarbe
+    widthDot.style.setProperty('--dot', `${Math.round(2 + (Number(widthSlider.value) / 100) * 20)}px`);
+    widthDot.style.setProperty('--swatch', drawColorValue(style.color));
+    widthSlider.setAttribute('aria-valuetext', `${Math.round(normalizeDrawWidth(style.width) * 100)} % eines Felds`);
     const fill = DRAW_FILLS.find((entry) => entry.id === style.fill) ?? DRAW_FILLS[0];
     fillButton.dataset.fill = fill.id;
     fillButton.style.setProperty('--swatch', drawColorValue(style.color));

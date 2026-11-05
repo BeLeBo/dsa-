@@ -12,6 +12,7 @@ import { createMapStage } from './map-stage.js';
 import { openMapsDialog, openTokenDialog, openOwnTokenDialog } from './map-dialogs.js';
 import { openMapEditor } from './map-editor-view.js';
 import { mapTabs } from '../room-map.js';
+import { memberMayDraw } from '../room.js';
 import { heroName } from '../sheet.js';
 import { createMapInspector } from './map-inspector.js';
 import { createDrawBar } from './map-draw-bar.js';
@@ -193,6 +194,16 @@ export function createMapView(
   },
 ) {
   const isShownMap = (map) => map.id === controller.state.get().activeMapId;
+  /** Eigener Eintrag in der Mitgliederliste; darf dieses Gerät malen (Malrecht vom Meister)? */
+  function myMember() {
+    const { members = [], session } = room.get();
+    return members.find((member) => member.user_id === session?.userId) ?? null;
+  }
+  function mayDraw() {
+    if (isMaster()) return true;
+    const member = myMember();
+    return member ? memberMayDraw(member) : true;
+  }
   const canMove = (token) => isMaster() || (Boolean(token.character_id) && token.character_id === myCharacterId());
   const editToken = (token) =>
     openTokenDialog({ controller, token, characters: room.get().characters, center: stage.visibleCenter });
@@ -223,11 +234,15 @@ export function createMapView(
     canPing: () => isMaster() && Boolean(controller.viewMap()) && isShownMap(controller.viewMap()),
     onPing: (point) => controller.actions.ping(point).catch((error) => showError(error, 'Ping nicht gesendet')),
     // Stift: der Meister auf jeder Karte (auch einer vorbereiteten), Spieler auf der gezeigten.
-    canDraw: () => controller.canDraw(),
+    canDraw: () => controller.canDraw() && mayDraw(),
     canErase: (drawing) => controller.canRemoveDrawing(drawing),
     onStroke: (drawing) =>
       controller.actions.addDrawing(drawing).catch((error) => showError(error, 'Zeichnung nicht gespeichert')),
-    onBucketMiss: () => showToast('Hier ist keine Fläche zum Füllen – tippe in eine Fläche, nicht auf einen Strich.'),
+    onBucketMiss: () =>
+      showToast(
+        'Der Farbeimer füllt nur selbst gemalte, geschlossene Flächen – erst einen Umriss malen (z. B. ein Rechteck), dann hineintippen. Reicht die Fläche über den Bildschirmrand, vorher herauszoomen.',
+        { duration: 8000 },
+      ),
     onErase: (ids) =>
       controller.actions.removeDrawings(ids).catch((error) => showError(error, 'Zeichnungen nicht gelöscht')),
     onUndo: () => undoDrawing(),
@@ -585,7 +600,8 @@ export function createMapView(
   function renderNotice(state, map) {
     const mine = state.tokens.some(canMove);
     const shownMap = state.maps.find((entry) => entry.id === state.activeMapId);
-    if (!changed('notice', map?.id, map?.name, isMaster(), state.activeMapId, shownMap?.name, mine, openHeroId()))
+    const pen = mayDraw();
+    if (!changed('notice', map?.id, map?.name, isMaster(), state.activeMapId, shownMap?.name, mine, openHeroId(), pen))
       return;
     if (!map) {
       setChildren(notice);
@@ -637,7 +653,7 @@ export function createMapView(
         'p',
         { class: 'section-hint' },
         mine
-          ? 'Ziehe deine Figur, um sie zu bewegen. Tippe sie an für deine Werte. Mit ✎ malst du auf die Karte.'
+          ? `Ziehe deine Figur, um sie zu bewegen. Tippe sie an für deine Werte.${pen ? ' Mit ✎ malst du auf die Karte.' : ''}`
           : openHeroId()
             ? 'Stell deine Figur mit „Meine Figur aufstellen“ auf die Karte – oder der Meister macht es.'
             : 'Lege im Tab „Held“ deinen Helden an, dann kannst du deine Figur aufstellen.',
@@ -756,7 +772,21 @@ export function createMapView(
   }
 
   controller.state.subscribe(render);
+  // Malrecht: Entzieht oder gibt der Meister es live, verschwindet bzw. erscheint der Stift sofort.
+  let drawRight = myMember() ? mayDraw() : null;
+  function checkDrawRight() {
+    if (!myMember()) return;
+    const now = mayDraw();
+    if (drawRight !== null && now !== drawRight && !isMaster()) {
+      showToast(now ? 'Der Meister hat dir das Malen erlaubt.' : 'Der Meister hat das Malen für dich gesperrt.');
+    }
+    drawRight = now;
+    stage.updateControls();
+    renderNotice(controller.state.get(), controller.viewMap());
+  }
+
   room.subscribe(() => {
+    checkDrawRight();
     updateHighlight();
     renderToolbar(controller.viewMap());
     combatStrip.render();

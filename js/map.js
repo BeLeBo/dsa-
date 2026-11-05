@@ -18,6 +18,8 @@ export const TOKEN_COLORS = Object.freeze([
 ]);
 
 export const TOKEN_SIZES = Object.freeze([
+  { value: 0.125, name: 'Sehr winzig (⅛ Feld)' },
+  { value: 0.25, name: 'Winzig (¼ Feld)' },
   { value: 0.5, name: 'Klein (halbes Feld)' },
   { value: 1, name: 'Mittel (1 Feld)' },
   { value: 2, name: 'Groß (2 × 2 Felder)' },
@@ -508,12 +510,21 @@ export const DRAW_COLORS = Object.freeze([
 /** Farben in der Stiftleiste (Lila und alle anderen gibt es über „Eigene Farbe“). */
 export const DRAW_PALETTE = Object.freeze(['rot', 'gelb', 'gruen', 'blau', 'schwarz', 'weiss']);
 
-/** Strichstärken als Anteil eines Rasterfelds – so wirken sie auf jeder Karte gleich dick. */
+/**
+ * Strichstärken als Anteil eines Rasterfelds – so wirken sie auf jeder Karte gleich dick.
+ * Frei wählbar zwischen DRAW_WIDTH_MIN und DRAW_WIDTH_MAX (Schieberegler); die Namen sind die
+ * früheren festen Stufen (gespeicherte Wahl von älteren Geräten).
+ */
 export const DRAW_WIDTHS = Object.freeze([
   { id: 'duenn', name: 'Dünn', cells: 0.06 },
   { id: 'mittel', name: 'Mittel', cells: 0.12 },
   { id: 'dick', name: 'Dick', cells: 0.25 },
 ]);
+export const DRAW_WIDTH_MIN = 0.01;
+export const DRAW_WIDTH_MAX = 0.5;
+export const DRAW_WIDTH_DEFAULT = 0.12;
+/** Dünner als das zeichnet nichts mehr sichtbar (Kartenpunkte). */
+const MIN_DRAWING_PX = 0.2;
 
 /** Arten von Zeichnungen; Formen bestehen aus genau zwei Punkten (Anfang/Ende bzw. Ecken). */
 export const DRAW_KINDS = Object.freeze(['line', 'straight', 'arrow', 'rect', 'ellipse', 'fill']);
@@ -574,9 +585,29 @@ export function fillParts(fill) {
 }
 
 /** Strichstärke in Kartenpunkten für die gewählte Stärke und das Raster der Karte. */
-export function drawingWidth(widthId, grid) {
-  const { cells } = DRAW_WIDTHS.find((entry) => entry.id === widthId) ?? DRAW_WIDTHS[1];
-  return round1(clamp(cells * grid.size, 1, MAX_DRAWING_WIDTH));
+export function drawingWidth(width, grid) {
+  const cells = normalizeDrawWidth(width);
+  return Math.round(clamp(cells * grid.size, MIN_DRAWING_PX, MAX_DRAWING_WIDTH) * 100) / 100;
+}
+
+/** Gewählte Strichstärke (Anteil eines Felds): Zahl oder alter Stufenname; sonst die Standardstärke. */
+export function normalizeDrawWidth(value) {
+  const preset = DRAW_WIDTHS.find((entry) => entry.id === value);
+  if (preset) return preset.cells;
+  const cells = Number(value);
+  return Number.isFinite(cells) && cells > 0 ? clamp(cells, DRAW_WIDTH_MIN, DRAW_WIDTH_MAX) : DRAW_WIDTH_DEFAULT;
+}
+
+/** Schieberegler 0 … 100 → Strichstärke (gleichmäßig auf einer Verhältnis-Skala, fein bei dünnen Strichen). */
+export function widthFromSlider(position) {
+  const share = clamp(Number(position) || 0, 0, 100) / 100;
+  return Math.round(DRAW_WIDTH_MIN * (DRAW_WIDTH_MAX / DRAW_WIDTH_MIN) ** share * 10000) / 10000;
+}
+
+/** Strichstärke → Stellung des Schiebereglers (0 … 100). */
+export function sliderFromWidth(width) {
+  const cells = normalizeDrawWidth(width);
+  return Math.round((Math.log(cells / DRAW_WIDTH_MIN) / Math.log(DRAW_WIDTH_MAX / DRAW_WIDTH_MIN)) * 100);
 }
 
 /** Punkte für den Server: [x1, y1, x2, y2, …], auf eine Nachkommastelle gerundet. */

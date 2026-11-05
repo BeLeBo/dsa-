@@ -33,6 +33,7 @@ alles live für alle synchronisiert.
 | 18    | Spieler malen mit; Zoom bis in die Gassen, volle Auflösung, Schärfe     | ✅ fertig |
 | 19    | Malen: Farbeimer, eigene Farben (Hex), Formen                           | ✅ fertig |
 | 20    | Kampf: Spieler beenden ihren eigenen Zug                                | ✅ fertig |
+| 21    | Malrecht, Eimer nur für Gemaltes, freie Strichstärke, winzige Figuren   | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -270,9 +271,9 @@ auf dem Server gespeichert und für den Meister sichtbar.
    **Stadtkarten:** Ein feines Raster (Feldgröße bis hinunter zu 2 Punkten, unter 10 in halben
    Schritten) macht die Figuren klein genug für Gassen und lässt tiefer hineinzoomen – so weit, dass
    ein Feld bis zu 240 Bildschirmpunkte groß wird. Weit herausgezoomt blendet die App die Rasterlinien
-   aus (sonst wären sie nur ein grauer Schleier); Figuren bleiben dabei immer mindestens 12 Punkte groß.
+   aus (sonst wären sie nur ein grauer Schleier); Figuren bleiben dabei immer mindestens 6 Punkte groß.
 4. **+ Figur:** Name, Anzahl (mehrere werden nummeriert: Ork 1, Ork 2 …), **Lebensenergie (LeP)** für
-   Gegner und NSC (jede Figur startet mit vollen LeP, leer = ohne LeP), Größe (½ bis 4 × 4 Felder),
+   Gegner und NSC (jede Figur startet mit vollen LeP, leer = ohne LeP), Größe (⅛ Feld bis 4 × 4 Felder – winzig z. B. für Ratten oder Figuren in engen Gassen),
    Farbe, optional ein Bild (wird quadratisch zugeschnitten) und **Verborgen** – verborgene Figuren
    sieht nur der Meister (z. B. für einen Hinterhalt). Gehört die Figur zu einem Helden, darf dessen
    Spieler sie bewegen; seine LeP stehen dann im Heldenbogen.
@@ -320,15 +321,19 @@ auf dem Server gespeichert und für den Meister sichtbar.
    - **Werkzeuge:** **Stift** (freihand), **gerade Linie**, **Pfeil**, **Rechteck** und **Kreis/Ellipse**
      (aufziehen; mit gedrückter Umschalttaste: Quadrat, Kreis bzw. Linien in 45°-Schritten),
      **Farbeimer** und **Radierer** (über Zeichnungen wischen).
-   - **Farbeimer:** Antippen füllt die zusammenhängende Fläche, so wie man sie sieht – begrenzt von den
-     Linien der Karte (z. B. Wände) und von allem, was schon gemalt ist. Größere Inseln (ein Tisch im
-     Raum) bleiben frei, feine Sprenkel der Kartenstruktur werden mitgefüllt. Wer mit dem Eimer zieht,
-     verschiebt die Karte. Gefüllt wird im sichtbaren Bereich (mit etwas Rand) – eine Fläche, die bis
-     über den Bildschirmrand reicht, endet dort; dann herauszoomen und noch einmal tippen.
+   - **Farbeimer:** füllt nur **selbst gemalte, geschlossene Flächen** – z. B. erst ein Rechteck, einen
+     Kreis oder mit dem Stift einen Umriss malen, dann hineintippen. Straßen, Wege und Wände des
+     Kartenbilds zählen nicht als Rand (sonst liefe die Farbe durch die ganze Stadt). Was im Umriss
+     gemalt ist (ein Kreis darin), bleibt als Loch frei. Ist der Umriss nicht geschlossen oder reicht
+     die Fläche über den Bildschirmrand hinaus, füllt der Eimer nichts und sagt Bescheid – dann den
+     Umriss schließen bzw. herauszoomen. Nochmal in dieselbe Füllung tippen legt keine zweite darüber;
+     mit einer anderen Farbe färbt man um. Wer mit dem Eimer zieht, verschiebt die Karte.
    - **Farben:** Rot, Gelb, Grün, Blau, Schwarz, Weiß und **Eigene Farbe** (bunter Kreis): Farbwähler
      des Geräts oder Hex-Wert eintippen (z. B. `#3A7BD5`); die zuletzt benutzten eigenen Farben stehen
      im Dialog zur Auswahl.
-   - **Strichstärke** (dünn, mittel, dick – passend zur Feldgröße) und **Füllung** (Quadrat-Knopf,
+   - **Strichstärke** mit dem Schieberegler frei einstellen – von hauchdünn (ein Hundertstel Feld, für
+     feine Gassen auf Stadtkarten) bis dick (ein halbes Feld); der Punkt daneben zeigt die Stärke.
+     Sie richtet sich nach der Feldgröße und wirkt so auf jeder Karte gleich. **Füllung** (Quadrat-Knopf,
      antippen wechselt: ohne → halb durchsichtig → deckend) für Rechteck, Kreis und Farbeimer (der
      Eimer füllt nie „ohne“, sondern dann halb durchsichtig).
    - **↶ Rückgängig** (eigene letzte Zeichnung, am Rechner auch Strg + Z), **🗑 Alles löschen** (alle
@@ -340,6 +345,11 @@ auf dem Server gespeichert und für den Meister sichtbar.
    Flächen des Farbeimers liegen unter den Linien. Die Zeichnungen gehören zur Karte: Sie bleiben, bis
    sie gelöscht werden, und verschwinden mit der Karte. Der Radierer des Meisters erfasst alle
    Zeichnungen. Werkzeug, Farbe, Stärke und Füllung merkt sich das Gerät.
+   - **Malrecht:** Unter **Gruppe** → **Mitglieder** steht bei jedem Spieler **✎ darf malen** – antippen
+     sperrt das Malen für ihn (**✎ gesperrt**), nochmal antippen erlaubt es wieder. **Malen für alle
+     sperren** und **Allen erlauben** schalten alle Spieler auf einmal (auch wer später beitritt, darf
+     zunächst malen). Gesperrte Spieler verlieren den Stift sofort und bekommen einen Hinweis; ihre
+     schon gemalten Linien bleiben, löschen dürfen sie sie weiterhin. Der Meister malt immer.
 
 **Karte selbst bauen (Karten-Editor)**
 
@@ -377,7 +387,8 @@ fragt nach.
 **Spieler**
 
 - **Malen:** Auch Spieler haben den Stift **✎** – auf der gezeigten Karte, mit derselben Stiftleiste
-  wie der Meister (Formen, Farbeimer, eigene Farben). Was jemand malt, sehen alle sofort. Rückgängig,
+  wie der Meister (Formen, Farbeimer, eigene Farben), solange der Meister es ihnen nicht gesperrt hat
+  (unter **Gruppe** steht dann „Malen gesperrt“). Was jemand malt, sehen alle sofort. Rückgängig,
   Radierer und **Meine Zeichnungen löschen** wirken bei Spielern nur auf die eigenen; die Zeichnungen
   des Meisters und der anderen bleiben. Solange der Stift aktiv ist, verschwinden am Handy die Knöpfe „Werte“ und „Proben“ –
   **Fertig** bringt sie zurück.
@@ -517,7 +528,9 @@ erscheinen rot mit erwartetem und erhaltenem Wert. Die fünf Pflicht-Testfälle 
 - **Kartenbilder** liegen im nicht öffentlichen Supabase-Speicher `karten` unter `<Raum-ID>/…`:
   Sehen dürfen sie nur Mitglieder des Raums, hochladen und löschen nur der Meister. Nicht mehr
   benutzte Bilder löscht die App beim Entfernen von Karten und Figuren. Ob Spieler eine Karte
-  sehen, entscheidet die Datenbank (gezeigte Karte, verborgene Figuren) – nicht nur die App.
+  sehen, entscheidet die Datenbank (gezeigte Karte, verborgene Figuren) – nicht nur die App. Auch das
+  Malrecht prüft die Datenbank: Gesperrte Spieler können keine Zeichnung speichern, und sperren oder
+  erlauben kann nur der Meister (`set_draw_permission`).
 - **Gebaute Karten** (Karten-Editor) zeichnet der Browser selbst – alle Objekte und Gelände sind
   Code (`js/map-render.js`), es gibt keine Bilddateien dafür. Gespeichert wird das fertige Bild wie
   bei hochgeladenen Karten, dazu der Aufbau als JSON in `maps.scene` (Gelände als Zeichenkette, ein

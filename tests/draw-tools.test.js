@@ -16,7 +16,15 @@ import {
   drawingsAt,
   pointInPolygon,
 } from '../js/map.js';
-import { floodFill, traceOutline, simplifyRing, findHoles, bucketOutline, dilate } from '../js/flood-fill.js';
+import {
+  floodFill,
+  traceOutline,
+  simplifyRing,
+  findHoles,
+  bucketOutline,
+  dilate,
+  touchesBorder,
+} from '../js/flood-fill.js';
 import { rememberCustomColor } from '../js/ui/map-draw-bar.js';
 import { createMapController } from '../js/room-map.js';
 
@@ -226,6 +234,18 @@ test(BUCKET, 'Auf die Wand getippt: nur die Wand, nicht der ganze Raum', () => {
   assertEqual(rings.length, 2, 'Wand mit Loch für den Raum');
   assertEqual(rings[1][0], { x: 5.5, y: 5.5 }, 'Loch = Inneres des Raums');
   assertEqual(bucketOutline(rgba, width, height, 8, 8), null, 'ein einzelner Sprenkel ist zu klein');
+});
+
+test(BUCKET, 'Nur geschlossene Flächen: was bis an den Rand reicht, wird nicht gefüllt', () => {
+  const { rgba, width, height } = roomImage();
+  const outside = floodFill(rgba, width, height, 1, 1);
+  assertTrue(touchesBorder(outside, width, height), 'außerhalb des Raums reicht bis an den Rand');
+  assertTrue(!touchesBorder(floodFill(rgba, width, height, 6, 6), width, height), 'Raum ist geschlossen');
+  assertEqual(bucketOutline(rgba, width, height, 1, 1, { enclosed: true }), null, 'außen: nichts');
+  assertTrue(bucketOutline(rgba, width, height, 1, 1) !== null, 'ohne die Vorgabe: auch außen');
+  assertEqual(bucketOutline(rgba, width, height, 6, 6, { enclosed: true }).length, 2, 'innen wie bisher');
+  for (let y = 3; y <= 26; y += 1) rgba.set([255, 255, 255], (y * width + 36) * 4); // Wand offen
+  assertEqual(bucketOutline(rgba, width, height, 6, 6, { enclosed: true }), null, 'offener Umriss: nichts');
 });
 
 test(BUCKET, 'Viele Punkte: Umriss wird gröber, bis er passt', () => {

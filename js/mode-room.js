@@ -36,6 +36,7 @@ import {
   describeRoomHeroes,
   claimCharacter,
   releaseCharacter,
+  setDrawPermission,
 } from './room.js';
 import {
   createCharacterSync,
@@ -717,6 +718,16 @@ export function startRoomMode(initialSession, { onLeave }) {
       leave,
       adjustPool: heroActions.adjustPool,
       open: heroActions.open,
+      /** Meister: Malen für einen Spieler (userId) oder alle Spieler (null) erlauben oder sperren. */
+      setDrawPermission: (userId, allowed) =>
+        run('Nicht gespeichert', async () => {
+          await setDrawPermission(session.roomId, userId, allowed);
+          room.update({ members: await fetchMembers(session.roomId) });
+          const who = userId
+            ? (room.get().members.find((member) => member.user_id === userId)?.display_name ?? 'Spieler')
+            : 'Alle Spieler';
+          showToast(allowed ? `${who}: Malen erlaubt.` : `${who}: Malen gesperrt.`);
+        }),
       assign: (characterId, userId) =>
         run('Übergeben fehlgeschlagen', async () => {
           await assignCharacter(characterId, userId);

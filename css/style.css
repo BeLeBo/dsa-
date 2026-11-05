@@ -1830,6 +1830,43 @@ input.num::-webkit-inner-spin-button {
   border-bottom: 0;
 }
 
+.member-list li {
+  align-items: center;
+}
+
+.member-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+/* Meister: Malrecht je Spieler */
+.member-draw[aria-pressed='true'] {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.member-draw.is-blocked {
+  border-color: var(--failure);
+  color: var(--failure);
+}
+
+.member-draw-all {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-bottom: 4px;
+}
+
+.member-draw-all .section-hint {
+  margin: 0;
+}
+
 .leave-button {
   width: 100%;
   margin-bottom: 12px;
@@ -2997,11 +3034,32 @@ body.map-fullscreen-open {
   gap: 2px;
 }
 
+/* Strichstärke: Schieberegler mit Vorschau-Punkt (Platz für den größten Punkt bleibt frei) */
+.draw-width {
+  display: inline-flex;
+  flex: 1 1 140px;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  max-width: 220px;
+  min-height: var(--touch);
+  padding: 0 6px;
+}
+
+.draw-width-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
 .draw-width-dot {
+  flex: none;
   width: var(--dot);
   height: var(--dot);
+  margin: 0 calc((22px - var(--dot)) / 2);
   border-radius: 50%;
-  background: currentColor;
+  background: var(--swatch, currentColor);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25);
 }
 
 .draw-done {
