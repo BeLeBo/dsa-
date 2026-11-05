@@ -45,6 +45,12 @@ import {
   TOKEN_COLORS,
   DRAW_COLORS,
   drawingWidth,
+  normalizeDrawWidth,
+  widthFromSlider,
+  sliderFromWidth,
+  DRAW_WIDTH_MIN,
+  DRAW_WIDTH_MAX,
+  TOKEN_SIZES,
   flattenPoints,
   normalizeDrawing,
   addStrokePoint,
@@ -1315,7 +1321,33 @@ test(DRAW, 'Strichstärke richtet sich nach dem Raster', () => {
   assertEqual(drawingWidth('mittel', GRID), 6);
   assertEqual(drawingWidth('dick', GRID), 12.5);
   assertEqual(drawingWidth('unbekannt', GRID), 6, 'unbekannt → mittel');
-  assertEqual(drawingWidth('duenn', { size: 10 }), 1, 'nie dünner als 1 Punkt');
+  assertEqual(drawingWidth('duenn', { size: 10 }), 0.6, 'alte Stufe auch auf kleinem Raster');
+  assertEqual(drawingWidth(0.01, GRID), 0.5, 'frei gewählt: ein Hundertstel Feld');
+  assertEqual(drawingWidth(0.01, { size: 10 }), 0.2, 'nie dünner als 0,2 Punkte');
+  assertEqual(drawingWidth(0.5, GRID), 25);
+});
+
+test(DRAW, 'Freie Strichstärke: Zahl oder alte Stufe, begrenzt; Schieberegler hin und zurück', () => {
+  assertEqual(normalizeDrawWidth('dick'), 0.25, 'alte Stufe');
+  assertEqual(normalizeDrawWidth(0.03), 0.03);
+  assertEqual(normalizeDrawWidth('0.2'), 0.2, 'als Text gespeichert');
+  assertEqual(normalizeDrawWidth(0.001), DRAW_WIDTH_MIN, 'zu dünn → dünnste');
+  assertEqual(normalizeDrawWidth(3), DRAW_WIDTH_MAX, 'zu dick → dickste');
+  assertEqual(normalizeDrawWidth(undefined), 0.12, 'nichts gewählt → Standard');
+  assertEqual(normalizeDrawWidth(-1), 0.12);
+  assertEqual(widthFromSlider(0), DRAW_WIDTH_MIN);
+  assertEqual(widthFromSlider(100), DRAW_WIDTH_MAX);
+  assertEqual(widthFromSlider(-5), DRAW_WIDTH_MIN, 'außerhalb → Rand');
+  assertTrue(widthFromSlider(50) < 0.1, `Mitte ist fein (${widthFromSlider(50)})`);
+  for (const position of [0, 13, 37, 50, 81, 100]) {
+    assertEqual(sliderFromWidth(widthFromSlider(position)), position, `Stellung ${position}`);
+  }
+  assertEqual(sliderFromWidth('mittel'), sliderFromWidth(0.12));
+});
+
+test(DRAW, 'Figuren: auch ⅛ und ¼ Feld groß', () => {
+  const values = TOKEN_SIZES.map((size) => size.value);
+  assertEqual(values, [0.125, 0.25, 0.5, 1, 2, 3, 4]);
 });
 
 test(DRAW, 'Linien vom Server prüfen, Punkte für den Server runden', () => {
@@ -1339,6 +1371,7 @@ test(DRAW, 'Linien vom Server prüfen, Punkte für den Server runden', () => {
       { x: 3, y: 4 },
     ],
     created_by: null,
+    private: false,
   });
   assertEqual(normalizeDrawing({ id: 'd', points: [1, 2], created_by: 'u1' }).created_by, 'u1', 'Zeichner');
   assertEqual(normalizeDrawing({ id: 'd', color: 'pink', width: 6, points: [1, 2] }).color, 'rot', 'Farbe → Rot');

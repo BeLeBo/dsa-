@@ -17,6 +17,7 @@ const TOKEN_COLUMNS =
 const TEMPLATE_COLUMNS = 'id, room_id, name, image_path, color, size, le_max, ini_base, updated_at';
 /** Spalten der Zeichnungen – die neuesten zuerst; ältere Datenbanken kennen nicht alle (Schema 8, 9). */
 const DRAWING_COLUMN_SETS = [
+  'id, room_id, map_id, kind, color, width, fill, points, private, created_by, created_at',
   'id, room_id, map_id, kind, color, width, fill, points, created_by, created_at',
   'id, room_id, map_id, color, width, points, created_by, created_at',
   'id, room_id, map_id, color, width, points, created_at',
@@ -223,7 +224,7 @@ export async function fetchDrawings(mapId) {
 }
 
 /**
- * Zeichnung speichern – { id, room_id, map_id, color, width, points: [x1, y1, …], kind?, fill? };
+ * Zeichnung speichern – { id, room_id, map_id, color, width, points: [x1, y1, …], kind?, fill?, private? };
  * der Zeichner kommt vom Server.
  */
 export async function createDrawing(row) {

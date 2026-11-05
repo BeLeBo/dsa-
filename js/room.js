@@ -157,14 +157,34 @@ export async function leaveRoom(session) {
   await unwrap(client.from('room_members').delete().eq('room_id', session.roomId).eq('user_id', session.userId));
 }
 
+/** Mit Malrecht (Datenbank ab Schema 12); ältere Datenbanken kennen can_draw noch nicht. */
+const MEMBER_COLUMNS = ['user_id, display_name, role, joined_at, can_draw', 'user_id, display_name, role, joined_at'];
+let memberColumns = 0;
+
 export async function fetchMembers(roomId) {
   const client = await getClient();
-  return unwrap(
-    client
-      .from('room_members')
-      .select('user_id, display_name, role, joined_at')
-      .eq('room_id', roomId)
-      .order('joined_at'),
+  for (;;) {
+    const columns = MEMBER_COLUMNS[memberColumns];
+    try {
+      return await unwrap(client.from('room_members').select(columns).eq('room_id', roomId).order('joined_at'));
+    } catch (error) {
+      // schema.sql noch nicht erneut ausgeführt: Mitglieder trotzdem laden (alle dürfen malen).
+      if (!error.schema || memberColumns >= MEMBER_COLUMNS.length - 1) throw error;
+      memberColumns += 1;
+    }
+  }
+}
+
+/** Darf dieses Mitglied malen? Der Meister immer; Spieler, solange es ihnen nicht entzogen ist. */
+export function memberMayDraw(member) {
+  return Boolean(member) && (member.role === ROLES.MASTER || member.can_draw !== false);
+}
+
+/** Meister: Malen für einen Spieler (userId) oder für alle Spieler (userId = null) erlauben oder sperren. */
+export async function setDrawPermission(roomId, userId, allowed) {
+  const client = await getClient();
+  await unwrap(
+    client.rpc('set_draw_permission', { p_room_id: roomId, p_user_id: userId, p_allowed: Boolean(allowed) }),
   );
 }
 

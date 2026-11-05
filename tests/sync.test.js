@@ -4,7 +4,14 @@
  */
 import { test, assertEqual, assertTrue } from './harness.js';
 import { mergeJson } from '../js/merge.js';
-import { normalizeRoomCode, validateJoin, validateCreate, inviteLink, describeRoomHeroes } from '../js/room.js';
+import {
+  normalizeRoomCode,
+  validateJoin,
+  validateCreate,
+  inviteLink,
+  describeRoomHeroes,
+  memberMayDraw,
+} from '../js/room.js';
 import { heroOwnerLabel } from '../js/ui/hero-choice.js';
 import {
   toServerError,
@@ -119,6 +126,14 @@ test(MERGE, 'Ganzer Held: Meister zieht LE ab, Spieler ändert Talent', () => {
 // ---------------------------------------------------------------------------
 
 const ROOM = 'Räume: Eingaben prüfen (room.js)';
+
+test(ROOM, 'Malrecht: Meister immer, Spieler außer gesperrt (ältere Datenbank: alle)', () => {
+  assertTrue(memberMayDraw({ role: 'master', can_draw: false }), 'Meister darf immer');
+  assertTrue(memberMayDraw({ role: 'player', can_draw: true }));
+  assertTrue(!memberMayDraw({ role: 'player', can_draw: false }), 'gesperrt');
+  assertTrue(memberMayDraw({ role: 'player' }), 'ohne Spalte: erlaubt');
+  assertTrue(!memberMayDraw(null), 'nicht im Raum');
+});
 
 test(ROOM, 'Raumcode normalisieren', () => {
   assertEqual(normalizeRoomCode(' k7m-pq2 '), 'K7MPQ2');

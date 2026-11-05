@@ -5,7 +5,7 @@
 import { h, setChildren } from './dom.js';
 import { confirmDialog } from './dialog.js';
 import { renderCombatCard, createNpcForm } from './combat-view.js';
-import { ROLE_NAMES, ROLES } from '../room.js';
+import { ROLE_NAMES, ROLES, memberMayDraw } from '../room.js';
 import { heroName, normalizeHero, describeConditions } from '../sheet.js';
 
 function formatCode(code) {
@@ -71,7 +71,7 @@ function heroSummary(character, hero, adjustPool) {
  *        leave() fragt selbst nach; Zuweisen und Löschen werden hier bestätigt.
  * @param {object} options.combatActions  siehe combat-view.js
  */
-export function createGroupView(root, { room, currentCharacterId, actions, combatActions }) {
+export function createGroupView(root, { room, currentCharacterId, actions, combatActions, combatIsOut }) {
   const ui = { editingCombat: false };
   const combatViewActions = {
     ...combatActions,
@@ -184,6 +184,61 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
     }
   }
 
+  /** Meister: Malen für einen Spieler erlauben oder sperren (Schalter in der Mitgliederliste). */
+  function drawRightButton(member) {
+    const allowed = memberMayDraw(member);
+    return h(
+      'button',
+      {
+        type: 'button',
+        class: `btn btn-small member-draw ${allowed ? '' : 'is-blocked'}`.trim(),
+        'aria-pressed': String(allowed),
+        'aria-label': `${member.display_name}: Malen ${allowed ? 'erlaubt – antippen zum Sperren' : 'gesperrt – antippen zum Erlauben'}`,
+        title: allowed ? 'Darf malen – antippen zum Sperren' : 'Malen gesperrt – antippen zum Erlauben',
+        onclick: () => actions.setDrawPermission(member.user_id, !allowed),
+      },
+      allowed ? '✎ darf malen' : '✎ gesperrt',
+    );
+  }
+
+  /** Meister: Malen für alle Spieler auf einmal sperren oder erlauben. */
+  function drawRightsBar(members) {
+    const players = members.filter((member) => member.role === ROLES.PLAYER);
+    if (players.length === 0) return null;
+    const blocked = players.filter((member) => !memberMayDraw(member)).length;
+    return h(
+      'div',
+      { class: 'member-draw-all' },
+      h(
+        'span',
+        { class: 'section-hint' },
+        blocked === 0
+          ? 'Alle Spieler dürfen auf die Karte malen.'
+          : blocked === players.length
+            ? 'Malen ist für alle Spieler gesperrt.'
+            : `Malen gesperrt für ${blocked} von ${players.length} Spielern.`,
+      ),
+      h(
+        'div',
+        { class: 'button-row' },
+        blocked < players.length
+          ? h(
+              'button',
+              { type: 'button', class: 'btn btn-small', onclick: () => actions.setDrawPermission(null, false) },
+              'Malen für alle sperren',
+            )
+          : null,
+        blocked > 0
+          ? h(
+              'button',
+              { type: 'button', class: 'btn btn-small', onclick: () => actions.setDrawPermission(null, true) },
+              'Allen erlauben',
+            )
+          : null,
+      ),
+    );
+  }
+
   function render() {
     const focused = focusInForm();
     const { session, members, characters, live, combat } = room.get();
@@ -201,6 +256,7 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
         editing: ui.editingCombat,
         actions: combatViewActions,
         npcForm,
+        isOut: combatIsOut,
       }),
       h(
         'section',
@@ -240,6 +296,7 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
         'section',
         { class: 'card' },
         h('h2', {}, `Mitglieder (${members.length})`),
+        isMaster ? drawRightsBar(members) : null,
         h(
           'ul',
           { class: 'member-list' },
@@ -247,15 +304,21 @@ export function createGroupView(root, { room, currentCharacterId, actions, comba
             h(
               'li',
               {},
-              h('span', {}, member.display_name, member.user_id === session.userId ? ' (du)' : ''),
               h(
                 'span',
-                { class: 'row-sub' },
-                ROLE_NAMES[member.role],
-                heroOwners.has(member.user_id)
-                  ? ` · ${heroName(normalizeHero(heroOwners.get(member.user_id).data))}`
-                  : '',
+                { class: 'member-text' },
+                h('span', {}, member.display_name, member.user_id === session.userId ? ' (du)' : ''),
+                h(
+                  'span',
+                  { class: 'row-sub' },
+                  ROLE_NAMES[member.role],
+                  heroOwners.has(member.user_id)
+                    ? ` · ${heroName(normalizeHero(heroOwners.get(member.user_id).data))}`
+                    : '',
+                  !isMaster && member.role === ROLES.PLAYER && !memberMayDraw(member) ? ' · Malen gesperrt' : '',
+                ),
               ),
+              isMaster && member.role === ROLES.PLAYER ? drawRightButton(member) : null,
             ),
           ),
         ),

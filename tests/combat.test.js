@@ -19,6 +19,7 @@ import {
   isHeroInitiativeRoll,
   heroOnTurnChange,
   isHeroTurn,
+  isEntryDown,
 } from '../js/combat.js';
 import { canSee, VISIBILITY } from '../js/log.js';
 import { createRoomLog, rowToRecord } from '../js/room-log.js';
@@ -290,7 +291,7 @@ test(LOG, 'Laden: neueste zuerst, nur Meister darf leeren', async () => {
 
 const CONTROL = 'Kampf-Steuerung im Raum (room-combat.js, mit Attrappen)';
 
-function controller({ isMaster = true, myCharacterId = null, save = null, endTurn = null } = {}) {
+function controller({ isMaster = true, myCharacterId = null, save = null, endTurn = null, isOut } = {}) {
   const room = createObservable({ combat: null, characters: [{ id: 'a', data: createHero() }] });
   const saved = [];
   const turns = [];
@@ -309,6 +310,7 @@ function controller({ isMaster = true, myCharacterId = null, save = null, endTur
     },
     save: save ?? (async (_roomId, combat) => saved.push(combat)),
     endTurn: endTurn ?? (async () => null),
+    isOut,
   });
   return { room, saved, turns, added, control };
 }
@@ -487,3 +489,84 @@ test(CONTROL, 'Fremden Zug kann niemand beenden', async () => {
   await control.actions.endOwnTurn();
   assertTrue(!called && !isHeroTurn(room.get().combat, 'b') && !isHeroTurn(null, 'a'), 'nicht am Zug');
 });
+
+// ---------------------------------------------------------------------------
+// Tote kommen nicht dran
+// ---------------------------------------------------------------------------
+
+const DOWN = 'Kampf: Tote kommen nicht dran (combat.js)';
+/** Reihenfolge Alrik → Bosper → Ork; `dead` = Namen, die tot sind. */
+const outBy =
+  (...dead) =>
+  (entry) =>
+    dead.includes(entry?.name);
+
+test(DOWN, 'Tot: Held mit LeP ≤ 0 (Bogen oder Figur), Gegner erst, wenn alle Figuren am Boden sind', () => {
+  const [alrik, , ork] = orderedEntries(sampleCombat());
+  const hero = (current, max = 30) => ({ base: { le: { current, max } } });
+  assertTrue(isEntryDown(alrik, { hero: hero(0) }), 'Held mit 0 LeP');
+  assertTrue(isEntryDown(alrik, { hero: hero(-4) }), 'Held mit negativen LeP');
+  assertTrue(!isEntryDown(alrik, { hero: hero(1) }), 'Held mit 1 LeP kämpft');
+  assertTrue(!isEntryDown(alrik, { hero: hero(0, 0) }), 'ohne Maximum: unbekannt');
+  const heroToken = { character_id: 'a', name: 'Alrik', le_current: 0, le_max: 30 };
+  assertTrue(isEntryDown(alrik, { tokens: [heroToken] }), 'Spieler kennt fremde Helden nur über die Figur');
+  const orkToken = (le_current, le_max = 20) => ({ character_id: null, name: 'Ork', le_current, le_max });
+  assertTrue(isEntryDown(ork, { tokens: [orkToken(0)] }), 'Ork mit 0 LeP');
+  assertTrue(!isEntryDown(ork, { tokens: [orkToken(5)] }));
+  assertTrue(!isEntryDown(ork, { tokens: [orkToken(null, null)] }), 'ohne LeP: nie tot');
+  assertTrue(!isEntryDown(ork, { tokens: [] }), 'ohne Figur: nie tot');
+  assertTrue(!isEntryDown(ork, { tokens: [{ ...heroToken, name: 'Ork' }] }), 'Heldenfigur gleichen Namens zählt nicht');
+  assertTrue(!isEntryDown(null), 'kein Eintrag');
+});
+
+test(DOWN, 'Weiter: Tote werden übersprungen, auch über das Rundenende', () => {
+  let combat = advanceTurn(sampleCombat(), outBy('Alrik')); // Start
+  assertEqual(currentEntry(combat).name, 'Bosper', 'Start: der Erste lebt nicht');
+  combat = advanceTurn(combat, outBy('Alrik')); // Ork
+  combat = advanceTurn(combat, outBy('Alrik'));
+  assertEqual([currentEntry(combat).name, combat.round], ['Bosper', 2], 'nach dem Ork: neue Runde, Alrik übersprungen');
+  combat = advanceTurn(combat, outBy('Alrik', 'Ork'));
+  assertEqual([currentEntry(combat).name, combat.round], ['Bosper', 3], 'nur einer übrig: er ist jede Runde dran');
+  const allDead = advanceTurn(combat, outBy('Alrik', 'Bosper', 'Ork'));
+  assertEqual(currentEntry(allDead).name, 'Ork', 'alle tot: wie immer reihum (nichts hängt fest)');
+});
+
+test(DOWN, 'Zurück und Entfernen überspringen Tote ebenso', () => {
+  let combat = advanceTurn(advanceTurn(advanceTurn(sampleCombat()))); // Ork, Runde 1
+  assertEqual(currentEntry(previousTurn(combat, outBy('Bosper'))).name, 'Alrik');
+  assertEqual(previousTurn(combat, outBy('Bosper', 'Alrik')), combat, 'davor nur Tote in Runde 1: bleibt');
+  combat = advanceTurn(advanceTurn(sampleCombat())); // Bosper
+  const removed = removeEntry(combat, heroEntryId('b'), outBy('Ork'));
+  assertEqual(currentEntry(removed).name, 'Alrik', 'Bosper entfernt, der Ork ist tot → der davor');
+});
+
+test(
+  DOWN,
+  'Steuerung: Meister und Spieler überspringen Tote; Meister schaltet nach Fremd-Weitergabe weiter',
+  async () => {
+    const { room, saved, control } = controller({ isOut: outBy('Bosper') });
+    room.update({ combat: advanceTurn(sampleCombat()) }); // Alrik
+    control.actions.next();
+    await wait(0);
+    assertEqual(currentEntry(room.get().combat).name, 'Ork', 'Meister: Bosper übersprungen');
+    // Spieler gibt (ohne zu wissen, dass Bosper tot ist) an Bosper weiter → Meister schaltet weiter
+    const before = saved.length;
+    control.handleRoomRow({ combat: advanceTurn(sampleCombat()) }); // Alrik
+    control.handleRoomRow({ combat: advanceTurn(advanceTurn(sampleCombat())) }); // Bosper
+    await wait(0);
+    assertEqual(currentEntry(room.get().combat).name, 'Ork', 'Bosper tot → gleich der Ork');
+    assertEqual(saved.length, before + 1, 'einmal gespeichert');
+
+    const calls = [];
+    const player = controller({
+      isMaster: false,
+      myCharacterId: 'a',
+      isOut: outBy('Bosper'),
+      endTurn: async (_roomId, args) => calls.push(args),
+    });
+    const fight = advanceTurn(sampleCombat()); // Alrik am Zug
+    player.room.update({ combat: fight });
+    await player.control.actions.endOwnTurn();
+    assertEqual(calls[0].nextId, orderedEntries(fight)[2].id, 'Spieler gibt an den Ork weiter');
+  },
+);

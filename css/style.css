@@ -1830,6 +1830,43 @@ input.num::-webkit-inner-spin-button {
   border-bottom: 0;
 }
 
+.member-list li {
+  align-items: center;
+}
+
+.member-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+/* Meister: Malrecht je Spieler */
+.member-draw[aria-pressed='true'] {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.member-draw.is-blocked {
+  border-color: var(--failure);
+  color: var(--failure);
+}
+
+.member-draw-all {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-bottom: 4px;
+}
+
+.member-draw-all .section-hint {
+  margin: 0;
+}
+
 .leave-button {
   width: 100%;
   margin-bottom: 12px;
@@ -1948,6 +1985,15 @@ input.num::-webkit-inner-spin-button {
 
 .initiative-row.is-mine .initiative-name strong {
   color: var(--accent);
+}
+
+.initiative-row.is-down:not(.is-current) {
+  color: var(--muted);
+}
+
+.initiative-row.is-down .initiative-name strong {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 
 .initiative-position {
@@ -2997,15 +3043,44 @@ body.map-fullscreen-open {
   gap: 2px;
 }
 
+/* Strichstärke: Schieberegler mit Vorschau-Punkt (Platz für den größten Punkt bleibt frei) */
+.draw-width {
+  display: inline-flex;
+  flex: 1 1 140px;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  max-width: 220px;
+  min-height: var(--touch);
+  padding: 0 6px;
+}
+
+.draw-width-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
 .draw-width-dot {
+  flex: none;
   width: var(--dot);
   height: var(--dot);
+  margin: 0 calc((22px - var(--dot)) / 2);
   border-radius: 50%;
-  background: currentColor;
+  background: var(--swatch, currentColor);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25);
 }
 
 .draw-done {
   margin-left: 4px;
+}
+
+/* Handy: Schieberegler über die ganze Breite (feiner einstellbar), die Knöpfe darunter */
+@media (max-width: 479px) {
+  .draw-width {
+    flex-basis: 100%;
+    max-width: none;
+  }
 }
 
 @media (max-width: 639px) {
@@ -3319,6 +3394,40 @@ a.btn {
   color: var(--muted);
   font-size: 1.2rem;
   cursor: pointer;
+}
+
+.map-tabs-collapse {
+  flex: none;
+  width: var(--touch);
+  min-height: var(--touch);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+/* Eingeklappte Kartenauswahl: ein Knopf mit dem Kartennamen vorn in der Werkzeugleiste */
+.map-toolbar .map-tabs-expand {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 220px;
+  border-color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.map-tabs-expand-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-tabs-expand.is-shown .map-tabs-expand-name {
+  color: var(--accent);
 }
 
 .map-tab-add {
@@ -3954,6 +4063,17 @@ a.btn {
 
 .play-combat-entry.is-mine:not(.is-current) {
   border-color: var(--focus);
+}
+
+/* Tot (0 LeP): bleibt in der Reihe, kommt aber nicht dran */
+.play-combat-entry.is-down:not(.is-current) {
+  border-style: dashed;
+  background: none;
+  color: var(--muted);
+}
+
+.play-combat-entry.is-down .play-combat-name {
+  text-decoration: line-through;
 }
 
 .play-combat-name {

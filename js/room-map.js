@@ -878,9 +878,18 @@ export function createMapController({
 
   /**
    * Zeichnung auf die angezeigte Karte: Linie, Form oder Farbeimer-Fläche (siehe normalizeDrawing).
-   * @param {object} spec  { kind, points | rings (Farbeimer), color, width, fill } in Kartenpunkten
+   * @param {object} spec  { kind, points | rings (Farbeimer), color, width, fill, private } in Kartenpunkten;
+   *                       private = nur für mich (sieht niemand sonst, auch nicht der Meister)
    */
-  async function addDrawing({ kind = 'line', points = null, rings = null, color, width, fill = null }) {
+  async function addDrawing({
+    kind = 'line',
+    points = null,
+    rings = null,
+    color,
+    width,
+    fill = null,
+    private: onlyMe = false,
+  }) {
     const map = viewMap();
     if (!canDraw() || !(points?.length || rings?.length)) return null;
     const onMap = (list) => list.map((point) => clampToMap(point, map));
@@ -893,6 +902,7 @@ export function createMapController({
       fill,
       points: kind === 'fill' ? flattenRings((rings ?? [points]).map(onMap)) : flattenPoints(onMap(points)),
       created_by: userId(),
+      private: onlyMe === true,
     });
     if (!drawing) return null;
     state.update({ drawings: [...state.get().drawings, drawing] });
@@ -907,6 +917,7 @@ export function createMapController({
     // Neue Felder nur, wenn nötig – so klappen freie Linien auch mit einer älteren Datenbank.
     if (drawing.kind !== 'line') row.kind = drawing.kind;
     if (drawing.fill) row.fill = drawing.fill;
+    if (drawing.private) row.private = true;
     const saving = api.createDrawing(row);
     savingDrawings.set(drawing.id, saving);
     try {

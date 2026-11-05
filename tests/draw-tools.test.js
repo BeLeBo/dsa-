@@ -16,7 +16,15 @@ import {
   drawingsAt,
   pointInPolygon,
 } from '../js/map.js';
-import { floodFill, traceOutline, simplifyRing, findHoles, bucketOutline, dilate } from '../js/flood-fill.js';
+import {
+  floodFill,
+  traceOutline,
+  simplifyRing,
+  findHoles,
+  bucketOutline,
+  dilate,
+  touchesBorder,
+} from '../js/flood-fill.js';
 import { rememberCustomColor } from '../js/ui/map-draw-bar.js';
 import { createMapController } from '../js/room-map.js';
 
@@ -228,6 +236,18 @@ test(BUCKET, 'Auf die Wand getippt: nur die Wand, nicht der ganze Raum', () => {
   assertEqual(bucketOutline(rgba, width, height, 8, 8), null, 'ein einzelner Sprenkel ist zu klein');
 });
 
+test(BUCKET, 'Nur geschlossene Flächen: was bis an den Rand reicht, wird nicht gefüllt', () => {
+  const { rgba, width, height } = roomImage();
+  const outside = floodFill(rgba, width, height, 1, 1);
+  assertTrue(touchesBorder(outside, width, height), 'außerhalb des Raums reicht bis an den Rand');
+  assertTrue(!touchesBorder(floodFill(rgba, width, height, 6, 6), width, height), 'Raum ist geschlossen');
+  assertEqual(bucketOutline(rgba, width, height, 1, 1, { enclosed: true }), null, 'außen: nichts');
+  assertTrue(bucketOutline(rgba, width, height, 1, 1) !== null, 'ohne die Vorgabe: auch außen');
+  assertEqual(bucketOutline(rgba, width, height, 6, 6, { enclosed: true }).length, 2, 'innen wie bisher');
+  for (let y = 3; y <= 26; y += 1) rgba.set([255, 255, 255], (y * width + 36) * 4); // Wand offen
+  assertEqual(bucketOutline(rgba, width, height, 6, 6, { enclosed: true }), null, 'offener Umriss: nichts');
+});
+
 test(BUCKET, 'Viele Punkte: Umriss wird gröber, bis er passt', () => {
   const width = 200;
   const height = 200;
@@ -241,6 +261,13 @@ test(BUCKET, 'Viele Punkte: Umriss wird gröber, bis er passt', () => {
   const rings = bucketOutline(rgba, width, height, 100, 100, { maxPoints: 60 });
   const total = rings.reduce((sum, ring) => sum + ring.length, 0) + rings.length - 1;
   assertTrue(total <= 60, `höchstens 60 Punkte (${total})`);
+});
+
+test(COLORS, 'Nur für mich: Kennzeichen bleibt erhalten, sonst für alle', () => {
+  const row = { id: 'd1', points: [1, 2, 3, 4], color: 'rot', width: 2 };
+  assertEqual(normalizeDrawing({ ...row, private: true }).private, true);
+  assertEqual(normalizeDrawing(row).private, false, 'ältere Datenbank ohne Spalte: für alle');
+  assertEqual(normalizeDrawing({ ...row, private: 'ja' }).private, false, 'nur echtes true');
 });
 
 test(BUCKET, 'Zuletzt benutzte eigene Farben: neueste zuerst, ohne Doppelte, höchstens acht', () => {
@@ -306,16 +333,23 @@ test(BUCKET, 'Speichern: Form mit Füllung, Farbeimer mit Umrissen, Linie wie bi
     fill: '#e02424ff',
   });
   await controller.actions.addDrawing({ points: [{ x: 1, y: 1 }], color: 'rot', width: 3 });
+  await controller.actions.addDrawing({ points: [{ x: 5, y: 5 }], color: 'blau', width: 3, private: true });
+  assertEqual(calls[3].private, true, 'nur für mich: als privat gespeichert');
+  assertEqual(controller.state.get().drawings.at(-1).private, true, 'auch sofort auf dem eigenen Gerät');
   assertEqual(
     [calls[0].kind, calls[0].fill, calls[0].points],
     ['rect', '#3a7bd573', [10, 10, 1000, 50]],
     'Form, auf die Karte begrenzt',
   );
   assertEqual(calls[1].points, [0, 0, 50, 0, 50, 50, -1, -1, 10, 10, 20, 10, 20, 20], 'Umrisse mit Trennzeichen');
-  assertEqual('kind' in calls[2] || 'fill' in calls[2], false, 'freie Linie ohne neue Felder (ältere Datenbank)');
+  assertEqual(
+    'kind' in calls[2] || 'fill' in calls[2] || 'private' in calls[2],
+    false,
+    'freie Linie für alle ohne neue Felder (ältere Datenbank)',
+  );
   assertEqual(
     controller.state.get().drawings.map((drawing) => drawing.kind),
-    ['rect', 'fill', 'line'],
+    ['rect', 'fill', 'line', 'line'],
   );
   localStorage.removeItem('dsa5.karte.raum');
   localStorage.removeItem('dsa5.karten-offen.raum');

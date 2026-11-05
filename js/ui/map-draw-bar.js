@@ -7,15 +7,18 @@
  */
 import { h, icon, ICONS } from './dom.js';
 import { openDialog } from './dialog.js';
+import { showToast } from './toast.js';
 import { readJson, writeJson } from '../storage.js';
 import {
   DRAW_COLORS,
   DRAW_PALETTE,
-  DRAW_WIDTHS,
   DRAW_FILLS,
   SHAPE_KINDS,
   drawColorValue,
   normalizeColor,
+  normalizeDrawWidth,
+  widthFromSlider,
+  sliderFromWidth,
 } from '../map.js';
 
 const STYLE_KEY = 'dsa5.ui.stift';
@@ -46,9 +49,10 @@ export function storedDrawStyle() {
     // Der Radierer ist nach dem Wiederöffnen nie aus Versehen noch aktiv.
     tool: TOOL_IDS.includes(stored.tool) && stored.tool !== 'eraser' ? stored.tool : 'pen',
     color,
-    width: DRAW_WIDTHS.some((width) => width.id === stored.width) ? stored.width : 'mittel',
+    width: normalizeDrawWidth(stored.width), // Anteil eines Felds (früher: Stufenname)
     fill: DRAW_FILLS.some((fill) => fill.id === stored.fill) ? stored.fill : 'keine',
     custom: isHex(custom) ? custom : isHex(color) ? color : DEFAULT_CUSTOM_COLOR,
+    private: stored.private === true, // nur für mich malen
   };
 }
 
@@ -168,7 +172,7 @@ function openColorPicker(current, onPick) {
 
 /**
  * @param {object} options
- * @param {(style: {tool, color, width, fill}) => void} options.onChange  Werkzeug, Farbe, Stärke oder Füllung geändert
+ * @param {(style: {tool, color, width, fill, private}) => void} options.onChange  Werkzeug, Farbe, Stärke, Füllung oder „nur für mich“ geändert
  * @param {() => void} options.onUndo
  * @param {() => void} options.onClear
  * @param {() => void} options.onClose  „Fertig“: Stift weglegen
@@ -185,6 +189,7 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
       width: style.width,
       fill: style.fill,
       custom: style.custom,
+      private: style.private,
     });
     refresh();
     onChange(style);
@@ -239,20 +244,21 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     h('span', { class: 'draw-swatch-dot' }),
   );
 
-  const widthButtons = DRAW_WIDTHS.map((width, index) =>
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'draw-tool draw-width',
-        dataset: { width: width.id },
-        'aria-label': `Strich ${width.name.toLowerCase()}`,
-        title: width.name,
-        onclick: () => choose({ width: width.id, tool: toolFor([...SHAPE_KINDS, 'pen']) }),
-      },
-      h('span', { class: 'draw-width-dot', style: `--dot: ${4 + index * 5}px` }),
-    ),
+  // Strichstärke frei wählbar: Schieberegler von hauchdünn bis dick, daneben der Punkt als Vorschau.
+  const widthSlider = h('input', {
+    type: 'range',
+    class: 'draw-width-slider',
+    min: 0,
+    max: 100,
+    step: 1,
+    'aria-label': 'Strichstärke',
+    title: 'Strichstärke',
+  });
+  widthSlider.addEventListener('input', () =>
+    choose({ width: widthFromSlider(widthSlider.value), tool: toolFor([...SHAPE_KINDS, 'pen']) }),
   );
+  const widthDot = h('span', { class: 'draw-width-dot', 'aria-hidden': 'true' });
+  const widthControl = h('label', { class: 'draw-width' }, widthDot, widthSlider);
   // Füllung: ohne → halb durchsichtig → deckend (gilt für Rechteck, Kreis und Farbeimer).
   const fillButton = h(
     'button',
@@ -265,6 +271,23 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
       },
     },
     h('span', { class: 'draw-fill-icon' }),
+  );
+  // Nur für mich: Was man dann malt, sieht niemand sonst (auch nicht der Meister) – z. B. eigene Notizen.
+  const privacyButton = h(
+    'button',
+    {
+      type: 'button',
+      class: 'draw-tool draw-privacy',
+      onclick: () => {
+        choose({ private: !style.private });
+        showToast(
+          style.private
+            ? '🔒 Nur für dich: Was du jetzt malst, sieht niemand sonst – auch nicht der Meister.'
+            : 'Für alle: Was du jetzt malst, sehen wieder alle.',
+        );
+      },
+    },
+    icon(ICONS.group),
   );
   const undoButton = h(
     'button',
@@ -308,9 +331,10 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     h('div', { class: 'draw-group', role: 'group', 'aria-label': 'Farbe' }, colorButtons, customButton),
     h(
       'div',
-      { class: 'draw-group', role: 'group', 'aria-label': 'Strich und Füllung' },
-      widthButtons,
+      { class: 'draw-group draw-options', role: 'group', 'aria-label': 'Strich und Füllung' },
+      widthControl,
       fillButton,
+      privacyButton,
       undoButton,
       clearButton,
       doneButton,
@@ -325,17 +349,29 @@ export function createDrawBar({ onChange, onUndo, onClear, onClose, isMaster = (
     }
     customButton.style.setProperty('--swatch', style.custom);
     customButton.setAttribute('aria-pressed', String(painting && isHex(style.color)));
-    for (const button of widthButtons) {
-      button.setAttribute(
-        'aria-pressed',
-        String(painting && style.tool !== 'bucket' && button.dataset.width === style.width),
-      );
+    const position = sliderFromWidth(style.width);
+    if (Number(widthSlider.value) !== position && document.activeElement !== widthSlider) {
+      widthSlider.value = String(position);
     }
+    // Vorschau: 2 bis 22 Punkte, in der Stiftfarbe
+    widthDot.style.setProperty('--dot', `${Math.round(2 + (Number(widthSlider.value) / 100) * 20)}px`);
+    widthDot.style.setProperty('--swatch', drawColorValue(style.color));
+    widthSlider.setAttribute('aria-valuetext', `${Math.round(normalizeDrawWidth(style.width) * 100)} % eines Felds`);
     const fill = DRAW_FILLS.find((entry) => entry.id === style.fill) ?? DRAW_FILLS[0];
     fillButton.dataset.fill = fill.id;
     fillButton.style.setProperty('--swatch', drawColorValue(style.color));
     fillButton.setAttribute('aria-label', `${fill.name} (für Rechteck, Kreis und Farbeimer) – antippen zum Wechseln`);
     fillButton.title = fill.name;
+    privacyButton.setAttribute('aria-pressed', String(style.private));
+    privacyButton.setAttribute(
+      'aria-label',
+      style.private
+        ? 'Nur für mich – was du malst, sieht niemand sonst. Antippen: für alle'
+        : 'Für alle sichtbar. Antippen: nur für mich malen',
+    );
+    privacyButton.title = style.private ? 'Nur für mich' : 'Für alle sichtbar';
+    privacyButton.replaceChildren(icon(style.private ? ICONS.lock : ICONS.group));
+    element.classList.toggle('is-private', style.private);
     element.dataset.tool = style.tool;
   }
   refresh();

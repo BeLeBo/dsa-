@@ -71,7 +71,7 @@ const COMPACT_CELL_PX = 26;
 /** Kleiner dargestellte Felder: keine Rasterlinien (sonst nur noch ein grauer Schleier). */
 const MIN_GRID_LINE_CELL_PX = 8;
 /** Figuren werden nie kleiner gezeichnet – auch auf Stadtkarten mit winzigen Feldern noch zu sehen. */
-const MIN_TOKEN_SCREEN_PX = 12;
+const MIN_TOKEN_SCREEN_PX = 6;
 /** Zu Beginn wird so weit vergrößert, dass die eigene Figur gut zu sehen ist. */
 const READABLE_CELL_PX = 36;
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -831,13 +831,14 @@ export function createMapStage({
   }
 
   /**
-   * Farbeimer: die Fläche um den Punkt (Kartenpunkte) so, wie man sie sieht – Kartenbild,
-   * Detailkacheln und alle Zeichnungen. Gesucht wird im sichtbaren Bereich (mit Rand) in
+   * Farbeimer: die Fläche um den Punkt (Kartenpunkte), begrenzt nur von dem, was gemalt ist –
+   * Straßen, Wege und Wände des Kartenbilds zählen nicht. Gefüllt wird nur, was rundum von
+   * Zeichnungen eingeschlossen ist. Gesucht wird im sichtbaren Bereich (mit Rand) in
    * Bildschirmauflösung. Liefert die Umrisse in Kartenpunkten oder null.
    */
   function bucketRings(point) {
     const region = visibleRegion(view, viewportSize(), map, 0.5);
-    if (!region || !baseScale()) return null;
+    if (!region) return null;
     let factor = view.scale;
     const pixels = region.width * region.height * factor * factor;
     if (pixels > BUCKET_MAX_PIXELS) factor *= Math.sqrt(BUCKET_MAX_PIXELS / pixels);
@@ -850,17 +851,13 @@ export function createMapStage({
     context.fillStyle = '#ffffff';
     context.fillRect(0, 0, width, height);
     context.setTransform(factor, 0, 0, factor, -region.x * factor, -region.y * factor);
-    context.imageSmoothingQuality = 'high';
-    context.drawImage(image, 0, 0, map.width, map.height);
-    if (!sharpCanvas.hidden && sharpShown) {
-      const shown = sharpShown.region;
-      context.drawImage(sharpCanvas, shown.x, shown.y, shown.width, shown.height);
-    }
-    for (const drawing of drawings) paintDrawing(context, drawing);
+    // Nur Striche und Umrisse begrenzen – Füllungen nicht (sonst stapelt erneutes Füllen Flächen).
+    for (const drawing of drawings) paintDrawing(context, { ...drawing, fill: null });
     context.setTransform(1, 0, 0, 1, 0, 0);
     const { data } = context.getImageData(0, 0, width, height);
     const rings = bucketOutline(data, width, height, (point.x - region.x) * factor, (point.y - region.y) * factor, {
       maxPoints: MAX_DRAWING_POINTS,
+      enclosed: true,
     });
     return rings?.map((ring) => ring.map((spot) => ({ x: region.x + spot.x / factor, y: region.y + spot.y / factor })));
   }
@@ -868,12 +865,14 @@ export function createMapStage({
   function bucketAt(screenPoint) {
     const point = screenToMap(view, screenPoint);
     if (!map || point.x < 0 || point.y < 0 || point.x > map.width || point.y > map.height) return;
+    const fill = fillColor(drawStyle.color, drawStyle.fill === 'voll' ? 'voll' : 'halb');
+    const sameFill = drawings.filter((drawing) => drawing.kind === 'fill' && drawing.fill === fill);
+    if (drawingsAt(sameFill, point, 0).length) return; // ist schon genau so gefüllt
     const rings = bucketRings(point);
     if (!rings) {
       onBucketMiss();
       return;
     }
-    const fill = fillColor(drawStyle.color, drawStyle.fill === 'voll' ? 'voll' : 'halb');
     onStroke({ kind: 'fill', rings, color: drawStyle.color, width: 1, fill });
   }
 
@@ -1424,8 +1423,18 @@ export function createMapStage({
       });
   }
 
+  /** Knöpfe und Modi an die Rechte anpassen (z. B. Malen entzogen: Stift weg). */
+  function updateControls() {
+    selectButton.hidden = !selectable();
+    pingButton.hidden = !canPing();
+    drawButton.hidden = !canDraw();
+    if (pingMode && !canPing()) setPingMode(false);
+    if (drawMode && !canDraw()) setDrawMode(false);
+  }
+
   return {
     element,
+    updateControls,
     /** Neue oder geänderte Karte (Raster als normalisierte Werte). */
     setMap(nextMap, nextGrid) {
       const changedImage = !map || map.id !== nextMap.id || map.image_path !== nextMap.image_path;
@@ -1439,11 +1448,7 @@ export function createMapStage({
       drawLayer.setAttribute('width', map.width);
       drawLayer.setAttribute('height', map.height);
       drawLayer.setAttribute('viewBox', `0 0 ${map.width} ${map.height}`);
-      selectButton.hidden = !selectable();
-      pingButton.hidden = !canPing();
-      drawButton.hidden = !canDraw();
-      if (pingMode && !canPing()) setPingMode(false);
-      if (drawMode && !canDraw()) setDrawMode(false);
+      updateControls();
       const nextDetail = normalizeDetail(map.detail, map);
       if (changedImage || nextDetail?.path !== detail?.path) {
         hideSharp();

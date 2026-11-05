@@ -22,8 +22,12 @@ import {
 } from '../check-search.js';
 import { readJson, writeJson } from '../storage.js';
 
-/** Zuletzt gewürfelte Proben – je Gerät gemerkt. */
-const RECENT_KEY = 'dsa5.karte.proben';
+/**
+ * Zuletzt gewürfelte Proben – je Gerät gemerkt. Neuer Name: Unter dem alten standen auch Proben,
+ * die nur angetippt und nicht gewürfelt wurden – die Liste beginnt deshalb einmal neu.
+ */
+const RECENT_KEY = 'dsa5.karte.gewuerfelt';
+const OLD_RECENT_KEY = 'dsa5.karte.proben';
 /** Zustände auf- oder zugeklappt – je Gerät gemerkt (sonst: am PC zu, am Handy offen). */
 const CONDITIONS_OPEN_KEY = 'dsa5.karte.zustaende-offen';
 const WIDE_QUERY = '(min-width: 1000px)';
@@ -225,7 +229,7 @@ export function createVitalsPanel({ store, heroId, heroActions, onClose, picker 
  * Rechte Seite: Proben suchen oder aus der vollständigen Liste antippen.
  * @param {object} options
  * @param {object} options.store                       Store mit dem geöffneten Helden
- * @param {(spec: object) => void} options.openCheck   Probendialog öffnen
+ * @param {(spec: object, options?: { onRoll }) => void} options.openCheck   Probendialog öffnen (onRoll: nach dem Wurf)
  * @param {(key: string) => void} options.onToggleFavorite  Probe als Favorit merken/vergessen (im Helden)
  * @param {() => void} options.onClose                 Schublade schließen (Handy)
  */
@@ -233,6 +237,11 @@ export function createChecksPanel({ store, openCheck, onToggleFavorite, onClose 
   let query = '';
   let recent = readJson(RECENT_KEY, []);
   if (!Array.isArray(recent)) recent = [];
+  try {
+    localStorage.removeItem(OLD_RECENT_KEY);
+  } catch {
+    // Kein Zugriff auf den Gerätespeicher: dann bleibt der alte Eintrag eben liegen.
+  }
   let renderedKey = '';
   /** Zugeklappte Abschnitte (bleiben zu, solange die Seite offen ist). */
   const collapsed = new Set();
@@ -257,12 +266,16 @@ export function createChecksPanel({ store, openCheck, onToggleFavorite, onClose 
     results,
   );
 
+  /** Probe öffnen – „zuletzt gewürfelt“ erst, wenn im Dialog wirklich gewürfelt wurde. */
   function roll(spec) {
-    recent = rememberRecent(recent, spec);
-    writeJson(RECENT_KEY, recent);
-    openCheck(spec);
-    renderedKey = '';
-    render();
+    openCheck(spec, {
+      onRoll: () => {
+        recent = rememberRecent(recent, spec);
+        writeJson(RECENT_KEY, recent);
+        renderedKey = '';
+        render();
+      },
+    });
   }
 
   /** Eine Probe zum Antippen, daneben der Stern: Favorit (z. B. die Angriffe für den Kampf). */

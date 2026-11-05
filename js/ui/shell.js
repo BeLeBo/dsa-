@@ -159,9 +159,10 @@ export function createShell({
     tabs.map((tab) => [tab.id, h('section', { id: `tab-${tab.id}`, class: 'tab-panel', role: 'tabpanel' })]),
   );
 
-  const openCheck = (spec) => {
+  /** Probendialog öffnen; onRoll(record) meldet, wenn darin tatsächlich gewürfelt wurde. */
+  const openCheck = (spec, { onRoll = null } = {}) => {
     try {
-      openCheckDialog({ store, log, rollOptions }, spec);
+      openCheckDialog({ store, log, rollOptions, onRoll }, spec);
     } catch (error) {
       showError(error, 'Probe nicht möglich');
     }

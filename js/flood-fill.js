@@ -236,10 +236,22 @@ export function findHoles(mask, width, height, minPixels = MIN_HOLE_PIXELS) {
   return holes.sort((a, b) => b.area - a.area);
 }
 
+/** Reicht die Fläche bis an den Bildrand (ist also nicht rundum eingeschlossen)? */
+export function touchesBorder(mask, width, height) {
+  for (let x = 0; x < width; x += 1) {
+    if (mask[x] || mask[(height - 1) * width + x]) return true;
+  }
+  for (let y = 0; y < height; y += 1) {
+    if (mask[y * width] || mask[y * width + width - 1]) return true;
+  }
+  return false;
+}
+
 /**
  * Farbeimer auf einem Bild: Umrisse der Fläche um den Startpunkt in Bildpunkten – zuerst der
  * äußere, dann die Ränder größerer Löcher (gefüllt wird nach der Gerade-ungerade-Regel).
- * Zusammen höchstens `maxPoints` Punkte. null, wenn die Fläche zu klein ist.
+ * Zusammen höchstens `maxPoints` Punkte. null, wenn die Fläche zu klein ist – oder, mit
+ * `enclosed`, wenn sie nicht rundum eingeschlossen ist (bis an den Bildrand reicht).
  * @returns {{x, y}[][] | null}
  */
 export function bucketOutline(
@@ -248,10 +260,11 @@ export function bucketOutline(
   height,
   startX,
   startY,
-  { tolerance = BUCKET_TOLERANCE, maxPoints = 1500 } = {},
+  { tolerance = BUCKET_TOLERANCE, maxPoints = 1500, enclosed = false } = {},
 ) {
   const filled = floodFill(rgba, width, height, startX, startY, tolerance);
   if (!filled) return null;
+  if (enclosed && touchesBorder(filled, width, height)) return null;
   let area = 0;
   for (const value of filled) area += value;
   if (area < 9) return null;

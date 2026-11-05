@@ -130,7 +130,7 @@ function resolveCheck(hero, spec) {
  *        rollOptions: { visibility: Sichtbarkeit wählbar (im Raum), canSeeSecret(): sieht verdeckte Ergebnisse }
  * @param {object} spec Probenbeschreibung, z. B. { kind: 'talent', id: 'klettern' }
  */
-export function openCheckDialog({ store, log, rollOptions = {} }, spec) {
+export function openCheckDialog({ store, log, rollOptions = {}, onRoll = null }, spec) {
   const { visibility: chooseVisibility = false, canSeeSecret = () => true } = rollOptions;
   const initial = resolveCheck(store.hero, spec);
   const state = {
@@ -343,6 +343,7 @@ export function openCheckDialog({ store, log, rollOptions = {} }, spec) {
       const check = resolveCheck(hero, spec);
       const record = { ...performRoll(hero, check), visibility: state.visibility };
       log.add(record);
+      onRoll?.(record); // erst jetzt ist wirklich gewürfelt (nicht schon beim Öffnen)
       state.record = record;
       state.error = null;
       if (!resultHidden()) {

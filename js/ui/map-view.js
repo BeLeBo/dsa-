@@ -12,6 +12,7 @@ import { createMapStage } from './map-stage.js';
 import { openMapsDialog, openTokenDialog, openOwnTokenDialog } from './map-dialogs.js';
 import { openMapEditor } from './map-editor-view.js';
 import { mapTabs } from '../room-map.js';
+import { memberMayDraw } from '../room.js';
 import { heroName } from '../sheet.js';
 import { createMapInspector } from './map-inspector.js';
 import { createDrawBar } from './map-draw-bar.js';
@@ -21,6 +22,7 @@ import { createCombatStrip } from './play-combat.js';
 import { confirmDialog } from './dialog.js';
 import { imageUrl, tileBlob } from '../map-api.js';
 import { currentEntry } from '../combat.js';
+import { readJson, writeJson } from '../storage.js';
 import {
   normalizeGrid,
   gridSizeFromCells,
@@ -157,6 +159,9 @@ function createGridPanel(controller, onToggle) {
 // Tab „Karte“
 // ---------------------------------------------------------------------------
 
+/** Meister: Kartenauswahl (Karten-Tabs) eingeklappt – merkt sich das Gerät. */
+const TABS_COLLAPSED_KEY = 'dsa5.karte.auswahlZu';
+
 /**
  * @param {HTMLElement} panel
  * @param {object} options
@@ -189,10 +194,21 @@ export function createMapView(
     openCheck,
     log,
     combatActions,
+    combatIsOut,
     showProtocol,
   },
 ) {
   const isShownMap = (map) => map.id === controller.state.get().activeMapId;
+  /** Eigener Eintrag in der Mitgliederliste; darf dieses Gerät malen (Malrecht vom Meister)? */
+  function myMember() {
+    const { members = [], session } = room.get();
+    return members.find((member) => member.user_id === session?.userId) ?? null;
+  }
+  function mayDraw() {
+    if (isMaster()) return true;
+    const member = myMember();
+    return member ? memberMayDraw(member) : true;
+  }
   const canMove = (token) => isMaster() || (Boolean(token.character_id) && token.character_id === myCharacterId());
   const editToken = (token) =>
     openTokenDialog({ controller, token, characters: room.get().characters, center: stage.visibleCenter });
@@ -223,11 +239,17 @@ export function createMapView(
     canPing: () => isMaster() && Boolean(controller.viewMap()) && isShownMap(controller.viewMap()),
     onPing: (point) => controller.actions.ping(point).catch((error) => showError(error, 'Ping nicht gesendet')),
     // Stift: der Meister auf jeder Karte (auch einer vorbereiteten), Spieler auf der gezeigten.
-    canDraw: () => controller.canDraw(),
+    canDraw: () => controller.canDraw() && mayDraw(),
     canErase: (drawing) => controller.canRemoveDrawing(drawing),
     onStroke: (drawing) =>
-      controller.actions.addDrawing(drawing).catch((error) => showError(error, 'Zeichnung nicht gespeichert')),
-    onBucketMiss: () => showToast('Hier ist keine Fläche zum Füllen – tippe in eine Fläche, nicht auf einen Strich.'),
+      controller.actions
+        .addDrawing({ ...drawing, private: drawBar.style().private })
+        .catch((error) => showError(error, 'Zeichnung nicht gespeichert')),
+    onBucketMiss: () =>
+      showToast(
+        'Der Farbeimer füllt nur selbst gemalte, geschlossene Flächen – erst einen Umriss malen (z. B. ein Rechteck), dann hineintippen. Reicht die Fläche über den Bildschirmrand, vorher herauszoomen.',
+        { duration: 8000 },
+      ),
     onErase: (ids) =>
       controller.actions.removeDrawings(ids).catch((error) => showError(error, 'Zeichnungen nicht gelöscht')),
     onUndo: () => undoDrawing(),
@@ -317,6 +339,7 @@ export function createMapView(
     actions: combatActions,
     openCheck,
     mapTokens: () => controller.state.get().tokens,
+    isOut: combatIsOut,
   });
   const vitalsToggle = h('button', {
     type: 'button',
@@ -372,6 +395,19 @@ export function createMapView(
     );
   }
   const tabStrip = h('div', { class: 'map-tabs', role: 'tablist', 'aria-label': 'Geöffnete Karten' });
+  let tabsCollapsed = readJson(TABS_COLLAPSED_KEY, false) === true;
+  /** Kartenauswahl ein- oder ausklappen (mehr Platz für die Karte); der Fokus wandert mit. */
+  function setTabsCollapsed(collapsed) {
+    tabsCollapsed = collapsed;
+    writeJson(TABS_COLLAPSED_KEY, collapsed);
+    const state = controller.state.get();
+    const map = controller.viewMap();
+    renderTabs(state);
+    renderToolbar(map);
+    renderNotice(state, map);
+    layout();
+    (collapsed ? toolbar.querySelector('.map-tabs-expand') : tabStrip.querySelector('.map-tabs-collapse'))?.focus();
+  }
   const toolbar = h('div', { class: 'map-toolbar' });
   const notice = h('div', { class: 'map-notice' });
   const message = h('div', { class: 'map-message' });
@@ -486,6 +522,8 @@ export function createMapView(
         canPlace,
         combatRunning,
         heroLabel,
+        tabsCollapsed,
+        map ? isShownMap(map) : false,
       )
     )
       return;
@@ -512,8 +550,26 @@ export function createMapView(
       );
       return;
     }
+    const shown = isShownMap(map);
+    const expandTabs = tabsCollapsed
+      ? h(
+          'button',
+          {
+            type: 'button',
+            class: `btn map-tabs-expand ${shown ? 'is-shown' : ''}`.trim(),
+            'aria-expanded': 'false',
+            'aria-label': `Kartenauswahl aufklappen – offen: „${map.name || 'Karte'}“${shown ? ', alle sehen sie' : ''}`,
+            title: 'Kartenauswahl aufklappen',
+            onclick: () => setTabsCollapsed(false),
+          },
+          h('span', { class: 'map-tabs-expand-arrow', 'aria-hidden': 'true' }, '▾'),
+          shown ? h('span', { 'aria-hidden': 'true' }, '👁') : null,
+          h('span', { class: 'map-tabs-expand-name' }, map.name || 'Karte'),
+        )
+      : null;
     setChildren(
       toolbar,
+      expandTabs,
       toolButton('Karten', () => openMapsDialog(controller)),
       toolButton('Raster', () => (gridPanel.isOpen() ? gridPanel.close() : gridPanel.open()), {
         pressed: gridPanel.isOpen(),
@@ -533,11 +589,23 @@ export function createMapView(
    */
   function renderTabs(state) {
     const tabs = isMaster() ? mapTabs({ ...state, openIds: state.openMapIds }) : [];
-    if (!changed('tabs', tabs, isMaster(), state.maps.length)) return;
-    tabStrip.hidden = !isMaster() || state.maps.length === 0;
+    if (!changed('tabs', tabs, isMaster(), state.maps.length, tabsCollapsed)) return;
+    tabStrip.hidden = !isMaster() || state.maps.length === 0 || tabsCollapsed;
     if (tabStrip.hidden) return;
     setChildren(
       tabStrip,
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'map-tabs-collapse',
+          'aria-expanded': 'true',
+          'aria-label': 'Kartenauswahl einklappen (mehr Platz für die Karte)',
+          title: 'Einklappen – mehr Platz für die Karte',
+          onclick: () => setTabsCollapsed(true),
+        },
+        '▴',
+      ),
       tabs.map((tab) =>
         h(
           'div',
@@ -585,7 +653,21 @@ export function createMapView(
   function renderNotice(state, map) {
     const mine = state.tokens.some(canMove);
     const shownMap = state.maps.find((entry) => entry.id === state.activeMapId);
-    if (!changed('notice', map?.id, map?.name, isMaster(), state.activeMapId, shownMap?.name, mine, openHeroId()))
+    const pen = mayDraw();
+    if (
+      !changed(
+        'notice',
+        map?.id,
+        map?.name,
+        isMaster(),
+        state.activeMapId,
+        shownMap?.name,
+        mine,
+        openHeroId(),
+        pen,
+        tabsCollapsed,
+      )
+    )
       return;
     if (!map) {
       setChildren(notice);
@@ -593,6 +675,11 @@ export function createMapView(
     }
     if (isMaster()) {
       const shown = map.id === state.activeMapId;
+      // Eingeklappt: kein Hinweis zur gezeigten Karte (der Name steht im Knopf); die Vorbereitung bleibt.
+      if (shown && tabsCollapsed) {
+        setChildren(notice);
+        return;
+      }
       setChildren(
         notice,
         shown
@@ -637,7 +724,7 @@ export function createMapView(
         'p',
         { class: 'section-hint' },
         mine
-          ? 'Ziehe deine Figur, um sie zu bewegen. Tippe sie an für deine Werte. Mit ✎ malst du auf die Karte.'
+          ? `Ziehe deine Figur, um sie zu bewegen. Tippe sie an für deine Werte.${pen ? ' Mit ✎ malst du auf die Karte.' : ''}`
           : openHeroId()
             ? 'Stell deine Figur mit „Meine Figur aufstellen“ auf die Karte – oder der Meister macht es.'
             : 'Lege im Tab „Held“ deinen Helden an, dann kannst du deine Figur aufstellen.',
@@ -756,7 +843,21 @@ export function createMapView(
   }
 
   controller.state.subscribe(render);
+  // Malrecht: Entzieht oder gibt der Meister es live, verschwindet bzw. erscheint der Stift sofort.
+  let drawRight = myMember() ? mayDraw() : null;
+  function checkDrawRight() {
+    if (!myMember()) return;
+    const now = mayDraw();
+    if (drawRight !== null && now !== drawRight && !isMaster()) {
+      showToast(now ? 'Der Meister hat dir das Malen erlaubt.' : 'Der Meister hat das Malen für dich gesperrt.');
+    }
+    drawRight = now;
+    stage.updateControls();
+    renderNotice(controller.state.get(), controller.viewMap());
+  }
+
   room.subscribe(() => {
+    checkDrawRight();
     updateHighlight();
     renderToolbar(controller.viewMap());
     combatStrip.render();

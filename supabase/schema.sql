@@ -8,12 +8,15 @@
 --   Meister  – sieht und bearbeitet alle Helden des Raums, sieht alle Würfe,
 --              führt den Kampf (Initiative), kann das Protokoll leeren,
 --              verwaltet Karten und Figuren, speichert Figuren als Vorlagen, markiert
---              Stellen auf der Karte (Ping) und malt mit dem Stift auf die Karte.
+--              Stellen auf der Karte (Ping), malt mit dem Stift auf die Karte und kann
+--              Spielern das Malen entziehen. Private Zeichnungen („nur für mich“) sieht
+--              nur, wer sie gemalt hat – auch der Meister nicht.
 --   Spieler  – sieht und bearbeitet nur den eigenen Helden (wählt ihn beim Beitreten aus den
 --              Helden des Raums – von den anderen sieht er dabei nur Name, Spezies und Profession),
 --              sieht öffentliche Würfe und eigene „nur Meister“-Würfe (verdeckte Würfe sieht nur der Meister),
 --              sieht die gezeigte Karte, stellt die Figur des eigenen Helden auf und bewegt sie,
---              malt mit dem Stift auf die gezeigte Karte (löscht nur die eigenen Linien),
+--              malt mit dem Stift auf die gezeigte Karte, solange der Meister es erlaubt
+--              (löscht nur die eigenen Linien),
 --              beendet im Kampf den eigenen Zug.
 -- Anmeldung: anonym (Supabase „Anonymous Sign-ins“), keine E-Mail nötig.
 -- Meister wird, wer den Raum erstellt oder beim Beitreten „Ich bin Meister“ wählt
@@ -60,6 +63,8 @@ create table if not exists public.room_members (
   joined_at timestamptz not null default now(),
   primary key (room_id, user_id)
 );
+-- Darf das Mitglied auf die Karte malen? Der Meister kann es Spielern entziehen und wieder geben.
+alter table public.room_members add column if not exists can_draw boolean not null default true;
 
 create table if not exists public.characters (
   id uuid primary key default gen_random_uuid(),
@@ -123,7 +128,7 @@ create table if not exists public.tokens (
   name text not null check (char_length(name) between 1 and 40),
   image_path text check (image_path is null or char_length(image_path) <= 200),
   color text not null default 'rot' check (color in ('rot', 'blau', 'gruen', 'gelb', 'lila', 'grau')),
-  size real not null default 1 check (size in (0.5, 1, 2, 3, 4)),
+  size real not null default 1 check (size in (0.125, 0.25, 0.5, 1, 2, 3, 4)),
   x double precision not null default 0 check (x between 0 and 10000),
   y double precision not null default 0 check (y between 0 and 10000),
   hidden boolean not null default false,
@@ -136,6 +141,9 @@ alter table public.tokens add column if not exists le_max integer
   check (le_max is null or le_max between 0 and 9999);
 create index if not exists tokens_map on public.tokens (map_id);
 create index if not exists tokens_room on public.tokens (room_id);
+-- Figurengrößen in Feldern: auch winzig (⅛ und ¼ Feld, z. B. für Gassen auf Stadtkarten).
+alter table public.tokens drop constraint if exists tokens_size_check;
+alter table public.tokens add constraint tokens_size_check check (size in (0.125, 0.25, 0.5, 1, 2, 3, 4));
 
 -- Gespeicherte Figuren des Meisters (Vorlagen): einmal anlegen, später wieder aufstellen.
 -- Sie gehören zum Raum (der Kampagne); nur der Meister sieht sie – keine Vorschau auf Gegner.
@@ -146,12 +154,15 @@ create table if not exists public.figure_templates (
   name text not null check (char_length(name) between 1 and 40),
   image_path text check (image_path is null or char_length(image_path) <= 200),
   color text not null default 'rot' check (color in ('rot', 'blau', 'gruen', 'gelb', 'lila', 'grau')),
-  size real not null default 1 check (size in (0.5, 1, 2, 3, 4)),
+  size real not null default 1 check (size in (0.125, 0.25, 0.5, 1, 2, 3, 4)),
   le_max integer check (le_max is null or le_max between 0 and 9999),
   ini_base integer check (ini_base is null or ini_base between 0 and 99),
   updated_at timestamptz not null default now()
 );
 create unique index if not exists figure_templates_name on public.figure_templates (room_id, lower(name));
+alter table public.figure_templates drop constraint if exists figure_templates_size_check;
+alter table public.figure_templates add constraint figure_templates_size_check
+  check (size in (0.125, 0.25, 0.5, 1, 2, 3, 4));
 
 -- Zeichnungen (Stift auf der Karte): eine Zeile je Linie, Form oder Farbeimer-Fläche.
 -- points = [x1, y1, x2, y2, …] in Kartenpunkten, width = Strichstärke in Kartenpunkten.
@@ -194,6 +205,8 @@ alter table public.map_drawings add constraint map_drawings_shape_check check (
     else true
   end
 );
+-- Nur für mich: private Zeichnungen sieht nur, wer sie gemalt hat – auch nicht der Meister.
+alter table public.map_drawings add column if not exists private boolean not null default false;
 -- Eigene Farben: außer den Namen auch Hex-Werte ('#rrggbb').
 alter table public.map_drawings drop constraint if exists map_drawings_color_check;
 alter table public.map_drawings add constraint map_drawings_color_check
@@ -227,6 +240,21 @@ as $$
   select exists (
     select 1 from public.room_members m
     where m.room_id = p_room_id and m.user_id = (select auth.uid()) and m.role = 'master'
+  );
+$$;
+
+-- Darf die aufrufende Person im Raum malen? Der Meister immer, Spieler, solange es ihnen nicht
+-- entzogen ist (room_members.can_draw).
+create or replace function public.may_draw(p_room_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.room_members m
+    where m.room_id = p_room_id and m.user_id = (select auth.uid()) and (m.role = 'master' or m.can_draw)
   );
 $$;
 
@@ -482,10 +510,32 @@ begin
 end;
 $$;
 
+-- Meister erlaubt oder sperrt das Malen auf der Karte: für einen Spieler oder (p_user_id = null)
+-- für alle Spieler des Raums. Der Meister selbst darf immer malen.
+create or replace function public.set_draw_permission(p_room_id uuid, p_user_id uuid, p_allowed boolean)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform private.require_user();
+  if not public.is_room_master(p_room_id) then
+    raise exception 'Nur der Meister kann das Malen erlauben oder sperren.' using errcode = '42501';
+  end if;
+  update public.room_members m
+  set can_draw = coalesce(p_allowed, true)
+  where m.room_id = p_room_id
+    and m.role = 'player'
+    and (p_user_id is null or m.user_id = p_user_id);
+end;
+$$;
+
 -- Spieler beendet seinen eigenen Zug im Kampf: Nur wer gerade am Zug ist (sein Held), darf zum
 -- Nächsten weiterschalten – und nur, solange der Zug noch derselbe ist (zweimal tippen oder der
--- Meister war schneller: nichts passiert doppelt). Den Nächsten rechnet die App wie beim Meister aus,
--- damit die Reihenfolge auf allen Geräten gleich ist; hier wird geprüft, dass es ihn gibt.
+-- Meister war schneller: nichts passiert doppelt). Den Nächsten rechnet die App wie beim Meister aus
+-- (Tote mit 0 LeP überspringt sie), damit die Reihenfolge auf allen Geräten gleich ist; hier wird
+-- geprüft, dass es ihn gibt.
 create or replace function public.end_turn(p_room_id uuid, p_current_id text, p_next_id text, p_round integer)
 returns jsonb
 language plpgsql
@@ -1130,13 +1180,18 @@ create policy "Meister entfernt Figuren" on public.tokens
   using (public.is_room_master(room_id));
 
 -- Zeichnungen: sichtbar wie die Karte (Spieler: nur auf der gezeigten). Malen: der Meister überall,
--- Spieler auf der gezeigten Karte. Löschen: der Meister alle Linien, Spieler ihre eigenen.
+-- Spieler auf der gezeigten Karte, solange der Meister es ihnen nicht entzogen hat.
+-- Löschen: der Meister alle Linien, Spieler ihre eigenen. Private Zeichnungen („nur für mich“)
+-- sieht und löscht nur, wer sie gemalt hat.
 drop policy if exists "Zeichnungen sehen" on public.map_drawings;
 create policy "Zeichnungen sehen" on public.map_drawings
   for select to authenticated
   using (
-    public.is_room_master(room_id)
-    or (public.is_room_member(room_id) and public.is_active_map(room_id, map_id))
+    (not private or created_by = (select auth.uid()))
+    and (
+      public.is_room_master(room_id)
+      or (public.is_room_member(room_id) and public.is_active_map(room_id, map_id))
+    )
   );
 
 drop policy if exists "Meister zeichnet" on public.map_drawings;
@@ -1148,7 +1203,7 @@ create policy "Auf die Karte malen" on public.map_drawings
     and exists (select 1 from public.maps m where m.id = map_id and m.room_id = map_drawings.room_id)
     and (
       public.is_room_master(room_id)
-      or (public.is_room_member(room_id) and public.is_active_map(room_id, map_id))
+      or (public.may_draw(room_id) and public.is_active_map(room_id, map_id))
     )
   );
 
@@ -1156,7 +1211,7 @@ drop policy if exists "Meister löscht Zeichnungen" on public.map_drawings;
 drop policy if exists "Zeichnungen löschen" on public.map_drawings;
 create policy "Zeichnungen löschen" on public.map_drawings
   for delete to authenticated
-  using (public.is_room_master(room_id) or created_by = (select auth.uid()));
+  using ((public.is_room_master(room_id) and not private) or created_by = (select auth.uid()));
 
 -- Gespeicherte Figuren: nur der Meister (Anlegen und Ändern über save_/update_figure_template()).
 drop policy if exists "Meister sieht gespeicherte Figuren" on public.figure_templates;
@@ -1188,7 +1243,7 @@ grant update (character_id, name, image_path, color, size, x, y, hidden, le_curr
   on public.tokens to authenticated;
 grant select, delete on public.figure_templates to authenticated;
 grant select, delete on public.map_drawings to authenticated;
-grant insert (id, room_id, map_id, kind, color, width, fill, points) on public.map_drawings to authenticated;
+grant insert (id, room_id, map_id, kind, color, width, fill, points, private) on public.map_drawings to authenticated;
 grant select, delete on public.room_members to authenticated;
 grant select, delete on public.characters to authenticated;
 grant insert (room_id, data) on public.characters to authenticated;
@@ -1206,6 +1261,8 @@ revoke all on function public.claim_character(uuid, boolean) from public, anon;
 revoke all on function public.release_character(uuid) from public, anon;
 revoke all on function public.clear_log(uuid) from public, anon;
 revoke all on function public.end_turn(uuid, text, text, integer) from public, anon;
+revoke all on function public.may_draw(uuid) from public, anon;
+revoke all on function public.set_draw_permission(uuid, uuid, boolean) from public, anon;
 revoke all on function public.is_active_map(uuid, uuid) from public, anon;
 revoke all on function public.room_of_path(text) from public, anon;
 revoke all on function public.move_token(uuid, double precision, double precision) from public, anon;
@@ -1224,6 +1281,8 @@ grant execute on function public.claim_character(uuid, boolean) to authenticated
 grant execute on function public.release_character(uuid) to authenticated;
 grant execute on function public.clear_log(uuid) to authenticated;
 grant execute on function public.end_turn(uuid, text, text, integer) to authenticated;
+grant execute on function public.may_draw(uuid) to authenticated;
+grant execute on function public.set_draw_permission(uuid, uuid, boolean) to authenticated;
 grant execute on function public.is_active_map(uuid, uuid) to authenticated;
 grant execute on function public.room_of_path(text) to authenticated;
 grant execute on function public.move_token(uuid, double precision, double precision) to authenticated;
@@ -1292,7 +1351,7 @@ language sql
 stable
 set search_path = ''
 as $$
-  select 11;
+  select 13;
 $$;
 revoke all on function public.schema_version() from public;
 grant execute on function public.schema_version() to anon, authenticated;
