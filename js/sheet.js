@@ -19,6 +19,10 @@ import {
   clampConditionLevel,
   effectiveConditionLevels,
   conditionPenalty,
+  painLevelFromLe,
+  habituationLevel,
+  armorEncumbrance,
+  MAX_CONDITION_PENALTY,
   attackValue,
   parryValue,
   rangedValue,
@@ -33,7 +37,7 @@ export const HERO_SCHEMA_VERSION = 1;
 export const MAX_FAVORITES = 30;
 export const EXPORT_FORMAT = 'dsa5-held';
 
-/** Listen mit einfachen Texteinträgen { id, text }. */
+/** Listen mit einfachen Texteinträgen { id, text, note } (note: eigene Beschreibung hinter dem „i“). */
 export const TEXT_LISTS = Object.freeze([
   { key: 'advantages', name: 'Vorteile', single: 'Vorteil' },
   { key: 'disadvantages', name: 'Nachteile', single: 'Nachteil' },
@@ -88,7 +92,7 @@ export function createHero() {
     talents: TALENTS.map(({ id, check }) => ({ id, check: [...check], fw: 0, spec: '' })),
     combatTechniques: COMBAT_TECHNIQUES.map(({ id }) => ({ id, ktw: DEFAULT_KTW, at: null, pa: null, fk: null })),
     weapons: [],
-    armor: { name: '', rs: 0, be: 0 },
+    armor: { name: '', rs: 0, be: 0, extra: false, note: '' },
     spells: [],
     cantrips: [],
     ...Object.fromEntries(TEXT_LISTS.map(({ key }) => [key, []])),
@@ -103,7 +107,7 @@ export function createHero() {
 }
 
 export function createWeapon() {
-  return { id: newId(), name: '', technique: 'schwerter', tp: '1W6+4', atMod: 0, paMod: 0, range: '' };
+  return { id: newId(), name: '', technique: 'schwerter', tp: '1W6+4', atMod: 0, paMod: 0, range: '', note: '' };
 }
 
 export function createSpell() {
@@ -121,8 +125,9 @@ export function createSpell() {
   };
 }
 
+/** Texteintrag (Vorteil, Zaubertrick …) – note ist die eigene Beschreibung hinter dem „i“. */
 export function createTextEntry() {
-  return { id: newId(), text: '' };
+  return { id: newId(), text: '', note: '' };
 }
 
 /** Neuer Gegenstand – in der angegebenen Inventar-Gruppe. */
@@ -186,6 +191,8 @@ function mergeById(stored, defaults, mergeEntry) {
   return defaults.map((entry) => mergeEntry(entry, byId.get(entry.id) ?? {}));
 }
 
+const sum = (values) => values.reduce((total, value) => total + value, 0);
+
 const TECHNIQUE_IDS = COMBAT_TECHNIQUES.map(({ id }) => id);
 const SPELL_TYPE_IDS = SPELL_TYPES.map(({ id }) => id);
 const EXPERIENCE_NAMES = EXPERIENCE_LEVELS.map(({ name }) => name);
@@ -237,10 +244,18 @@ export function normalizeHero(raw) {
     atMod: toInt(weapon.atMod),
     paMod: toInt(weapon.paMod),
     range: text(weapon.range),
+    note: text(weapon.note),
   }));
 
   const armor = isPlainObject(source.armor) ? source.armor : {};
-  hero.armor = { name: text(armor.name), rs: toInt(armor.rs), be: toInt(armor.be) };
+  // extra: zusätzliche Abzüge der Rüstung (−1 GS, −1 INI), z. B. bei Leder- und Schuppenrüstung
+  hero.armor = {
+    name: text(armor.name),
+    rs: toInt(armor.rs),
+    be: Math.max(0, toInt(armor.be)),
+    extra: armor.extra === true,
+    note: text(armor.note),
+  };
 
   hero.spells = normalizeList(source.spells, (spell) => ({
     name: text(spell.name),
@@ -254,7 +269,7 @@ export function normalizeHero(raw) {
     note: text(spell.note),
   }));
 
-  const textEntry = (entry) => ({ text: text(entry.text) });
+  const textEntry = (entry) => ({ text: text(entry.text), note: text(entry.note) });
   hero.cantrips = normalizeList(source.cantrips, textEntry);
   for (const { key } of TEXT_LISTS) hero[key] = normalizeList(source[key], textEntry);
 
@@ -397,27 +412,151 @@ export function weaponValues(hero, weapon) {
   };
 }
 
-/** Zustände inklusive automatischem Schmerz und Gesamtabzug für Proben. */
-export function conditionState(hero) {
+/**
+ * Rüstung: Belastungsstufen (BE, mit Belastungsgewöhnung aus den Sonderfertigkeiten) und ob die
+ * zusätzlichen Abzüge (−1 GS, −1 INI) gelten.
+ */
+export function armorState(hero) {
+  const habituation = habituationLevel(hero.specialAbilities);
+  const { levels, extra } = armorEncumbrance(hero.armor, habituation);
+  return { name: hero.armor.name, be: hero.armor.be, habituation, levels, extra };
+}
+
+/**
+ * Erschwert Belastung diese Probe? Offiziell (Regelwerk S. 32): Talente mit „Belastung: ja“,
+ * Angriff (auch Fernkampf), Verteidigung (Parade, Ausweichen) und Initiative – nicht aber
+ * Eigenschaftsproben, Zauber, Liturgien oder Schaden.
+ * @param {object} spec  Probenbeschreibung wie im Probendialog, z. B. { kind: 'talent', id: 'klettern' }
+ */
+export function encumbranceAppliesTo(spec) {
+  switch (spec?.kind) {
+    case 'talent':
+      return talentInfo(spec.id)?.encumbrance === true;
+    case 'dodge':
+    case 'technique':
+    case 'weapon':
+    case 'initiative':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Zustände inklusive automatischem Schmerz (aus LE) und Belastung (aus der Rüstung) und Gesamtabzug.
+ * @param {{ encumbrance?: boolean }} [options]  zählt Belastung mit? (siehe encumbranceAppliesTo)
+ */
+export function conditionState(hero, { encumbrance = true } = {}) {
+  const armor = armorState(hero);
   const levels = effectiveConditionLevels(hero.conditions, {
     autoPain: hero.autoPain,
     le: hero.base.le.current,
     leMax: hero.base.le.max,
+    armorLevels: armor.levels,
   });
+  const fromLe = hero.autoPain ? painLevelFromLe(hero.base.le.current, hero.base.le.max) : 0;
   const active = CONDITIONS.filter(({ id }) => levels[id] > 0).map(({ id, name }) => ({
     id,
     name,
     level: levels[id],
     off: hero.conditionsOff[id],
+    // Woher die Stufen kommen (für die Aufschlüsselung): automatisch aus LE bzw. aus der Rüstung
+    auto: id === 'schmerz' ? Math.min(levels[id], fromLe) : id === 'belastung' ? Math.min(levels[id], armor.levels) : 0,
   }));
-  return { levels, active, penalty: conditionPenalty(levels, hero.conditionsOff) };
+  const ignored = encumbrance ? hero.conditionsOff : { ...hero.conditionsOff, belastung: true };
+  return { levels, active, armor, penalty: conditionPenalty(levels, ignored) };
 }
 
-/** Kurzbeschreibung aktiver Zustände, z. B. „Schmerz II, Furcht I (aus)“. */
+/** Kurzbeschreibung aktiver Zustände, z. B. „Schmerz II, Belastung I (Rüstung), Furcht I (aus)“. */
 export function describeConditions(hero) {
   return conditionState(hero)
-    .active.map(({ name, level, off }) => `${name} ${ROMAN_LEVELS[level]}${off ? ' (aus)' : ''}`)
+    .active.map(({ id, name, level, off, auto }) => {
+      const source = id === 'belastung' && auto === level ? ' (Rüstung)' : '';
+      return `${name} ${ROMAN_LEVELS[level]}${source}${off ? ' (aus)' : ''}`;
+    })
     .join(', ');
+}
+
+/** Woher die Stufen eines Zustands kommen, z. B. „I aus LE + I eingetragen“. */
+function conditionSource(entry, armor) {
+  if (!entry.auto) return '';
+  const manual = entry.level - entry.auto;
+  const auto =
+    entry.id === 'schmerz'
+      ? `${ROMAN_LEVELS[entry.auto]} aus LE`
+      : `${ROMAN_LEVELS[entry.auto]} aus Rüstung (BE ${armor.be}${
+          armor.habituation ? `, Belastungsgewöhnung ${ROMAN_LEVELS[armor.habituation]}` : ''
+        })`;
+  return manual > 0 ? `${auto} + ${ROMAN_LEVELS[manual]} eingetragen` : auto;
+}
+
+/**
+ * Erleichterungen und Erschwernisse einer Probe, aufgeschlüsselt: jeder Zustand einzeln (Belastung nur,
+ * wo sie offiziell zählt), bei der Initiative die zusätzlichen Abzüge der Rüstung, dazu der eigene
+ * Modifikator. Jede Zeile lässt sich im Probendialog an- und abschalten (choices).
+ * @param {object} hero
+ * @param {object} spec     Probenbeschreibung, z. B. { kind: 'talent', id: 'klettern' }
+ * @param {{ manual?: number, choices?: Record<string, boolean> }} [options]
+ *        choices: Zeilen-ID → an/aus (überschreibt die Vorgabe)
+ * @returns {{ parts: object[], conditions: number, capped: boolean, manual: number, total: number }}
+ */
+export function modifierBreakdown(hero, spec, { manual = 0, choices = {} } = {}) {
+  const encumbrance = encumbranceAppliesTo(spec);
+  const initiative = spec?.kind === 'initiative';
+  const { active, armor } = conditionState(hero);
+  const parts = [];
+  for (const entry of active) {
+    // Initiative: nur Belastung (INI −1 je Stufe); Schaden: keine Zustände
+    if (spec?.kind === 'damage' || (initiative && entry.id !== 'belastung')) continue;
+    const applies = entry.id !== 'belastung' || encumbrance;
+    const byDefault = applies && !entry.off;
+    const notes = [conditionSource(entry, armor)];
+    if (entry.off) notes.push('im Heldenbogen auf „ignorieren“');
+    if (!applies) notes.push('zählt bei dieser Probe offiziell nicht');
+    parts.push({
+      id: entry.id,
+      kind: 'condition',
+      label: `${entry.name} ${ROMAN_LEVELS[entry.level]}`,
+      detail: notes.filter(Boolean).join(' · '),
+      value: -entry.level,
+      byDefault,
+      active: choices[entry.id] ?? byDefault,
+    });
+  }
+  if (initiative && armor.extra) {
+    parts.push({
+      id: 'ruestung',
+      kind: 'armor',
+      label: 'Rüstung: zusätzlicher Abzug',
+      detail: `${armor.name || 'Rüstung'} (INI −1)`,
+      value: -1,
+      byDefault: true,
+      active: choices.ruestung ?? true,
+    });
+  }
+  const conditionSum = sum(parts.filter((part) => part.kind === 'condition' && part.active).map((part) => part.value));
+  const conditions = Math.max(-MAX_CONDITION_PENALTY, conditionSum);
+  const others = sum(parts.filter((part) => part.kind !== 'condition' && part.active).map((part) => part.value));
+  const own = toInt(manual);
+  return {
+    parts,
+    conditions,
+    capped: conditionSum < -MAX_CONDITION_PENALTY,
+    manual: own,
+    total: conditions + others + own,
+  };
+}
+
+/**
+ * Bewegungs- und Initiativewerte mit Rüstung: GS und INI je −1 pro Belastungsstufe, dazu die
+ * zusätzlichen Abzüge der Rüstung (Regel-Wiki „Rüstung und Belastung“).
+ */
+export function armorPenalties(hero) {
+  const { levels, armor } = conditionState(hero);
+  // Belastung IV heißt handlungsunfähig – für GS und INI zählen höchstens drei Stufen
+  const encumbrance = hero.conditionsOff.belastung ? 0 : Math.min(levels.belastung, 3);
+  const penalty = encumbrance + (armor.extra ? 1 : 0);
+  return { gs: penalty, ini: penalty, encumbrance, extra: armor.extra };
 }
 
 /** Listen mit Einträgen, die im Bogen als eigene Zeilen erscheinen. */

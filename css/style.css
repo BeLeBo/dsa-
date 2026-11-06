@@ -990,6 +990,73 @@ input.num::-webkit-inner-spin-button {
   gap: 4px;
 }
 
+/* Kleines „i“: Beschreibung auf- und zuklappen (volle Tippfläche, sichtbar kleiner Kreis) */
+.info-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch);
+  height: var(--touch);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font:
+    italic 700 0.95rem/1 Georgia,
+    'Times New Roman',
+    serif;
+}
+
+.info-toggle.active .info-icon {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.info-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+  background: var(--surface-2);
+}
+
+.info-summary {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.info-link {
+  align-self: flex-start;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.heading-with-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.heading-with-info h3 {
+  margin-right: 0;
+}
+
 /* Inventar */
 
 .item {
@@ -1285,6 +1352,64 @@ input.num::-webkit-inner-spin-button {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Probendialog: Erschwernisse aufgeschlüsselt, jede Zeile an- und abschaltbar */
+.modifier-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+}
+
+.modifier-breakdown legend {
+  padding: 0 4px;
+}
+
+.breakdown-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.breakdown-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.breakdown-detail {
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.breakdown-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdown-row.is-off .breakdown-label,
+.breakdown-row.is-off .breakdown-value {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.modifier-total small {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Rüstung: was sie bewirkt */
+.armor-effect {
+  margin-top: 4px;
+}
+
+.inspector-auto {
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .modifier-value {

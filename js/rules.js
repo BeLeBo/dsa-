@@ -360,12 +360,49 @@ export function painLevelFromLe(current, max) {
 /**
  * Wirksame Zustandsstufen. Mit autoPain wird Schmerz aus der LE berechnet;
  * ein eingetragener Schmerz zählt dann zusätzlich (z. B. durch Gift), höchstens IV.
+ * armorLevels: Belastung durch die Rüstung – kommt zur eingetragenen Belastung hinzu.
  */
-export function effectiveConditionLevels(levels = {}, { autoPain = false, le = 0, leMax = 0 } = {}) {
+export function effectiveConditionLevels(levels = {}, { autoPain = false, le = 0, leMax = 0, armorLevels = 0 } = {}) {
   const result = {};
   for (const { id } of CONDITIONS) result[id] = clampConditionLevel(levels[id]);
   if (autoPain) result.schmerz = clampConditionLevel(result.schmerz + painLevelFromLe(le, leMax));
+  if (armorLevels > 0) result.belastung = clampConditionLevel(result.belastung + armorLevels);
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Rüstung und Belastung (DSA5-Regelwerk S. 32 und 246, Regel-Wiki „Belastung“)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stufen der Sonderfertigkeit Belastungsgewöhnung (I oder II) aus Texteinträgen wie
+ * „Belastungsgewöhnung II“ – 0, wenn der Held sie nicht hat.
+ */
+export function habituationLevel(entries = []) {
+  let level = 0;
+  for (const entry of entries) {
+    const text = String(entry?.text ?? entry ?? '');
+    const match = /belastungsgew(?:ö|oe)hnung\s*(ii|2|i|1)?\b/i.exec(text);
+    if (!match) continue;
+    level = Math.max(level, ['ii', '2'].includes((match[1] ?? 'i').toLowerCase()) ? 2 : 1);
+  }
+  return level;
+}
+
+/**
+ * Belastung durch eine Rüstung. Die BE ist die Zahl der Belastungsstufen; manche Rüstungen haben
+ * zusätzlich −1 GS und −1 INI (extra). Belastungsgewöhnung lässt die Rüstung je Stufe um zwei Zeilen
+ * der offiziellen Rüstungstabelle nach oben wandern (Platte mit Stufe I behindert wie Kette) – das
+ * ergibt je Stufe eine Belastungsstufe weniger; die zusätzlichen Abzüge bleiben, bis die Tabelle
+ * oben endet.
+ * @param {{ be: number, extra?: boolean }} armor
+ * @param {number} habituation  Stufe der Belastungsgewöhnung (0–2)
+ * @returns {{ levels: number, extra: boolean }}
+ */
+export function armorEncumbrance(armor = {}, habituation = 0) {
+  const row = Math.max(0, toInt(armor.be)) * 2 + (armor.extra ? 1 : 0);
+  const lighter = Math.max(0, row - 2 * clamp(toInt(habituation), 0, 2));
+  return { levels: Math.min(MAX_CONDITION_LEVEL, Math.floor(lighter / 2)), extra: lighter % 2 === 1 };
 }
 
 /**

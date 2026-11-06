@@ -72,8 +72,8 @@ export function createSheetView(root, store, { openCheck, renderEmpty }) {
       renderTalents(hero, ui),
       renderCombat(hero, ui),
       renderMagic(hero, ui),
-      renderAbilities(hero),
-      renderInventory(hero),
+      renderAbilities(hero, ui),
+      renderInventory(hero, ui),
     );
     refresh();
     applySearches();

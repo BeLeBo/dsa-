@@ -312,7 +312,7 @@ test('Optolith: MapTool-Token', 'Zauber und Rituale, Kampftechniken, Waffen, Rü
   );
   assertEqual(dagger.tp, '1W6+1', 'GE 12 unter der Schwelle 14');
   assertEqual([bow.technique, bow.tp, bow.range], ['boegen', '1W6+4', '10/50/80 · Ladezeit 1']);
-  assertEqual(hero.armor, { name: 'Lederharnisch', rs: 3, be: 1 });
+  assertEqual(hero.armor, { name: 'Lederharnisch', rs: 3, be: 1, extra: false, note: '' });
   assertTrue(
     report.todo.some((line) => line.includes('Mehrere Rüstungen')),
     'Hinweis auf weitere Rüstung',
@@ -391,7 +391,7 @@ test('Optolith: Heldendatei (JSON)', 'Waffen mit Schadensbonus, Rüstung, Invent
     hero.weapons.map((weapon) => [weapon.name, weapon.technique, weapon.tp, weapon.paMod, weapon.range]),
     [['Felsspalter', 'zweihandhiebwaffen', '2W6+4', -2, 'mittel']],
   );
-  assertEqual(hero.armor, { name: 'Kettenhemd', rs: 4, be: 2 });
+  assertEqual(hero.armor, { name: 'Kettenhemd', rs: 4, be: 2, extra: false, note: '' });
   assertEqual(
     hero.inventory.map((item) => [item.name, item.location]),
     [

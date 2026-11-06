@@ -85,7 +85,7 @@ export function renderBase() {
         { class: 'grid grid-3' },
         field('SK', intInput('base.sk', { signed: true })),
         field('ZK', intInput('base.zk', { signed: true })),
-        field('GS', intInput('base.gs')),
+        field('GS', intInput('base.gs'), { hint: { dataset: { derived: 'gs-effective' } } }),
         field('AW', intInput('base.aw', { optional: true, auto: 'dodge' }), {
           hint: { text: 'leer = GE/2' },
         }),
@@ -122,9 +122,15 @@ export function renderConditions() {
       derived('pain-from-le', '', { className: 'muted' }),
     ),
     h(
+      'div',
+      { class: 'auto-pain' },
+      h('span', {}, 'Belastung automatisch aus der Rüstung'),
+      derived('encumbrance-from-armor', '', { className: 'muted' }),
+    ),
+    h(
       'p',
       { class: 'section-hint' },
-      'Je Stufe −1 auf Proben. Mit Automatik zählt ein eingetragener Schmerz zusätzlich (z. B. durch Gift).',
+      'Je Stufe −1 auf Proben. Mit Automatik zählt ein eingetragener Schmerz zusätzlich (z. B. durch Gift). Belastung (z. B. durch Gepäck) zählt zur Rüstung dazu und gilt nur für Talente mit Belastung, Angriff, Fernkampf, Verteidigung, INI und GS.',
     ),
     derived('condition-summary', '', { tag: 'p', className: 'readout' }),
   ]);

@@ -30,10 +30,19 @@ export function describeOutcome(result) {
   return { text: 'Misslungen', tone: 'failure' };
 }
 
-/** „Mod −3 (Probe −1, Zustände −2)“ – nur die Teile, die nicht 0 sind. */
+/**
+ * „Mod −3 (Schmerz II −2, Belastung I −1, eigene ±0)“ – aufgeschlüsselt, wenn die Probe ihre Teile
+ * kennt; ältere Einträge: „Mod −3 (Probe −1, Zustände −2)“. Nur Teile, die nicht 0 sind.
+ */
 export function describeModifier(modifier) {
   if (!modifier) return '';
   const parts = [];
+  if (Array.isArray(modifier.parts) && modifier.parts.length) {
+    for (const part of modifier.parts) parts.push(`${part.label} ${formatModifier(part.value)}`);
+    if (modifier.capped) parts.push('Zustände höchstens −5');
+    if (modifier.manual) parts.push(`eigene ${formatModifier(modifier.manual)}`);
+    return `Mod ${formatModifier(modifier.total)} (${parts.join(', ')})`;
+  }
   if (modifier.manual) parts.push(`Probe ${formatModifier(modifier.manual)}`);
   if (modifier.conditions) parts.push(`Zustände ${formatModifier(modifier.conditions)}`);
   const detail = modifier.conditions ? ` (${parts.join(', ')})` : '';

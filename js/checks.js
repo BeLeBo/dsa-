@@ -16,7 +16,7 @@ import {
   toInt,
 } from './rules.js';
 import { rollDie, rollDice, rollExpression } from './dice.js';
-import { heroName, checkValues, conditionState, initiativeBaseOf } from './sheet.js';
+import { heroName, checkValues, conditionState, initiativeBaseOf, modifierBreakdown } from './sheet.js';
 import { newId } from './util.js';
 
 /** Protokoll-Typen */
@@ -34,10 +34,31 @@ function createRecord(actor, type, label, details = {}) {
 }
 
 /**
- * Gesamtmodifikator einer Probe: eigener Wert plus Zustandsabzug.
- * @returns {{ manual: number, conditions: number, total: number }}
+ * Gesamtmodifikator einer Probe: eigener Wert plus Zustände (und bei der Initiative Rüstungsabzüge).
+ * Mit `spec` (Probenbeschreibung) wird aufgeschlüsselt und Belastung nur dort gezählt, wo sie offiziell
+ * gilt; `choices` schaltet einzelne Zeilen an oder ab (siehe modifierBreakdown in sheet.js).
+ * Ohne `spec` zählen wie früher alle Zustände (includeConditions).
+ * @returns {{ manual: number, conditions: number, total: number, parts?: { label, value }[] }}
  */
-export function composeModifier(hero, manual = 0, includeConditions = true) {
+export function composeModifier(hero, manual = 0, options = {}) {
+  // Früher war der dritte Wert nur „Zustände einrechnen“ (true/false)
+  const {
+    spec = null,
+    choices = {},
+    includeConditions = true,
+  } = typeof options === 'boolean' ? { includeConditions: options } : (options ?? {});
+  if (spec) {
+    const breakdown = modifierBreakdown(hero, spec, { manual, choices });
+    const parts = breakdown.parts.filter((part) => part.active).map(({ label, value }) => ({ label, value }));
+    const others = breakdown.total - breakdown.conditions - breakdown.manual;
+    return {
+      manual: breakdown.manual,
+      conditions: breakdown.conditions + others,
+      total: breakdown.total,
+      parts,
+      ...(breakdown.capped ? { capped: true } : {}),
+    };
+  }
   const conditions = includeConditions ? conditionState(hero).penalty : 0;
   const own = toInt(manual);
   return { manual: own, conditions, total: own + conditions };
@@ -47,12 +68,21 @@ export function composeModifier(hero, manual = 0, includeConditions = true) {
  * Fertigkeitsprobe für ein Talent oder einen Zauber/eine Liturgie.
  * @param {object} hero
  * @param {object} entry  Talent- oder Zaubereintrag mit { check, fw, spec? }
- * @param {object} options { label, modifier, includeConditions, useSpecialization, roll }
+ * @param {object} options { label, modifier, includeConditions, checkSpec, choices, useSpecialization, roll }
+ *        checkSpec: Probenbeschreibung (z. B. { kind: 'talent', id }) – dann mit Aufschlüsselung
  */
 export function rollSkill(hero, entry, options = {}) {
-  const { label, modifier = 0, includeConditions = true, useSpecialization = false, roll = rollDie } = options;
+  const {
+    label,
+    modifier = 0,
+    includeConditions = true,
+    checkSpec = null,
+    choices = {},
+    useSpecialization = false,
+    roll = rollDie,
+  } = options;
   const specialization = useSpecialization && entry.spec ? entry.spec : null;
-  const mod = composeModifier(hero, modifier, includeConditions);
+  const mod = composeModifier(hero, modifier, { spec: checkSpec, choices, includeConditions });
   const result = skillCheck({
     attributes: checkValues(hero, entry.check),
     fw: toInt(entry.fw) + (specialization ? SPECIALIZATION_BONUS : 0),
@@ -75,11 +105,21 @@ function rollD20WithConfirmation(target, modifier, roll) {
 
 /**
  * Probe auf 1W20: Eigenschaft (type = ROLL_TYPES.ATTRIBUTE) oder Kampf (ROLL_TYPES.COMBAT).
- * @param {object} options { type, label, target, modifier, includeConditions, weaponId, roll }
+ * @param {object} options { type, label, target, modifier, includeConditions, checkSpec, choices, weaponId, roll }
  */
 export function rollD20(hero, options) {
-  const { type, label, target, modifier = 0, includeConditions = true, weaponId = null, roll = rollDie } = options;
-  const mod = composeModifier(hero, modifier, includeConditions);
+  const {
+    type,
+    label,
+    target,
+    modifier = 0,
+    includeConditions = true,
+    checkSpec = null,
+    choices = {},
+    weaponId = null,
+    roll = rollDie,
+  } = options;
+  const mod = composeModifier(hero, modifier, { spec: checkSpec, choices, includeConditions });
   const result = rollD20WithConfirmation(target, mod.total, roll);
   return createRecord(heroName(hero), type, label, { modifier: mod, weaponId, result });
 }
@@ -104,13 +144,17 @@ export function rollFree(actor, expression, { roll = rollDie } = {}) {
   return createRecord(actor, ROLL_TYPES.FREE, result.expression, { result });
 }
 
-/** Initiative: INI-Basis + 1W6 (+ Modifikator). */
-export function rollInitiative(hero, { modifier = 0, roll = rollDie } = {}) {
+/**
+ * Initiative: INI-Basis + 1W6 (+ Modifikator). Belastung (INI −1 je Stufe) und zusätzliche Abzüge der
+ * Rüstung zählen automatisch mit; im Probendialog lassen sie sich abschalten (choices).
+ */
+export function rollInitiative(hero, { modifier = 0, choices = {}, roll = rollDie } = {}) {
   const base = initiativeBaseOf(hero);
   const die = roll(6);
-  const mod = toInt(modifier);
+  const mod = composeModifier(hero, modifier, { spec: { kind: 'initiative' }, choices });
   return createRecord(heroName(hero), ROLL_TYPES.INITIATIVE, 'Initiative', {
-    result: { kind: 'initiative', base, roll: die, modifier: mod, total: initiativeTotal(base, die, mod) },
+    ...(mod.parts.length ? { modifier: mod } : {}),
+    result: { kind: 'initiative', base, roll: die, modifier: mod.total, total: initiativeTotal(base, die, mod.total) },
   });
 }
 
