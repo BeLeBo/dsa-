@@ -18,8 +18,8 @@ export const DESCRIPTION_KINDS = Object.freeze({
   advantages: 'vorteil',
   disadvantages: 'nachteil',
   specialAbilities: 'sf',
-  languages: 'sf',
-  tradeSecrets: 'sf',
+  languages: 'sf,sprache',
+  tradeSecrets: 'sf,berufsgeheimnis',
   inventory: 'ausruestung',
   weapons: 'waffe',
   armor: 'ruestung',
@@ -60,14 +60,41 @@ function variants(name) {
   return [...new Set([full, withoutParens, full.replace(LEVEL, ''), baseName(full)].map(nameKey))].filter(Boolean);
 }
 
-/** Katalog: Art → Schlüssel → Eintrag { kind, name, url, summary }. */
+/**
+ * Katalog: Art → Schlüssel → Eintrag { kind, name, url, summary }. Der volle Name gewinnt immer;
+ * Kurzformen zählen nur, wenn sie eindeutig sind („Tradition“ passt auf mehrere Traditionen).
+ */
 const INDEX = new Map();
+const candidates = new Map();
 for (const [kind, name, url, summary] of DESCRIPTIONS) {
   const entry = Object.freeze({ kind, name, url, summary });
-  if (!INDEX.has(kind)) INDEX.set(kind, new Map());
-  const byKey = INDEX.get(kind);
-  for (const key of variants(name)) if (!byKey.has(key)) byKey.set(key, entry);
+  if (!candidates.has(kind)) candidates.set(kind, new Map());
+  const byKey = candidates.get(kind);
+  const exact = nameKey(name);
+  for (const key of variants(name)) {
+    if (!byKey.has(key)) byKey.set(key, { exact: null, loose: new Set() });
+    const slot = byKey.get(key);
+    if (key === exact) slot.exact ??= entry;
+    else slot.loose.add(entry);
+  }
 }
+for (const [kind, byKey] of candidates) {
+  const resolved = new Map();
+  for (const [key, { exact, loose }] of byKey) {
+    const entry = exact ?? (loose.size === 1 ? [...loose][0] : null);
+    if (entry) resolved.set(key, entry);
+  }
+  INDEX.set(kind, resolved);
+}
+
+/**
+ * Listen, deren Einträge der Katalog nur allgemein kennt: „Garethi III“ zeigt die Sonderfertigkeit
+ * „Sprache“, „Schrift: Kusliker Zeichen“ die „Schrift“ und jedes Berufsgeheimnis „Berufsgeheimnisse“.
+ */
+const GENERAL_ENTRIES = Object.freeze({
+  sprache: (name) => (/^\s*schrift\b/i.test(name) ? 'Schrift' : 'Sprache'),
+  berufsgeheimnis: () => 'Berufsgeheimnisse',
+});
 
 function kindsOf(kinds) {
   const list = String(kinds ?? '')
@@ -82,6 +109,11 @@ function kindsOf(kinds) {
 export function findDescription(kinds, name) {
   const keys = variants(name);
   for (const kind of kindsOf(kinds)) {
+    if (GENERAL_ENTRIES[kind]) {
+      const general = INDEX.get('sf-profan')?.get(nameKey(GENERAL_ENTRIES[kind](String(name ?? ''))));
+      if (general) return general;
+      continue;
+    }
     const byKey = INDEX.get(kind);
     if (!byKey) continue;
     for (const key of keys) if (byKey.has(key)) return byKey.get(key);
@@ -89,10 +121,16 @@ export function findDescription(kinds, name) {
   return null;
 }
 
-/** Suche im offiziellen Regel-Wiki nach einem Namen (ohne Stufe und Klammern). */
+/** Suchbegriff: ohne Stufe und Klammern – außer bei „Tradition (Druiden)“, da zählt die Klammer. */
+function searchTerm(name) {
+  const text = String(name ?? '').trim();
+  const tradition = /^tradition\s*\(([^)]+)\)/i.exec(text);
+  return tradition?.[1].trim() || baseName(text) || text;
+}
+
+/** Suche im offiziellen Regel-Wiki nach einem Namen. */
 export function searchUrl(name) {
-  const term = baseName(name) || String(name ?? '').trim();
-  return `${REGELWIKI_URL}suche.html?keywords=${encodeURIComponent(term)}`;
+  return `${REGELWIKI_URL}suche.html?keywords=${encodeURIComponent(searchTerm(name))}`;
 }
 
 /**
@@ -114,7 +152,7 @@ export function describeEntry(kinds, name) {
   return {
     summary: entry?.summary || null,
     url: searchUrl(text),
-    linkText: `Im Regel-Wiki nach „${baseName(text) || text}“ suchen ↗`,
+    linkText: `Im Regel-Wiki nach „${searchTerm(text)}“ suchen ↗`,
     entry,
   };
 }

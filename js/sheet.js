@@ -477,17 +477,18 @@ export function describeConditions(hero) {
     .join(', ');
 }
 
-/** Woher die Stufen eines Zustands kommen, z. B. „I aus LE + I eingetragen“. */
+/** Woher die Stufen eines Zustands kommen, z. B. „aus der LE“ oder „I aus der Rüstung (BE 2) + I eingetragen“. */
 function conditionSource(entry, armor) {
   if (!entry.auto) return '';
   const manual = entry.level - entry.auto;
-  const auto =
+  const origin =
     entry.id === 'schmerz'
-      ? `${ROMAN_LEVELS[entry.auto]} aus LE`
-      : `${ROMAN_LEVELS[entry.auto]} aus Rüstung (BE ${armor.be}${
+      ? 'aus der LE'
+      : `aus der Rüstung (BE ${armor.be}${
           armor.habituation ? `, Belastungsgewöhnung ${ROMAN_LEVELS[armor.habituation]}` : ''
         })`;
-  return manual > 0 ? `${auto} + ${ROMAN_LEVELS[manual]} eingetragen` : auto;
+  // Stufe nur nennen, wenn noch eingetragene Stufen dazukommen (sonst steht sie schon in der Zeile)
+  return manual > 0 ? `${ROMAN_LEVELS[entry.auto]} ${origin} + ${ROMAN_LEVELS[manual]} eingetragen` : origin;
 }
 
 /**

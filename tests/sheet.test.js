@@ -42,7 +42,15 @@ import {
   rerollWithFate,
 } from '../js/checks.js';
 import { describeOutcome, describeModifier, formatModifier } from '../js/format.js';
-import { describeEntry, findDescription, nameKey, baseName, searchUrl, DESCRIPTION_KINDS } from '../js/descriptions.js';
+import {
+  describeEntry,
+  findDescription,
+  nameKey,
+  baseName,
+  searchUrl,
+  catalogSize,
+  DESCRIPTION_KINDS,
+} from '../js/descriptions.js';
 import { DESCRIPTIONS } from '../js/data/beschreibungen.js';
 
 /** Held mit festen Eigenschaften für die Tests. */
@@ -503,6 +511,10 @@ test(ENC, 'Rüstung: automatische Belastung im Zustand, GS/INI-Abzüge, Kurzbesc
   hero.specialAbilities = [{ id: 's', text: 'Belastungsgewöhnung I' }];
   hero.conditions.belastung = 1; // z. B. schweres Gepäck
   assertEqual(conditionState(hero).levels.belastung, 2, 'I aus Rüstung + I eingetragen');
+  assertEqual(
+    modifierBreakdown(hero, { kind: 'talent', id: 'klettern' }).parts.find((part) => part.id === 'belastung').detail,
+    'I aus der Rüstung (BE 2, Belastungsgewöhnung I) + I eingetragen',
+  );
   assertEqual(conditionState(hero, { encumbrance: false }).penalty, 0, 'bei anderen Proben kein Abzug');
   assertEqual(normalizeHero(JSON.parse(JSON.stringify(hero))).armor.extra, true, 'überlebt Speichern');
 });
@@ -521,7 +533,7 @@ test(ENC, 'Aufschlüsselung: Zeilen je Zustand, Herkunft, einzeln abschaltbar, h
       ['furcht', -2, true],
     ],
   );
-  assertTrue(climbing.parts[1].detail.includes('aus Rüstung (BE 2)'), climbing.parts[1].detail);
+  assertEqual(climbing.parts[1].detail, 'aus der Rüstung (BE 2)');
   assertEqual(
     [climbing.conditions, climbing.capped, climbing.total],
     [-5, true, -4],
@@ -608,6 +620,25 @@ test(INFO, 'Mit Kurzfassung: direkter Link; ohne: Suche im Regel-Wiki; ohne Name
   assertEqual(describeEntry(DESCRIPTION_KINDS.spells, '  ').url, null);
 });
 
+test(INFO, 'Sonderfertigkeiten mit Stufe/Klammer; Sprachen, Schriften, Berufsgeheimnisse allgemein', () => {
+  const sf = (name) => findDescription(DESCRIPTION_KINDS.specialAbilities, name)?.name;
+  assertEqual(sf('Belastungsgewöhnung II'), 'Belastungsgewöhnung I-II');
+  assertEqual(sf('Ortskenntnis (Gareth)'), 'Ortskenntnis');
+  assertEqual(sf('Wuchtschlag I'), 'Wuchtschlag I-III');
+  const language = (name) => findDescription(DESCRIPTION_KINDS.languages, name)?.name;
+  assertEqual(language('Garethi III'), 'Sprache I-III');
+  assertEqual(language('Garethi (Muttersprache)'), 'Sprache I-III');
+  assertEqual(language('Schrift: Kusliker Zeichen'), 'Schrift');
+  assertEqual(findDescription(DESCRIPTION_KINDS.tradeSecrets, 'Algebra')?.name, 'Berufsgeheimnisse');
+  assertEqual(sf('Garethi III'), undefined, 'nur in der Liste der Sprachen');
+  assertEqual(sf('Tradition (Gildenmagier)'), 'Tradition (Gildenmagier)');
+  assertEqual(sf('Tradition (Rondrakirche)'), 'Tradition (Rondrakirche)');
+  assertEqual(sf('Tradition (Druiden)'), undefined, 'mehrdeutige Kurzform „Tradition“ zählt nicht');
+  assertTrue(describeEntry(DESCRIPTION_KINDS.specialAbilities, 'Tradition (Druiden)').url.endsWith('keywords=Druiden'));
+  const secret = describeEntry(DESCRIPTION_KINDS.tradeSecrets, 'Algebra');
+  assertTrue(secret.url.endsWith('SF_Berufsgeheimnisse.html') && secret.summary.length > 20, secret.url);
+});
+
 test(INFO, 'Katalog: eindeutig, gültige Arten, kurze Texte in eigenen Worten mit Link', () => {
   const kinds = new Set(Object.values(DESCRIPTION_KINDS).flatMap((list) => list.split(',')));
   ['sf-profan', 'sf-magisch', 'sf-karmal'].forEach((kind) => kinds.add(kind));
@@ -618,9 +649,21 @@ test(INFO, 'Katalog: eindeutig, gültige Arten, kurze Texte in eigenen Worten mi
     assertTrue(!seen.has(key), `doppelt: ${name}`);
     seen.add(key);
     assertTrue(typeof url === 'string' && !url.startsWith('http'), `Pfad relativ zum Regel-Wiki: ${name}`);
-    assertTrue(summary.length >= 20 && summary.length <= 320, `Länge der Kurzfassung: ${name} (${summary.length})`);
+    if (summary === '') {
+      assertTrue(url !== '', `ohne Kurzfassung nur mit direktem Link: ${name}`);
+    } else {
+      assertTrue(summary.length >= 20 && summary.length <= 320, `Länge der Kurzfassung: ${name} (${summary.length})`);
+    }
   }
-  assertTrue(DESCRIPTIONS.length >= 98, `${DESCRIPTIONS.length} Einträge`);
+  assertTrue(catalogSize() >= 350, `${catalogSize()} Kurzfassungen`);
+});
+
+test(INFO, 'Gegenstände: Zweitnamen und Links ohne Kurzfassung', () => {
+  const crowbar = describeEntry(DESCRIPTION_KINDS.inventory, 'Brechstange');
+  assertTrue(crowbar.url.endsWith('RK_Ausr_Brecheisen.html') && crowbar.summary.includes('Brechstange'), crowbar.url);
+  const linkOnly = describeEntry(DESCRIPTION_KINDS.inventory, 'Angroschanhänger');
+  assertEqual(linkOnly.summary, null);
+  assertTrue(linkOnly.url.endsWith('RK_Angroschanhaenger.html') && linkOnly.linkText.includes('Offizieller Text'));
 });
 
 test(INFO, 'Neue Felder: eigene Beschreibung bei Texteinträgen, Waffen und Rüstung', () => {

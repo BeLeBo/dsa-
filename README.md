@@ -215,9 +215,11 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
   Gepäck) wie bisher unter **Zustände** eintragen – sie kommt zur Rüstung dazu.
 - **Beschreibungen („i“):** Hinter dem kleinen **i** an Zaubern, Ritualen, Liturgien, Zaubertricks,
   Segnungen, Vor- und Nachteilen, Sonderfertigkeiten, Gegenständen, Waffen und der Rüstung steckt:
-  - eine **Kurzfassung in eigenen Worten** (für Einträge aus dem Grundregelwerk),
-  - ein **Link zum offiziellen Eintrag** im DSA5-Regel-Wiki von Ulisses (direkt; bei unbekannten
-    Namen die Suche dort),
+  - eine **Kurzfassung in eigenen Worten** (Zauber, Liturgien, Vor-/Nachteile und Sonderfertigkeiten
+    aus dem Grundregelwerk; Ausrüstung mit Regelwirkung und gängige Waffen/Rüstungen aus der Rüstkammer),
+  - ein **Link zum offiziellen Eintrag** im DSA5-Regel-Wiki von Ulisses (direkt – auch für Gegenstände,
+    Waffen und Rüstungen ohne Kurzfassung; bei unbekannten Namen die Suche dort). Sprachen, Schriften
+    und Berufsgeheimnisse zeigen den allgemeinen Eintrag („Sprache“, „Schrift“, „Berufsgeheimnisse“),
   - ein Feld **Eigene Beschreibung**, das mit dem Helden gespeichert wird (z. B. der Text aus dem
     eigenen Regelbuch oder eine Notiz wie „geliehen von Alrik“).
     Offizielle Texte darf die App nicht mitbringen – Ulisses erlaubt Fans nur Zusammenfassungen und Links.
@@ -694,7 +696,7 @@ js/ui/toast.js           Meldungen, auch Fehler und „Rückgängig“
 js/ui/check-dialog.js    Probendialog (mit Aufschlüsselung der Erschwernisse)
 js/ui/sheet/info.js      Das „i“: Kurzfassung, Link zum Regel-Wiki, eigene Beschreibung
 js/descriptions.js       Beschreibungen nachschlagen (Namen vergleichen, Links zum Regel-Wiki)
-js/data/beschreibungen.js  Kurzfassungen in eigenen Worten (Grundregelwerk) mit Regel-Wiki-Pfad
+js/data/beschreibungen.js  Kurzfassungen in eigenen Worten und direkte Links ins Regel-Wiki
 js/ui/roll-view.js       Darstellung von Würfen (Dialog und Protokoll)
 js/ui/roll-actions.js    Würfelknöpfe → Probenbeschreibung
 js/ui/dice-view.js       Tab „Würfeln“
