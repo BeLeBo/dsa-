@@ -2,10 +2,12 @@
  * combat.js (Ansicht) – Kampftechniken, Waffen und Rüstung.
  */
 import { h } from '../dom.js';
-import { field, textInput, intInput, selectInput } from '../fields.js';
+import { field, textInput, intInput, selectInput, checkbox } from '../fields.js';
 import { section, actionButton, derived, editorToggle, addButton, removeButton, emptyHint } from './parts.js';
 import { COMBAT_TECHNIQUES } from '../../data/talents.js';
 import { techniqueInfo } from '../../sheet.js';
+import { DESCRIPTION_KINDS } from '../../descriptions.js';
+import { infoKey, infoToggle, infoPanel } from './info.js';
 
 const VALUE_LABELS = { at: 'AT', pa: 'PA', fk: 'FK' };
 
@@ -75,6 +77,7 @@ function weaponRow(weapon, index, ui) {
   const ranged = techniqueInfo(weapon.technique).ranged;
   const editorKey = `weapon:${weapon.id}`;
   const editorOpen = ui.openEditors.has(editorKey);
+  const infoOpen = ui.openEditors.has(infoKey('weapons', weapon.id));
   return h(
     'div',
     { class: 'row' },
@@ -87,8 +90,16 @@ function weaponRow(weapon, index, ui) {
         derived('weapon-name', weapon.id, { className: 'row-name' }),
         derived('weapon-sub', weapon.id, { className: 'row-sub' }),
       ),
+      infoToggle(infoKey('weapons', weapon.id), infoOpen, weapon.name || 'dieser Waffe'),
       editorToggle(editorKey, editorOpen, 'Waffe bearbeiten'),
     ),
+    infoOpen
+      ? infoPanel({
+          kinds: DESCRIPTION_KINDS.weapons,
+          namePath: `weapons.${index}.name`,
+          notePath: `weapons.${index}.note`,
+        })
+      : null,
     h(
       'div',
       { class: 'row-chips' },
@@ -128,14 +139,24 @@ export function renderCombat(hero, ui) {
     h('h3', {}, 'Waffen'),
     weapons.length ? weapons : emptyHint('Noch keine Waffen eingetragen.'),
     addButton('weapons', 'Waffe hinzufügen'),
-    h('h3', {}, 'Rüstung'),
+    h(
+      'div',
+      { class: 'heading-with-info' },
+      h('h3', {}, 'Rüstung'),
+      infoToggle('info:armor', ui.openEditors.has('info:armor'), 'der Rüstung'),
+    ),
+    ui.openEditors.has('info:armor')
+      ? infoPanel({ kinds: DESCRIPTION_KINDS.armor, namePath: 'armor.name', notePath: 'armor.note' })
+      : null,
     h(
       'div',
       { class: 'grid grid-3' },
       field('Rüstung', textInput('armor.name', { placeholder: 'z. B. Kettenhemd' }), { className: 'span-3' }),
       field('RS', intInput('armor.rs')),
-      field('BE', intInput('armor.be')),
+      field('BE', intInput('armor.be'), { hint: { text: 'Stufen Belastung' } }),
+      checkbox('armor.extra', 'zusätzlich −1 GS, −1 INI', { className: 'armor-extra' }),
     ),
+    derived('armor-effect', '', { tag: 'p', className: 'section-hint armor-effect' }),
     h('h3', {}, 'Kampftechniken'),
     h('p', { class: 'section-hint' }, 'AT = KtW + MU-Bonus, PA = KtW/2 + Leiteigenschafts-Bonus, FK = KtW + FF-Bonus.'),
     actionButton('toggle-editor', TECHNIQUE_EDITOR_KEY, editingTechniques ? 'Anpassen beenden' : 'Werte anpassen', {

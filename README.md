@@ -38,6 +38,7 @@ alles live für alle synchronisiert.
 | 23    | Farbeimer wieder wie früher, Zeichnungen selbst ausblenden              | ✅ fertig |
 | 24    | Aventurien-Karte (Ulisses-Kartenpaket), Ausschnitt für die Spieler      | ✅ fertig |
 | 25    | Regionalkarten und politische Karte aus dem Kartenpaket                 | ✅ fertig |
+| 26    | „i“-Beschreibungen, Belastung aus Rüstung, Aufschlüsselung der Proben   | ✅ fertig |
 
 ## Einrichtung Schritt für Schritt
 
@@ -198,14 +199,40 @@ Die App muss dazu über `https://` laufen (GitHub Pages erfüllt das) – bzw. l
   gespeichert, gelb wird gespeichert, rot offline oder Fehler; ausgeschrieben steht er oben im Menü.
   Eine Kopfzeile gibt es nicht – der Platz gehört Karte und Bogen.
 - **Proben:** Ein Tipp auf eine Eigenschaft, ein Talent, einen Zauber, AT/PA/FK, Ausweichen oder
-  Initiative öffnet den Probendialog mit Erleichterung/Erschwernis. Zustände werden automatisch
-  eingerechnet (im Dialog abschaltbar). Das Ergebnis zeigt jeden Würfel, den Zielwert und die Rest-FP.
+  Initiative öffnet den Probendialog mit Erleichterung/Erschwernis. Unter **Zustände und Rüstung**
+  steht jede Erschwernis als eigene Zeile – z. B. „Schmerz II −2 (I aus LE + I eingetragen)“ oder
+  „Belastung I −1 (aus Rüstung, BE 2, Belastungsgewöhnung I)“ – und lässt sich einzeln ab- oder
+  anschalten. Darunter der **Gesamtmodifikator** mit allen Teilen („−3 = Schmerz II −2, Belastung I −1,
+  eigene ±0“). Das Ergebnis und das Protokoll zeigen dieselbe Aufschlüsselung, dazu jeden Würfel, den
+  Zielwert und die Rest-FP.
+- **Rüstung und Belastung:** Unter **Kampf → Rüstung** RS und BE eintragen (BE = Stufen Belastung) und
+  bei Leder- oder Schuppenrüstung „zusätzlich −1 GS, −1 INI“ anhaken. Die Belastung zählt dann
+  automatisch – so, wie es die offizielle Regel vorsieht: bei den 31 Talenten mit „Belastung: ja“
+  (z. B. Klettern, Schwimmen, Verbergen; nicht bei Wissen, Gesellschaft, Zaubern oder
+  Eigenschaftsproben), bei Angriff, Fernkampf, Parade und Ausweichen sowie bei der Initiative; die GS
+  sinkt ebenfalls (siehe Basiswerte). **Belastungsgewöhnung I/II** bei den Sonderfertigkeiten
+  eingetragen macht die Rüstung um eine bzw. zwei Stufen leichter. Weitere Belastung (z. B. schweres
+  Gepäck) wie bisher unter **Zustände** eintragen – sie kommt zur Rüstung dazu.
+- **Beschreibungen („i“):** Hinter dem kleinen **i** an Zaubern, Ritualen, Liturgien, Zaubertricks,
+  Segnungen, Vor- und Nachteilen, Sonderfertigkeiten, Gegenständen, Waffen und der Rüstung steckt:
+  - eine **Kurzfassung in eigenen Worten** (Zauber, Liturgien, Vor-/Nachteile und Sonderfertigkeiten
+    aus dem Grundregelwerk; Ausrüstung mit Regelwirkung und gängige Waffen/Rüstungen aus der Rüstkammer),
+  - ein **Link zum offiziellen Eintrag** im DSA5-Regel-Wiki von Ulisses (direkt – auch für Gegenstände,
+    Waffen und Rüstungen ohne Kurzfassung; bei unbekannten Namen die Suche dort). Sprachen, Schriften
+    und Berufsgeheimnisse zeigen den allgemeinen Eintrag („Sprache“, „Schrift“, „Berufsgeheimnisse“),
+  - ein Feld **Eigene Beschreibung**, das mit dem Helden gespeichert wird (z. B. der Text aus dem
+    eigenen Regelbuch oder eine Notiz wie „geliehen von Alrik“).
+    Offizielle Texte darf die App nicht mitbringen – Ulisses erlaubt Fans nur Zusammenfassungen und Links.
 - **Schicksalspunkt:** Im Ergebnis „Schicksalspunkt einsetzen“ tippen, Würfel auswählen, neu werfen.
 - **Zauber & Liturgien:** Die Kosten (erste Zahl aus „Kosten“) werden nach der Probe von AsP bzw. KaP
   abgezogen – mit „Rückgängig“-Knopf.
 - **Waffen:** Knöpfe für AT, PA (bzw. FK) und TP. Nach einer gelungenen Attacke gibt es direkt
   „Schaden würfeln“, bei kritischem Treffer verdoppelt.
 - **Stift-Symbol:** öffnet die Bearbeitung eines Eintrags (Probeneigenschaften, Spezialisierung, Waffendaten …).
+- **Neue Einträge nach einem Update** (z. B. ein Zauber aus einem neuen Buch): Das „i“ funktioniert
+  sofort – mit Suchlink ins Regel-Wiki und eigenem Beschreibungsfeld. Eine Kurzfassung lässt sich
+  später ergänzen: eine Zeile in `js/data/beschreibungen.js` (Art, Name, Pfad im Regel-Wiki, Text in
+  eigenen Worten); Groß-/Kleinschreibung, Stufe („II“) und Klammern spielen beim Vergleich keine Rolle.
 - **Leere Felder bei AW, INI und Kampfwerten** bedeuten „automatisch berechnen“; ein eingetragener Wert hat Vorrang.
 - **Inventar in Gruppen:** Gegenstände stehen in aufklappbaren Gruppen – anfangs Am Körper, Rucksack,
   Wagen und Packtier, dazu beliebig eigene (**Gruppe hinzufügen**, z. B. „Gürteltasche“ oder „Truhe in
@@ -666,7 +693,10 @@ js/ui/dom.js             Sicheres Erzeugen von Elementen (nie innerHTML mit Nutz
 js/ui/fields.js          An den Helden gebundene Eingabefelder
 js/ui/dialog.js          Dialoge (am Handy als Blatt von unten)
 js/ui/toast.js           Meldungen, auch Fehler und „Rückgängig“
-js/ui/check-dialog.js    Probendialog
+js/ui/check-dialog.js    Probendialog (mit Aufschlüsselung der Erschwernisse)
+js/ui/sheet/info.js      Das „i“: Kurzfassung, Link zum Regel-Wiki, eigene Beschreibung
+js/descriptions.js       Beschreibungen nachschlagen (Namen vergleichen, Links zum Regel-Wiki)
+js/data/beschreibungen.js  Kurzfassungen in eigenen Worten und direkte Links ins Regel-Wiki
 js/ui/roll-view.js       Darstellung von Würfen (Dialog und Protokoll)
 js/ui/roll-actions.js    Würfelknöpfe → Probenbeschreibung
 js/ui/dice-view.js       Tab „Würfeln“
@@ -695,6 +725,12 @@ jeweils an einer Stelle ändern:
 - **Zustände:** −1 je Stufe, einzeln abschaltbar, zusammen höchstens −5 (DSA5-Regel).
   Automatischer Schmerz aus LE (I ≤ ¾, II ≤ ½, III ≤ ¼, IV ≤ 5 LE) wird zu einem eingetragenen
   Schmerz (z. B. durch Gift) addiert, höchstens Stufe IV.
+- **Belastung (Regelwerk S. 32, 246):** Die BE einer Rüstung ist die Zahl ihrer Belastungsstufen.
+  Belastung erschwert je Stufe Talente mit „Belastung: ja“ (laut Regel-Wiki 31 von 59), Angriff
+  (auch Fernkampf – die Regel nennt nur „AT“, so in der App entschieden), Verteidigung und INI um 1
+  und senkt die GS um 1; Stufe IV heißt handlungsunfähig. Manche Rüstungen geben zusätzlich −1 GS und
+  −1 INI. Belastungsgewöhnung lässt eine Rüstung je Stufe zwei Zeilen der Rüstungstabelle nach oben
+  wandern (Platte mit Stufe I behindert wie Kette) – also eine Belastungsstufe weniger.
 - **Schicksalspunkt (Neuwurf):** Ein, zwei oder alle Würfel einer Probe dürfen neu geworfen werden,
   das neue Ergebnis ist bindend. Nach einem Patzer ist kein Neuwurf möglich.
 - **Zauber- und Liturgiekosten:** Bei gelungener Probe volle Kosten, bei misslungener die Hälfte

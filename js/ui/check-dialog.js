@@ -10,7 +10,6 @@ import { RESOURCE_NAMES } from '../data/talents.js';
 import {
   attributeValue,
   describeCheck,
-  describeConditions,
   dodgeOf,
   initiativeBaseOf,
   techniqueInfo,
@@ -18,7 +17,7 @@ import {
   talentInfo,
   weaponValues,
   spellTypeInfo,
-  conditionState,
+  modifierBreakdown,
   payEnergy,
   refundEnergy,
   spendFatePoint,
@@ -136,7 +135,7 @@ export function openCheckDialog({ store, log, rollOptions = {}, onRoll = null },
   const state = {
     visibility: chooseVisibility ? lastVisibility() : VISIBILITY.PUBLIC,
     modifier: 0,
-    includeConditions: true,
+    choices: {}, // Zeilen der Aufschlüsselung, die von Hand an- oder abgeschaltet wurden
     useSpecialization: false,
     double: spec.double === true,
     payCost: initial.cost?.amount != null,
@@ -221,11 +220,41 @@ export function openCheckDialog({ store, log, rollOptions = {}, onRoll = null },
     );
   }
 
-  function conditionsControl(hero) {
-    const { penalty } = conditionState(hero);
-    const description = describeConditions(hero);
-    if (!description) return null;
-    return toggle(`Zustände einrechnen: ${formatModifier(penalty)} (${description})`, 'includeConditions');
+  /**
+   * Aufschlüsselung: jeder Zustand (Belastung nur, wo sie offiziell zählt) und bei der Initiative die
+   * Rüstungsabzüge als eigene Zeile – einzeln an- und abschaltbar.
+   */
+  function breakdownControl(hero) {
+    const { parts, capped } = modifierBreakdown(hero, spec, { manual: state.modifier, choices: state.choices });
+    if (parts.length === 0) return null;
+    return h(
+      'fieldset',
+      { class: 'modifier-breakdown' },
+      h('legend', { class: 'field-label' }, 'Zustände und Rüstung'),
+      parts.map((part) =>
+        h(
+          'label',
+          { class: `check breakdown-row ${part.active ? '' : 'is-off'}`.trim() },
+          h('input', {
+            type: 'checkbox',
+            checked: part.active,
+            dataset: { part: part.id },
+            onchange: (event) => {
+              state.choices = { ...state.choices, [part.id]: event.target.checked };
+              renderSetup();
+            },
+          }),
+          h(
+            'span',
+            { class: 'breakdown-text' },
+            h('span', { class: 'breakdown-label' }, part.label),
+            part.detail ? h('small', { class: 'breakdown-detail' }, part.detail) : null,
+          ),
+          h('strong', { class: 'breakdown-value' }, formatModifier(part.value)),
+        ),
+      ),
+      capped ? h('p', { class: 'field-hint' }, 'Zustände erschweren zusammen höchstens um 5.') : null,
+    );
   }
 
   function costControl(hero, check) {
@@ -259,10 +288,21 @@ export function openCheckDialog({ store, log, rollOptions = {}, onRoll = null },
     );
   }
 
+  /** „Gesamt: −3 = Schmerz II −2, Belastung II −2 (zusammen höchstens −5), eigene +1“ */
   function totalModifierLine(hero, check) {
     if (check.kind === 'damage') return null;
-    const conditions = check.kind !== 'initiative' && state.includeConditions ? conditionState(hero).penalty : 0;
-    return h('p', { class: 'readout' }, `Gesamtmodifikator: ${formatModifier(state.modifier + conditions)}`);
+    const breakdown = modifierBreakdown(hero, spec, { manual: state.modifier, choices: state.choices });
+    const terms = breakdown.parts
+      .filter((part) => part.active)
+      .map((part) => `${part.label} ${formatModifier(part.value)}`);
+    if (breakdown.capped) terms.push('Zustände höchstens −5');
+    if (breakdown.manual) terms.push(`eigene ${formatModifier(breakdown.manual)}`);
+    return h(
+      'p',
+      { class: 'readout modifier-total' },
+      h('strong', {}, `Gesamtmodifikator: ${formatModifier(breakdown.total)}`),
+      terms.length ? h('small', {}, ` = ${terms.join(', ')}`) : null,
+    );
   }
 
   function renderSetup() {
@@ -283,7 +323,7 @@ export function openCheckDialog({ store, log, rollOptions = {}, onRoll = null },
       dialog.body,
       h('p', { class: 'dialog-subtitle' }, check.subtitle),
       check.kind === 'damage' ? null : modifierControl(),
-      check.kind === 'skill' || check.kind === 'd20' ? conditionsControl(hero) : null,
+      check.kind === 'damage' ? null : breakdownControl(hero),
       hasSpecialization
         ? toggle(`Spezialisierung „${check.entry.spec}“ nutzen (FW +${SPECIALIZATION_BONUS})`, 'useSpecialization')
         : null,
@@ -310,14 +350,14 @@ export function openCheckDialog({ store, log, rollOptions = {}, onRoll = null },
   // -------------------------------------------------------------------------
 
   function performRoll(hero, check) {
-    const common = { label: check.label, modifier: state.modifier, includeConditions: state.includeConditions };
+    const common = { label: check.label, modifier: state.modifier, checkSpec: spec, choices: state.choices };
     switch (check.kind) {
       case 'skill':
         return rollSkill(hero, check.entry, { ...common, useSpecialization: state.useSpecialization });
       case 'd20':
         return rollD20(hero, { ...common, type: check.type, target: check.target, weaponId: check.weapon?.id ?? null });
       case 'initiative':
-        return rollInitiative(hero, { modifier: state.modifier });
+        return rollInitiative(hero, { modifier: state.modifier, choices: state.choices });
       default:
         return rollDamage(hero, check.weapon, { double: state.double });
     }

@@ -3,7 +3,7 @@
  */
 import { test, assertEqual, assertTrue, assertThrows } from './harness.js';
 import { fixedRolls } from './fixtures.js';
-import { ATTRIBUTES, SPECIAL } from '../js/rules.js';
+import { ATTRIBUTES, SPECIAL, habituationLevel, armorEncumbrance } from '../js/rules.js';
 import { TALENTS, TALENT_GROUPS, COMBAT_TECHNIQUES } from '../js/data/talents.js';
 import {
   createHero,
@@ -25,6 +25,10 @@ import {
   structureSignature,
   createInventoryGroup,
   MAX_INVENTORY_GROUPS,
+  armorState,
+  armorPenalties,
+  encumbranceAppliesTo,
+  modifierBreakdown,
 } from '../js/sheet.js';
 import {
   ROLL_TYPES,
@@ -38,6 +42,16 @@ import {
   rerollWithFate,
 } from '../js/checks.js';
 import { describeOutcome, describeModifier, formatModifier } from '../js/format.js';
+import {
+  describeEntry,
+  findDescription,
+  nameKey,
+  baseName,
+  searchUrl,
+  catalogSize,
+  DESCRIPTION_KINDS,
+} from '../js/descriptions.js';
+import { DESCRIPTIONS } from '../js/data/beschreibungen.js';
 
 /** Held mit festen Eigenschaften für die Tests. */
 function testHero() {
@@ -435,4 +449,235 @@ test(MODEL, 'Inventar-Gruppen: Umsortieren und Umbenennen bauen den Bogen neu au
   hero.inventoryGroups[1].name = 'Tornister';
   assertTrue(structureSignature(hero) !== moved, 'Gruppe umbenannt');
   assertEqual(importHero(exportHero(hero)), hero, 'Gruppen überstehen Export und Import');
+});
+
+// ---------------------------------------------------------------------------
+// Rüstung und Belastung (offizielle Regel), Aufschlüsselung der Modifikatoren
+// ---------------------------------------------------------------------------
+
+const ENC = 'Belastung aus Rüstung & Aufschlüsselung';
+
+test(ENC, 'Talente: Belastung ja/nein wie im offiziellen Regel-Wiki (31 von 59)', () => {
+  assertEqual(TALENTS.filter((entry) => entry.encumbrance).length, 31);
+  const flag = (id) => TALENTS.find((entry) => entry.id === id).encumbrance;
+  assertEqual(['klettern', 'schwimmen', 'tierkunde', 'verkleiden', 'alchimie', 'fahrzeuge'].map(flag), [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+  ]);
+  assertEqual(['sinnesschaerfe', 'singen', 'betoeren', 'fesseln', 'magiekunde', 'zechen'].map(flag), [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+  ]);
+});
+
+test(ENC, 'Rüstungstabelle: BE = Stufen; Belastungsgewöhnung wandert je Stufe zwei Zeilen nach oben', () => {
+  const row = (be, extra, habituation) => armorEncumbrance({ be, extra }, habituation);
+  assertEqual(row(3, false, 0), { levels: 3, extra: false }, 'Platte');
+  assertEqual(row(3, false, 1), { levels: 2, extra: false }, 'Platte mit I behindert wie Kette');
+  assertEqual(row(3, false, 2), { levels: 1, extra: false }, 'Platte mit II wie Stoff');
+  assertEqual(row(2, true, 1), { levels: 1, extra: true }, 'Schuppe mit I wie Leder (Zusatzabzug bleibt)');
+  assertEqual(row(1, true, 2), { levels: 0, extra: false }, 'Leder mit II: oben aus der Tabelle → wie Kleidung');
+  assertEqual(habituationLevel([{ text: 'Finte I' }, { text: 'Belastungsgewöhnung II' }]), 2);
+  assertEqual(habituationLevel([{ text: 'belastungsgewoehnung' }]), 1, 'ohne Stufe → I');
+  assertEqual(habituationLevel([{ text: 'Gewöhnung an Kälte' }]), 0);
+});
+
+test(ENC, 'Belastung zählt offiziell nur bei betroffenen Talenten, Kampf und Initiative', () => {
+  assertTrue(encumbranceAppliesTo({ kind: 'talent', id: 'klettern' }));
+  assertTrue(!encumbranceAppliesTo({ kind: 'talent', id: 'magiekunde' }));
+  for (const kind of ['weapon', 'technique', 'dodge', 'initiative']) assertTrue(encumbranceAppliesTo({ kind }), kind);
+  for (const kind of ['attribute', 'spell', 'damage']) assertTrue(!encumbranceAppliesTo({ kind }), kind);
+});
+
+test(ENC, 'Rüstung: automatische Belastung im Zustand, GS/INI-Abzüge, Kurzbeschreibung', () => {
+  const hero = testHero();
+  hero.armor = { name: 'Schuppenpanzer', rs: 5, be: 2, extra: true, note: '' };
+  assertEqual(armorState(hero).levels, 2);
+  assertEqual(conditionState(hero).levels.belastung, 2, 'aus der Rüstung');
+  assertEqual(describeConditions(hero), 'Belastung II (Rüstung)');
+  assertEqual(
+    armorPenalties(hero),
+    { gs: 3, ini: 3, encumbrance: 2, extra: true },
+    'je −2 durch Belastung, −1 zusätzlich',
+  );
+  hero.specialAbilities = [{ id: 's', text: 'Belastungsgewöhnung I' }];
+  hero.conditions.belastung = 1; // z. B. schweres Gepäck
+  assertEqual(conditionState(hero).levels.belastung, 2, 'I aus Rüstung + I eingetragen');
+  assertEqual(
+    modifierBreakdown(hero, { kind: 'talent', id: 'klettern' }).parts.find((part) => part.id === 'belastung').detail,
+    'I aus der Rüstung (BE 2, Belastungsgewöhnung I) + I eingetragen',
+  );
+  assertEqual(conditionState(hero, { encumbrance: false }).penalty, 0, 'bei anderen Proben kein Abzug');
+  assertEqual(normalizeHero(JSON.parse(JSON.stringify(hero))).armor.extra, true, 'überlebt Speichern');
+});
+
+test(ENC, 'Aufschlüsselung: Zeilen je Zustand, Herkunft, einzeln abschaltbar, höchstens −5', () => {
+  const hero = testHero();
+  hero.armor = { name: 'Kettenhemd', rs: 4, be: 2, extra: false, note: '' };
+  hero.conditions.schmerz = 2;
+  hero.conditions.furcht = 2;
+  const climbing = modifierBreakdown(hero, { kind: 'talent', id: 'klettern' }, { manual: 1 });
+  assertEqual(
+    climbing.parts.map((part) => [part.id, part.value, part.active]),
+    [
+      ['schmerz', -2, true],
+      ['belastung', -2, true],
+      ['furcht', -2, true],
+    ],
+  );
+  assertEqual(climbing.parts[1].detail, 'aus der Rüstung (BE 2)');
+  assertEqual(
+    [climbing.conditions, climbing.capped, climbing.total],
+    [-5, true, -4],
+    'Zustände −6 → höchstens −5, +1 eigene',
+  );
+  const lore = modifierBreakdown(hero, { kind: 'talent', id: 'magiekunde' });
+  assertEqual(lore.parts.find((part) => part.id === 'belastung').active, false, 'Wissen: Belastung aus');
+  assertEqual(lore.total, -4);
+  const forced = modifierBreakdown(hero, { kind: 'talent', id: 'magiekunde' }, { choices: { belastung: true } });
+  assertEqual(forced.total, -5, 'von Hand eingeschaltet');
+  const withoutPain = modifierBreakdown(hero, { kind: 'talent', id: 'klettern' }, { choices: { schmerz: false } });
+  assertEqual(withoutPain.total, -4, 'Schmerz von Hand abgeschaltet');
+  hero.armor.extra = true;
+  const ini = modifierBreakdown(hero, { kind: 'initiative' });
+  assertEqual(
+    ini.parts.map((part) => [part.id, part.value]),
+    [
+      ['belastung', -2],
+      ['ruestung', -1],
+    ],
+    'Initiative: nur Belastung und Rüstung, kein Schmerz',
+  );
+});
+
+test(ENC, 'Proben speichern die Aufschlüsselung; Initiative rechnet die Rüstung automatisch ein', () => {
+  const hero = testHero();
+  hero.armor = { name: 'Lederrüstung', rs: 3, be: 1, extra: true, note: '' };
+  const climbing = talent(hero, 'klettern');
+  climbing.fw = 6;
+  const record = rollSkill(hero, climbing, {
+    label: 'Klettern',
+    checkSpec: { kind: 'talent', id: 'klettern' },
+    roll: fixedRolls([14, 9, 12]),
+  });
+  assertEqual(record.modifier.total, -1);
+  assertEqual(record.modifier.parts, [{ label: 'Belastung I', value: -1 }]);
+  assertEqual(describeModifier(record.modifier), 'Mod −1 (Belastung I −1)');
+  const lore = rollSkill(hero, talent(hero, 'magiekunde'), {
+    label: 'Magiekunde',
+    checkSpec: { kind: 'talent', id: 'magiekunde' },
+    roll: fixedRolls([14, 9, 12]),
+  });
+  assertEqual(lore.modifier.total, 0, 'Wissen: keine Belastung');
+  const initiative = rollInitiative(hero, { roll: fixedRolls([4]) });
+  assertEqual([initiative.result.modifier, initiative.result.total], [-2, initiativeBaseOf(hero) + 4 - 2]);
+  assertEqual(describeModifier(initiative.modifier), 'Mod −2 (Belastung I −1, Rüstung: zusätzlicher Abzug −1)');
+  const free = rollInitiative(hero, { roll: fixedRolls([4]), choices: { belastung: false, ruestung: false } });
+  assertEqual(free.result.modifier, 0, 'im Dialog abgeschaltet');
+  const attack = rollD20(hero, {
+    type: ROLL_TYPES.COMBAT,
+    label: 'Fernkampf Bogen',
+    target: 12,
+    checkSpec: { kind: 'weapon', id: 'x', value: 'fk' },
+    roll: fixedRolls([5]),
+  });
+  assertEqual(attack.modifier.total, -1, 'Fernkampf zählt wie Angriff');
+});
+
+// ---------------------------------------------------------------------------
+// Beschreibungen hinter dem „i“
+// ---------------------------------------------------------------------------
+
+const INFO = 'Beschreibungen („i“, descriptions.js)';
+
+test(INFO, 'Namen vergleichen: Groß/klein, Umlaute, Stufe und Klammern egal', () => {
+  assertEqual(nameKey('Körperbeherrschung'), nameKey('koerperbeherrschung'));
+  assertEqual(baseName('Glück II'), 'Glück');
+  assertEqual(baseName('Begabung (Klettern)'), 'Begabung');
+  assertEqual(baseName('Belastungsgewöhnung I-II'), 'Belastungsgewöhnung');
+  assertEqual(findDescription(DESCRIPTION_KINDS.spells, 'ignifaxius')?.name, 'Ignifaxius');
+  assertEqual(findDescription(DESCRIPTION_KINDS.spells, 'Ignifaxius (Feuerstrahl)')?.name, 'Ignifaxius');
+  assertEqual(findDescription(DESCRIPTION_KINDS.cantrips, 'Feuerfinger')?.kind, 'zaubertrick');
+  assertEqual(findDescription(DESCRIPTION_KINDS.cantrips, 'Ignifaxius'), null, 'nur in den passenden Arten');
+});
+
+test(INFO, 'Mit Kurzfassung: direkter Link; ohne: Suche im Regel-Wiki; ohne Namen: nichts', () => {
+  const known = describeEntry(DESCRIPTION_KINDS.spells, 'Ignifaxius');
+  assertEqual(known.url, 'https://dsa.ulisses-regelwiki.de/zauber.html?zauber=Ignifaxius');
+  assertTrue(known.summary.length > 20 && known.linkText.includes('Offizieller Text'));
+  const unknown = describeEntry(DESCRIPTION_KINDS.advantages, 'Hausregel-Vorteil II');
+  assertEqual(unknown.summary, null);
+  assertEqual(unknown.url, searchUrl('Hausregel-Vorteil'));
+  assertTrue(unknown.url.endsWith('suche.html?keywords=Hausregel-Vorteil'), unknown.url);
+  assertEqual(describeEntry(DESCRIPTION_KINDS.spells, '  ').url, null);
+});
+
+test(INFO, 'Sonderfertigkeiten mit Stufe/Klammer; Sprachen, Schriften, Berufsgeheimnisse allgemein', () => {
+  const sf = (name) => findDescription(DESCRIPTION_KINDS.specialAbilities, name)?.name;
+  assertEqual(sf('Belastungsgewöhnung II'), 'Belastungsgewöhnung I-II');
+  assertEqual(sf('Ortskenntnis (Gareth)'), 'Ortskenntnis');
+  assertEqual(sf('Wuchtschlag I'), 'Wuchtschlag I-III');
+  const language = (name) => findDescription(DESCRIPTION_KINDS.languages, name)?.name;
+  assertEqual(language('Garethi III'), 'Sprache I-III');
+  assertEqual(language('Garethi (Muttersprache)'), 'Sprache I-III');
+  assertEqual(language('Schrift: Kusliker Zeichen'), 'Schrift');
+  assertEqual(findDescription(DESCRIPTION_KINDS.tradeSecrets, 'Algebra')?.name, 'Berufsgeheimnisse');
+  assertEqual(sf('Garethi III'), undefined, 'nur in der Liste der Sprachen');
+  assertEqual(sf('Tradition (Gildenmagier)'), 'Tradition (Gildenmagier)');
+  assertEqual(sf('Tradition (Rondrakirche)'), 'Tradition (Rondrakirche)');
+  assertEqual(sf('Tradition (Druiden)'), undefined, 'mehrdeutige Kurzform „Tradition“ zählt nicht');
+  assertTrue(describeEntry(DESCRIPTION_KINDS.specialAbilities, 'Tradition (Druiden)').url.endsWith('keywords=Druiden'));
+  const secret = describeEntry(DESCRIPTION_KINDS.tradeSecrets, 'Algebra');
+  assertTrue(secret.url.endsWith('SF_Berufsgeheimnisse.html') && secret.summary.length > 20, secret.url);
+});
+
+test(INFO, 'Katalog: eindeutig, gültige Arten, kurze Texte in eigenen Worten mit Link', () => {
+  const kinds = new Set(Object.values(DESCRIPTION_KINDS).flatMap((list) => list.split(',')));
+  ['sf-profan', 'sf-magisch', 'sf-karmal'].forEach((kind) => kinds.add(kind));
+  const seen = new Set();
+  for (const [kind, name, url, summary] of DESCRIPTIONS) {
+    assertTrue(kinds.has(kind), `Art ${kind}`);
+    const key = `${kind}|${nameKey(name)}`;
+    assertTrue(!seen.has(key), `doppelt: ${name}`);
+    seen.add(key);
+    assertTrue(typeof url === 'string' && !url.startsWith('http'), `Pfad relativ zum Regel-Wiki: ${name}`);
+    if (summary === '') {
+      assertTrue(url !== '', `ohne Kurzfassung nur mit direktem Link: ${name}`);
+    } else {
+      assertTrue(summary.length >= 20 && summary.length <= 320, `Länge der Kurzfassung: ${name} (${summary.length})`);
+    }
+  }
+  assertTrue(catalogSize() >= 350, `${catalogSize()} Kurzfassungen`);
+});
+
+test(INFO, 'Gegenstände: Zweitnamen und Links ohne Kurzfassung', () => {
+  const crowbar = describeEntry(DESCRIPTION_KINDS.inventory, 'Brechstange');
+  assertTrue(crowbar.url.endsWith('RK_Ausr_Brecheisen.html') && crowbar.summary.includes('Brechstange'), crowbar.url);
+  const linkOnly = describeEntry(DESCRIPTION_KINDS.inventory, 'Angroschanhänger');
+  assertEqual(linkOnly.summary, null);
+  assertTrue(linkOnly.url.endsWith('RK_Angroschanhaenger.html') && linkOnly.linkText.includes('Offizieller Text'));
+});
+
+test(INFO, 'Neue Felder: eigene Beschreibung bei Texteinträgen, Waffen und Rüstung', () => {
+  const hero = normalizeHero({
+    cantrips: [{ id: 'c', text: 'Feuerfinger', note: 'meine Notiz' }],
+    weapons: [{ id: 'w', name: 'Langschwert', note: 'Erbstück' }],
+    armor: { name: 'Kettenhemd', rs: 4, be: 2, note: 'geflickt' },
+  });
+  assertEqual(hero.cantrips[0].note, 'meine Notiz');
+  assertEqual(hero.weapons[0].note, 'Erbstück');
+  assertEqual(hero.armor.note, 'geflickt');
+  assertEqual(
+    normalizeHero({ advantages: [{ id: 'a', text: 'Glück' }] }).advantages[0].note,
+    '',
+    'ältere Helden: leer',
+  );
 });

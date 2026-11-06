@@ -613,7 +613,7 @@ function weaponsFromJson(items, attributes) {
 
 function chooseArmor(armors, report) {
   const real = armors.filter((armor) => armor.rs > 0 || armor.be > 0);
-  if (real.length === 0) return { name: '', rs: 0, be: 0 };
+  if (real.length === 0) return { name: '', rs: 0, be: 0, extra: false, note: '' };
   const best = real.reduce((top, armor) => (armor.rs > top.rs ? armor : top));
   if (real.length > 1)
     report.todo.push(
@@ -635,10 +635,18 @@ function applyEquipment(hero, { json, token }, report) {
           name: text(armor.Name),
           rs: toInt(armor.RS),
           be: toInt(armor.BE),
+          extra: false,
+          note: '',
         }))
       : items
           .filter((item) => item.pro !== undefined)
-          .map((item) => ({ name: text(item.name), rs: toInt(item.pro), be: toInt(item.enc) })),
+          .map((item) => ({
+            name: text(item.name),
+            rs: toInt(item.pro),
+            be: toInt(item.enc),
+            extra: item.addPenalties === true, // Optolith: „zusätzliche Abzüge“ (−1 GS, −1 INI)
+            note: '',
+          })),
     report,
   );
 

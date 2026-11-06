@@ -2,7 +2,7 @@
  * magic.js (Ansicht) – Zauber, Rituale, Liturgien, Zeremonien und Zaubertricks.
  */
 import { h } from '../dom.js';
-import { field, textInput, textArea, intInput, selectInput } from '../fields.js';
+import { field, textInput, intInput, selectInput } from '../fields.js';
 import {
   section,
   actionButton,
@@ -15,13 +15,16 @@ import {
 } from './parts.js';
 import { checkEditor } from './talents.js';
 import { textListRows } from './lists.js';
+import { infoKey, infoToggle, infoPanel } from './info.js';
 import { SPELL_TYPES } from '../../data/talents.js';
+import { DESCRIPTION_KINDS } from '../../descriptions.js';
 
 const TYPE_OPTIONS = SPELL_TYPES.map(({ id, name }) => ({ value: id, label: name }));
 
 function spellRow(spell, index, ui) {
   const editorKey = `spell:${spell.id}`;
   const editorOpen = ui.openEditors.has(editorKey);
+  const infoOpen = ui.openEditors.has(infoKey('spells', spell.id));
   const base = `spells.${index}`;
   return h(
     'div',
@@ -42,8 +45,12 @@ function spellRow(spell, index, ui) {
         },
       ),
       field('FW', intInput(`${base}.fw`, { label: 'Fertigkeitswert' }), { className: 'row-fw' }),
+      infoToggle(infoKey('spells', spell.id), infoOpen, spell.name || 'diesem Eintrag'),
       editorToggle(editorKey, editorOpen, 'Eintrag bearbeiten'),
     ),
+    infoOpen
+      ? infoPanel({ kinds: DESCRIPTION_KINDS.spells, namePath: `${base}.name`, notePath: `${base}.note` })
+      : null,
     editorOpen
       ? h(
           'div',
@@ -63,7 +70,6 @@ function spellRow(spell, index, ui) {
             field('Reichweite', textInput(`${base}.range`, { placeholder: '8 Schritt' })),
             field('Wirkungsdauer', textInput(`${base}.duration`, { placeholder: 'sofort' })),
           ),
-          field('Notiz', textArea(`${base}.note`, { rows: 2 })),
           h('div', { class: 'row-actions' }, removeButton('spells', spell.id, 'Eintrag löschen')),
         )
       : null,
@@ -81,7 +87,7 @@ export function renderMagic(hero, ui) {
       : emptyHint('Noch keine Zauber, Rituale oder Liturgien eingetragen.'),
     addButton('spells', 'Zauber / Liturgie hinzufügen'),
     h('h3', {}, 'Zaubertricks & Segnungen'),
-    textListRows(hero, 'cantrips', 'z. B. Funkenflug'),
+    textListRows(hero, 'cantrips', 'z. B. Funkenflug', ui),
     addButton('cantrips', 'Zaubertrick hinzufügen'),
   ]);
 }

@@ -8,21 +8,36 @@ import { field, textInput, intInput, decimalInput, selectInput } from '../fields
 import { section, collapsible, actionButton, derived, addButton, removeButton, emptyHint } from './parts.js';
 import { COINS } from '../../rules.js';
 import { TEXT_LISTS, MAX_INVENTORY_GROUPS, MAX_GROUP_NAME_LENGTH } from '../../sheet.js';
+import { DESCRIPTION_KINDS } from '../../descriptions.js';
+import { infoKey, infoToggle, infoPanel } from './info.js';
 
-/** Zeilen einer Textliste { id, text } mit Löschknopf. */
-export function textListRows(hero, key, placeholder) {
+/** Zeilen einer Textliste { id, text, note } mit „i“ (Beschreibung) und Löschknopf. */
+export function textListRows(hero, key, placeholder, ui) {
   if (hero[key].length === 0) return emptyHint('Noch keine Einträge.');
   return h(
     'div',
     { class: 'text-list' },
-    hero[key].map((entry, index) =>
-      h(
+    hero[key].map((entry, index) => {
+      const open = ui.openEditors.has(infoKey(key, entry.id));
+      return h(
         'div',
-        { class: 'text-list-row' },
-        textInput(`${key}.${index}.text`, { placeholder, label: 'Eintrag' }),
-        removeButton(key, entry.id, 'Eintrag löschen'),
-      ),
-    ),
+        { class: 'text-list-entry' },
+        h(
+          'div',
+          { class: 'text-list-row' },
+          textInput(`${key}.${index}.text`, { placeholder, label: 'Eintrag' }),
+          infoToggle(infoKey(key, entry.id), open, entry.text || 'diesem Eintrag'),
+          removeButton(key, entry.id, 'Eintrag löschen'),
+        ),
+        open
+          ? infoPanel({
+              kinds: DESCRIPTION_KINDS[key],
+              namePath: `${key}.${index}.text`,
+              notePath: `${key}.${index}.note`,
+            })
+          : null,
+      );
+    }),
   );
 }
 
@@ -34,13 +49,13 @@ const PLACEHOLDERS = {
   tradeSecrets: 'z. B. Rezept: Heiltrank',
 };
 
-export function renderAbilities(hero) {
+export function renderAbilities(hero, ui) {
   return section(
     'faehigkeiten',
     'Vorteile, Nachteile & Fähigkeiten',
     TEXT_LISTS.map(({ key, name, single }) => [
       h('h3', {}, name),
-      textListRows(hero, key, PLACEHOLDERS[key]),
+      textListRows(hero, key, PLACEHOLDERS[key], ui),
       addButton(key, `${single} hinzufügen`),
     ]),
   );
@@ -68,8 +83,9 @@ export function showGroupName(root, group) {
   }
 }
 
-function itemRow(item, index, groupOptions) {
+function itemRow(item, index, groupOptions, ui) {
   const base = `inventory.${index}`;
+  const open = ui.openEditors.has(infoKey('inventory', item.id));
   return h(
     'div',
     { class: 'item' },
@@ -83,10 +99,18 @@ function itemRow(item, index, groupOptions) {
     h(
       'div',
       { class: 'item-line' },
-      field('Gruppe', selectInput(`${base}.location`, groupOptions, { structural: true })),
-      field('Notiz', textInput(`${base}.note`), { className: 'grow' }),
+      field('Gruppe', selectInput(`${base}.location`, groupOptions, { structural: true }), { className: 'grow' }),
+      infoToggle(infoKey('inventory', item.id), open, item.name || 'diesem Gegenstand'),
       removeButton('inventory', item.id, 'Gegenstand löschen'),
     ),
+    open
+      ? infoPanel({
+          kinds: DESCRIPTION_KINDS.inventory,
+          namePath: `${base}.name`,
+          notePath: `${base}.note`,
+          placeholder: 'z. B. geliehen von Alrik, Beschreibung aus dem Regelbuch …',
+        })
+      : null,
   );
 }
 
@@ -123,7 +147,7 @@ function groupSettings(group, index, count) {
   );
 }
 
-function inventoryGroup(hero, group, index, groupOptions) {
+function inventoryGroup(hero, group, index, groupOptions, ui) {
   const items = hero.inventory
     .map((item, itemIndex) => ({ item, itemIndex }))
     .filter(({ item }) => item.location === group.id);
@@ -137,7 +161,7 @@ function inventoryGroup(hero, group, index, groupOptions) {
       'div',
       { class: 'inventory-group-body' },
       items.length
-        ? items.map(({ item, itemIndex }) => itemRow(item, itemIndex, groupOptions))
+        ? items.map(({ item, itemIndex }) => itemRow(item, itemIndex, groupOptions, ui))
         : emptyHint('Noch nichts in dieser Gruppe.'),
       actionButton('add-item', group.id, [icon(ICONS.plus), h('span', {}, 'Gegenstand hinzufügen')], {
         className: 'btn btn-add',
@@ -148,7 +172,7 @@ function inventoryGroup(hero, group, index, groupOptions) {
   );
 }
 
-export function renderInventory(hero) {
+export function renderInventory(hero, ui) {
   const groupOptions = hero.inventoryGroups.map((group) => ({ value: group.id, label: groupLabel(group) }));
   const coins = h(
     'div',
@@ -164,7 +188,7 @@ export function renderInventory(hero) {
     h(
       'div',
       { class: 'inventory-groups' },
-      hero.inventoryGroups.map((group, index) => inventoryGroup(hero, group, index, groupOptions)),
+      hero.inventoryGroups.map((group, index) => inventoryGroup(hero, group, index, groupOptions, ui)),
     ),
     hero.inventoryGroups.length < MAX_INVENTORY_GROUPS
       ? actionButton('add-group', '', [icon(ICONS.plus), h('span', {}, 'Gruppe hinzufügen')], {

@@ -10,7 +10,7 @@
  */
 import { h, icon, ICONS, setChildren } from './dom.js';
 import { CONDITIONS, MAX_CONDITION_LEVEL, ROMAN_LEVELS } from '../rules.js';
-import { heroName, describeConditions } from '../sheet.js';
+import { heroName, describeConditions, armorState } from '../sheet.js';
 import {
   checkChoices,
   checkSections,
@@ -173,10 +173,17 @@ export function createVitalsPanel({ store, heroId, heroActions, onClose, picker 
 
   function conditionRow(id, hero, condition) {
     const level = hero.conditions[condition.id];
+    // Belastung aus der Rüstung kommt automatisch dazu (eingetragen wird nur der Rest, z. B. Gepäck)
+    const fromArmor = condition.id === 'belastung' ? armorState(hero).levels : 0;
     return h(
       'div',
-      { class: `inspector-condition ${level > 0 ? 'is-active' : ''}`.trim() },
-      h('span', {}, condition.name),
+      { class: `inspector-condition ${level > 0 || fromArmor > 0 ? 'is-active' : ''}`.trim() },
+      h(
+        'span',
+        {},
+        condition.name,
+        fromArmor ? h('small', { class: 'inspector-auto' }, ` + ${ROMAN_LEVELS[fromArmor]} Rüstung`) : null,
+      ),
       stepButton(`${condition.name} −1`, '−', () => heroActions.setCondition(id, condition.id, level - 1), level <= 0),
       h('strong', { class: 'inspector-level' }, ROMAN_LEVELS[level]),
       stepButton(
@@ -199,7 +206,16 @@ export function createVitalsPanel({ store, heroId, heroActions, onClose, picker 
     pools.hidden = !hasHero;
     conditionBox.hidden = !hasHero;
     if (!hasHero) return;
-    const key = JSON.stringify([id, heroName(hero), hero.base, hero.conditions, hero.conditionsOff, hero.autoPain]);
+    const key = JSON.stringify([
+      id,
+      heroName(hero),
+      hero.base,
+      hero.conditions,
+      hero.conditionsOff,
+      hero.autoPain,
+      hero.armor, // Belastung aus der Rüstung
+      hero.specialAbilities.map((entry) => entry.text), // Belastungsgewöhnung
+    ]);
     if (key === renderedKey || isTypingIn(element)) return; // Eingabe nicht unterbrechen
     renderedKey = key;
     name.textContent = heroName(hero);
